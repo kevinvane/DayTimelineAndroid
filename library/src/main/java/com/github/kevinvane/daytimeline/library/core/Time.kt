@@ -24,9 +24,6 @@ value class MinuteOfDay private constructor(val minuteOfDay: Int) {
     /** 分钟部分 `[0, 59]`。 */
     val minute: Int get() = minuteOfDay % MINUTES_PER_HOUR
 
-    /** 距 24:00 还有多少分钟，用于「是否全天贯穿」这类判断。 */
-    val minutesToEndOfDay: Int get() = END_OF_DAY_MINUTE - minuteOfDay
-
     fun plusMinutes(delta: Int): MinuteOfDay = ofMinute(minuteOfDay + delta)
 
     fun minusMinutes(delta: Int): MinuteOfDay = ofMinute(minuteOfDay - delta)

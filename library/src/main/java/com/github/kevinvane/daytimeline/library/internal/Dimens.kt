@@ -1,0 +1,212 @@
+package com.github.kevinvane.daytimeline.library.internal
+
+import android.content.Context
+import android.content.res.Configuration
+import android.util.TypedValue
+import androidx.annotation.ColorInt
+import androidx.core.content.ContextCompat
+import com.github.kevinvane.daytimeline.library.R
+import com.github.kevinvane.daytimeline.library.api.TimelineConfig
+import com.github.kevinvane.daytimeline.library.core.MinuteOfDay
+import com.github.kevinvane.daytimeline.library.paint.Theme
+
+/**
+ * 尺寸与颜色的解析结果（PRD AD-09：配置的单一来源）。
+ *
+ * 合并规则：**资源默认值** → 被 [config] 覆盖的项。
+ * 因此「不配置也能用」（FC-006），且深浅色只由 `values` / `values-night`
+ * 两份 colors.xml 决定，代码里没有任何 `isNightMode` 分支（§7.3 强制要求 ②）。
+ *
+ * 全部尺寸以 px 存储；dp/sp 在此一次性换算，之后绘制层不再做单位换算。
+ */
+internal class Dimens private constructor(
+    val hourHeight: Int,
+    val hourHeightMin: Int,
+    val topPadding: Int,
+    val bottomPadding: Int,
+    val axisWidth: Int,
+    val endMargin: Int,
+    val gridLineWidth: Int,
+    val axisLabelSize: Int,
+    val nowLabelSize: Int,
+    val blockGap: Int,
+    val blockCorner: Int,
+    val blockPaddingHorizontal: Int,
+    val blockPaddingVertical: Int,
+    val blockMinHeight: Int,
+    val blockAccentBarWidth: Int,
+    val blockStrokeWidth: Int,
+    val nowDotDiameter: Int,
+    val nowLineWidth: Int,
+    val handleVisualSize: Int,
+    val handleTouchSize: Int,
+    val minTouchTarget: Int,
+    val edgeScrollTriggerSize: Int,
+    val edgeScrollStepSize: Int,
+    val firstLocateLeadIn: Int,
+    val editStrokeWidth: Int,
+    val snapMinutes: Int,
+    val minDurationMinutes: Int,
+    val maxDurationMinutes: Int,
+    val defaultNewDurationMinutes: Int,
+    val dragThresholdRatio: Float,
+    val nowRefreshMillis: Long,
+    val theme: Theme,
+) {
+    /**
+     * 实际生效的每小时格高。
+     *
+     * 兜底到 [hourHeightMin]（PRD E17：格高被设成极小值时自动抬升，不崩溃）。
+     * 值为 0 会让所有换算除零，因此这里必须兜底而不是信任配置。
+     */
+    val effectiveHourHeight: Int get() = hourHeight.coerceAtLeast(hourHeightMin)
+
+    /** 全天内容总高度（§8.6 外部滚动模式的组件高度约定）。 */
+    val contentHeight: Int
+        get() = MinuteOfDay.HOURS_PER_DAY * effectiveHourHeight + topPadding + bottomPadding
+
+    /** 视口高度能容纳的分钟数，用于命中测试与裁剪。 */
+    fun minutesVisibleIn(viewportHeightPx: Int): Int {
+        if (effectiveHourHeight <= 0) return 0
+        return (viewportHeightPx / effectiveHourHeight * MinuteOfDay.MINUTES_PER_HOUR)
+            .coerceIn(0, MinuteOfDay.END_OF_DAY_MINUTE)
+    }
+
+    companion object {
+        fun resolve(context: Context, config: TimelineConfig): Dimens {
+            val res = context.resources
+            fun dp(id: Int) = TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, res.getDimension(id), res.displayMetrics,
+            ).toInt()
+
+            fun sp(id: Int) = TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_SP, res.getDimension(id), res.displayMetrics,
+            ).toInt()
+
+            fun pick(configured: Int?, resource: Int) = configured ?: dp(resource)
+
+            @ColorInt
+            fun color(configured: Int?, resource: Int): Int =
+                configured ?: ContextCompat.getColor(context, resource)
+
+
+            return Dimens(
+                hourHeight = pick(config.hourHeight, R.dimen.day_timeline_hour_height),
+                hourHeightMin = dp(R.dimen.day_timeline_hour_height_min),
+                topPadding = pick(config.topPadding, R.dimen.day_timeline_top_padding),
+                bottomPadding = pick(config.bottomPadding, R.dimen.day_timeline_bottom_padding),
+                axisWidth = pick(config.axisWidth, R.dimen.day_timeline_axis_width),
+                endMargin = pick(config.endMargin, R.dimen.day_timeline_end_margin),
+                gridLineWidth = pick(config.gridLineWidth, R.dimen.day_timeline_grid_line_width),
+                axisLabelSize = pick(config.axisLabelSize, R.dimen.day_timeline_axis_label_size),
+                nowLabelSize = pick(config.nowLabelSize, R.dimen.day_timeline_now_label_size),
+                blockGap = pick(config.blockGap, R.dimen.day_timeline_block_gap),
+                blockCorner = pick(config.blockCorner, R.dimen.day_timeline_block_corner),
+                blockPaddingHorizontal = pick(
+                    config.blockPaddingHorizontal,
+                    R.dimen.day_timeline_block_padding_horizontal,
+                ),
+                blockPaddingVertical = pick(
+                    config.blockPaddingVertical,
+                    R.dimen.day_timeline_block_padding_vertical,
+                ),
+                blockMinHeight = pick(config.blockMinHeight, R.dimen.day_timeline_block_min_height),
+                blockAccentBarWidth = pick(
+                    config.blockAccentBarWidth,
+                    R.dimen.day_timeline_block_accent_bar,
+                ),
+                blockStrokeWidth = pick(
+                    config.blockStrokeWidth,
+                    R.dimen.day_timeline_block_stroke_width,
+                ),
+                nowDotDiameter = pick(config.nowDotDiameter, R.dimen.day_timeline_now_dot_diameter),
+                nowLineWidth = pick(config.nowLineWidth, R.dimen.day_timeline_now_line_width),
+                handleVisualSize = pick(
+                    config.editHandleVisualSize,
+                    R.dimen.day_timeline_handle_visual,
+                ),
+                // 热区不得小于最小触摸目标（UF-001）：配置只能调大，不能调小
+                handleTouchSize = maxOf(
+                    pick(config.editHandleTouchSize, R.dimen.day_timeline_handle_touch),
+                    pick(config.minTouchTarget, R.dimen.day_timeline_min_touch_target),
+                ),
+                minTouchTarget = pick(config.minTouchTarget, R.dimen.day_timeline_min_touch_target),
+                edgeScrollTriggerSize = pick(
+                    config.edgeScrollTriggerSize,
+                    R.dimen.day_timeline_edge_scroll_trigger,
+                ),
+                edgeScrollStepSize = pick(
+                    config.edgeScrollStepSize,
+                    R.dimen.day_timeline_edge_scroll_step,
+                ),
+                firstLocateLeadIn = dp(R.dimen.day_timeline_first_locate_lead_in),
+                editStrokeWidth = dp(R.dimen.day_timeline_edit_stroke_width),
+                snapMinutes = config.resolvedSnapMinutes(
+                    res.getInteger(R.integer.day_timeline_snap_minutes),
+                ),
+                minDurationMinutes = config.resolvedMinDuration(
+                    res.getInteger(R.integer.day_timeline_min_duration_minutes),
+                ),
+                maxDurationMinutes = config.resolvedMaxDuration(
+                    res.getInteger(R.integer.day_timeline_max_duration_minutes),
+                ),
+                defaultNewDurationMinutes = (
+                    config.defaultNewDurationMinutes
+                        ?: res.getInteger(R.integer.day_timeline_default_new_duration_minutes)
+                    ).coerceAtLeast(1),
+                dragThresholdRatio = (
+                    config.dragThresholdRatio
+                        ?: res.getDimension(R.dimen.day_timeline_drag_threshold_ratio)
+                    ).coerceIn(0.05f, 1f),
+                nowRefreshMillis = res.getInteger(
+                    R.integer.day_timeline_now_refresh_seconds,
+                ) * 1000L,
+                theme = Theme.resolve(
+                    background = color(config.colorBackground, R.color.day_timeline_background),
+                    gridLine = color(config.colorGridLine, R.color.day_timeline_grid_line),
+                    axisLabel = color(config.colorAxisLabel, R.color.day_timeline_axis_label),
+                    now = color(config.colorNow, R.color.day_timeline_now),
+                    blockBgPast = color(
+                        config.colorBlockBgPast, R.color.day_timeline_block_bg_past,
+                    ),
+                    blockBgOngoing = color(
+                        config.colorBlockBgOngoing, R.color.day_timeline_block_bg_ongoing,
+                    ),
+                    blockBgUpcoming = color(
+                        config.colorBlockBgUpcoming, R.color.day_timeline_block_bg_upcoming,
+                    ),
+                    blockTextPast = color(
+                        config.colorBlockTextPast, R.color.day_timeline_block_text_past,
+                    ),
+                    blockText = color(config.colorBlockText, R.color.day_timeline_block_text),
+                    blockAccentPast = color(
+                        config.colorBlockAccentPast, R.color.day_timeline_block_accent_past,
+                    ),
+                    blockAccent = color(
+                        config.colorBlockAccent, R.color.day_timeline_block_accent,
+                    ),
+                    blockStroke = color(
+                        config.colorBlockStroke, R.color.day_timeline_block_stroke,
+                    ),
+                    selected = color(config.colorSelected, R.color.day_timeline_selected),
+                    editLayerBg = color(
+                        config.colorEditLayerBg, R.color.day_timeline_edit_layer_bg,
+                    ),
+                    editLayerText = color(
+                        config.colorEditLayerText, R.color.day_timeline_edit_layer_text,
+                    ),
+                    editLayerTime = color(
+                        config.colorEditLayerTime, R.color.day_timeline_edit_layer_time,
+                    ),
+                    editHandle = color(config.colorEditHandle, R.color.day_timeline_edit_handle),
+                ),
+            )
+        }
+    }
+}
+
+
+/** 读取当前是否深色模式。**仅供读取/上报使用，不得据此做配色分支**（§7.3 ②）。 */
+internal fun Context.isNightMode(): Boolean =
+    resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+        Configuration.UI_MODE_NIGHT_YES
