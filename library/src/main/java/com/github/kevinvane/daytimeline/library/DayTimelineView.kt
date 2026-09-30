@@ -2,6 +2,7 @@ package com.github.kevinvane.daytimeline.library
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Canvas
 import android.os.Handler
 import android.os.Looper
@@ -12,6 +13,7 @@ import android.view.View
 import android.widget.OverScroller
 import androidx.core.graphics.withTranslation
 import androidx.core.view.ViewCompat
+import java.util.Locale
 import com.github.kevinvane.daytimeline.library.api.BlockContext
 import com.github.kevinvane.daytimeline.library.api.EventBlockPainter
 import com.github.kevinvane.daytimeline.library.api.GridContext
@@ -142,8 +144,8 @@ class DayTimelineView @JvmOverloads constructor(
     private val blockContext = BlockContext()
 
     /** 复用的 Paints 包装（§12.1：不在 onDraw 里分配对象）。 */
-    private val gridPaints = GridPainter.Paints(paints.gridLine, paints.axisLabel, paints.nowLabel)
-    private val blockPaints = EventBlockPainter.Paints(
+    private var gridPaints = GridPainter.Paints(paints.gridLine, paints.axisLabel, paints.nowLabel)
+    private var blockPaints = EventBlockPainter.Paints(
         paints.blockBackground, paints.blockText, paints.blockAccent, paints.blockStroke,
     )
 
@@ -181,7 +183,7 @@ class DayTimelineView @JvmOverloads constructor(
 
     init {
         // E31 / E30：存活期间切换语言或深色模式时即时重绘
-        ViewCompat.setAccessibilityDelegate(this, null)
+        com.github.kevinvane.daytimeline.library.paint.InstallAccessibility.install(this)
         isClickable = true
         isFocusable = true
     }
@@ -251,6 +253,10 @@ class DayTimelineView @JvmOverloads constructor(
         dimens = Dimens.resolve(context, config)
         paints = buildPaints()
         colors = dimens.theme.toPublicColors()
+        gridPaints = GridPainter.Paints(paints.gridLine, paints.axisLabel, paints.nowLabel)
+        blockPaints = EventBlockPainter.Paints(
+            paints.blockBackground, paints.blockText, paints.blockAccent, paints.blockStroke,
+        )
         relayout()
         clampScroll()
         requestRefresh()
@@ -556,6 +562,55 @@ class DayTimelineView @JvmOverloads constructor(
 
     /** 是否处于编辑态。 */
     fun isEditing(): Boolean = editSession != null
+
+    // ================= 无障碍（AD-05 / Q8） =================
+    // 以下为 [com.github.kevinvane.daytimeline.library.paint.TimelineAccessibilityHelper]
+    // 所需的只读访问器，必须 internal 且不接受外部输入。
+
+    internal fun visibleBlockSnapshot(): List<Pair<Int, PlacedBlock>> {
+        val out = ArrayList<Pair<Int, PlacedBlock>>(blocks.size)
+        for (i in blocks.indices) {
+            if (i >= blockHeights.size || i >= blockTops.size) continue
+            val top = blockTops[i]
+            val h = blockHeights[i]
+            if (h <= 0) continue
+            if (!Geometry.intersectsViewport(top.toFloat(), h, scrollOffset, height)) continue
+            out += i to blocks[i]
+        }
+        return out
+    }
+
+    internal fun blockBoundsInParent(block: PlacedBlock): android.graphics.Rect? {
+        val i = blocks.indexOfFirst { it === block || it.event.id == block.event.id }
+        if (i < 0) return null
+        val top = blockTops.getOrNull(i) ?: return null
+        val h = blockHeights.getOrNull(i) ?: return null
+        val left = resolveAxisEnd(width) + block.left
+        return android.graphics.Rect(
+            left,
+            top - scrollOffset,
+            left + block.width,
+            top - scrollOffset + h,
+        )
+    }
+
+    internal fun blockStateOf(block: PlacedBlock): EventState =
+        states[block.event.id] ?: EventState.UPCOMING
+
+    internal fun dispatchEventClickForAccessibility(block: PlacedBlock) {
+        selectedId = block.event.id
+        listener?.onEventClick(block.event.source)
+        requestRefresh()
+    }
+
+    internal fun dispatchEventLongClickForAccessibility(block: PlacedBlock) {
+        selectedId = block.event.id
+        editSession = EditSession.beginEdit(block.event)
+        listener?.onEventLongClick(block.event.source)
+        requestRefresh()
+    }
+
+    internal fun currentHourRangeText(): String = "00:00 - 24:00"
 
     /** 私有扩展：取提交结果的起止范围。 */
     private fun EditSession.Commit.rangeOrEmpty(): IntRange = when (this) {
@@ -865,17 +920,47 @@ class DayTimelineView @JvmOverloads constructor(
 
     // ================= 生命周期 =================
 
-    override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
-        handler.postDelayed(nowTicker, dimens.nowRefreshMillis)
-    }
-
     override fun onDetachedFromWindow() {
         // E10 / Q6：页面刚打开就关闭时不得有残留任务
         handler.removeCallbacks(nowTicker)
+        handler.removeCallbacks(edgeScrollRunnable)
+        edgeScrollScheduled = false
         scroller.forceFinished(true)
         super.onDetachedFromWindow()
     }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        // E30 / E31：存活期间切换深色模式或语言后重新挂载，
+        // 强制重建色值与文案（§7.3 要求不写分支，故整份重解析而非局部修补）
+        rebindResourcesIfConfigChanged()
+        handler.postDelayed(nowTicker, dimens.nowRefreshMillis)
+    }
+
+    /**
+     * 检测到 uiMode / locale 变化时重新解析资源。
+     *
+     * 这**不是**「深色模式分支」——它对深浅两种情况一视同仁地重解析资源，
+     * 具体的浅/深取值仍全部来自 `values` 与 `values-night` 两份 colors.xml，
+     * 代码里没有任何 `if (isNight)` 式的配色判断（§7.3 强制要求 ②）。
+     */
+    private fun rebindResourcesIfConfigChanged() {
+        val current = (context.resources.configuration.uiMode and
+            Configuration.UI_MODE_NIGHT_MASK) to Locale.getDefault()
+        if (current == lastBoundUiMode) return
+        lastBoundUiMode = current
+        dimens = Dimens.resolve(context, config)
+        paints = buildPaints()
+        colors = dimens.theme.toPublicColors()
+        gridPaints = GridPainter.Paints(paints.gridLine, paints.axisLabel, paints.nowLabel)
+        blockPaints = EventBlockPainter.Paints(
+            paints.blockBackground, paints.blockText, paints.blockAccent, paints.blockStroke,
+        )
+        relayout()
+        requestRefresh()
+    }
+
+    private var lastBoundUiMode: Pair<Int, Locale> = Pair(Int.MIN_VALUE, Locale.getDefault())
 
     override fun onVisibilityChanged(changedView: View, visibility: Int) {
         super.onVisibilityChanged(changedView, visibility)
