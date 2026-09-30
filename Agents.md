@@ -7,13 +7,13 @@
 - `library/src/main/java/` **不存在**——组件本体一行代码都还没有，只有 Android Studio 模板生成的 `Example*Test`。
 - `app` 只有模板 `MainActivity`（edge-to-edge + window insets），**且 `app/build.gradle.kts` 并不依赖 `project(":library")`**。任何 demo/示例工作都必须先自己补上这条依赖。
 - Git 已初始化：分支 **`master`**（不是 `main`），目前只有一个 `init` 提交，**且未配置任何 remote**（`git push` 无处可推；要发布需先 `git remote add`）。
-- `docs/` 下只有 PRD 一个文件，无其他配套文档。
 
-## 唯一需求来源
+## 需求与技术方案来源
 
-`docs/DayTimeline-产品与需求文档.md`（v1.1，1225 行，UTF-8 中文，状态：待评审）。**动手前先读它。**
+- `docs/DayTimeline-产品与需求文档.md`（PRD，v1.1，1225 行，UTF-8 中文，状态：待评审）——**唯一需求来源，动手前先读它。**
+- `docs/DayTimeline-技术方案与实施计划.md`（v0.1 草案）——架构决策 AD-01~AD-11、M0–M6 任务拆解、测试与门禁落地、开放问题。**PRD §1.2 把架构与实现方案排除在外，这两份要配套读。**
 
-读取注意：文件是 UTF-8 中文，**PowerShell 控制台会显示成乱码**——用 read 工具读，或先设 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`。
+读取注意：两个文件都是 UTF-8 中文，**PowerShell 控制台会显示成乱码**——用 read 工具读，或先设 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`。
 
 PRD 中最该记住的几条：
 
