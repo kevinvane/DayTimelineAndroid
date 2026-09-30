@@ -6,7 +6,7 @@
 
 - `library/src/main/java/` **不存在**——组件本体一行代码都还没有，只有 Android Studio 模板生成的 `Example*Test`。
 - `app` 只有模板 `MainActivity`（edge-to-edge + window insets），**且 `app/build.gradle.kts` 并不依赖 `project(":library")`**。任何 demo/示例工作都必须先自己补上这条依赖。
-- 本仓库**尚未纳入 Git 版本控制**（无 `.git`）。
+- Git 已初始化：分支 **`master`**（不是 `main`），目前只有一个 `init` 提交，**且未配置任何 remote**（`git push` 无处可推；要发布需先 `git remote add`）。
 - `docs/` 下只有 PRD 一个文件，无其他配套文档。
 
 ## 唯一需求来源
@@ -48,7 +48,7 @@ PRD 中最该记住的几条：
 
 ## 环境注意事项
 
-- `ANDROID_HOME` / `ANDROID_SDK_ROOT` **均未设置**；SDK 路径来自 `local.properties` 的 `sdk.dir=D:\Android\Sdk`。该文件被 gitignore，缺失或路径不对时构建会在配置阶段失败。
+- `ANDROID_HOME` / `ANDROID_SDK_ROOT` **均未设置**；SDK 路径来自 `local.properties` 的 `sdk.dir=D:\Android\Sdk`。该文件被 gitignore，**新克隆的仓库里没有它**，缺失时构建会在配置阶段直接失败——先让每人本地建一份（或改用 `ANDROID_HOME` 环境变量）。
 - `compileSdk 36` 需要本机装有 `android-36` 平台（已确认存在）。
 
 ## 常用命令
