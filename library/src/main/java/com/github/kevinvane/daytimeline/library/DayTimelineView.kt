@@ -20,10 +20,13 @@ import com.github.kevinvane.daytimeline.library.api.ScrollMode
 import com.github.kevinvane.daytimeline.library.api.TimelineColors
 import com.github.kevinvane.daytimeline.library.api.TimelineConfig
 import com.github.kevinvane.daytimeline.library.api.TimelineListener
+import com.github.kevinvane.daytimeline.library.core.EditSession
 import com.github.kevinvane.daytimeline.library.core.EventDiff
 import com.github.kevinvane.daytimeline.library.core.EventSanitizer
 import com.github.kevinvane.daytimeline.library.core.EventState
 import com.github.kevinvane.daytimeline.library.core.Geometry
+import com.github.kevinvane.daytimeline.library.core.GestureArbiter
+import com.github.kevinvane.daytimeline.library.core.HitTester
 import com.github.kevinvane.daytimeline.library.core.MinuteOfDay
 import com.github.kevinvane.daytimeline.library.core.OverlapLayoutEngine
 import com.github.kevinvane.daytimeline.library.core.PlacedBlock
@@ -92,6 +95,48 @@ class DayTimelineView @JvmOverloads constructor(
     /** 绘制签名：只有它变化才真正 invalidate（AD-06 / D17）。 */
     private var lastRenderSignature: Long = Long.MIN_VALUE
 
+    /** M4 交互状态。 */
+    private var editSession: EditSession? = null
+    private val gestureArbiter = GestureArbiter(dragThresholdPx = 48)
+    private val hitTester = HitTester(minTouchTarget = 48, handleTouchSize = 48)
+    private var grabbedHandle = 0
+    private var edgeScrollScheduled = false
+    private var blockTops = IntArray(0)
+    private var blockHeights = IntArray(0)
+
+    /**
+     * 编辑态的「完成 / 取消 / 删除」回调。
+     *
+     * 刻意与 [listener] 分离：业务方可只接管编辑层（AD-08 第四层），
+     * 不影响其余能力。
+     */
+    var editController: EditController? = null
+
+
+    /** 第四层定制：接管新建流程 / 编辑层操作。 */
+    interface EditController {
+        /** 用户点击「完成」。返回 true 表示已由业务方处理，组件不再自行上抛事件。 */
+        fun onDone(range: IntRange, isCreating: Boolean): Boolean = false
+
+        /** 用户点击「取消」。组件内部已保证不会发出任何数据变更。 */
+        fun onCancel() = Unit
+
+        /** 用户点击「删除」。 */
+        fun onDelete(): Boolean = false
+
+        /** 需要弹出删除二次确认。组件提供默认实现，业务方可覆盖。 */
+        fun confirmDelete(context: Context, eventTitle: String, onConfirmed: () -> Unit) {
+            android.app.AlertDialog.Builder(context)
+                .setTitle(R.string.day_timeline_delete_confirm_title)
+                .setMessage(R.string.day_timeline_delete_confirm_message)
+                .setNegativeButton(R.string.day_timeline_delete_confirm_negative, null)
+                .setPositiveButton(R.string.day_timeline_delete_confirm_positive) { _, _ ->
+                    onConfirmed()
+                }
+                .show()
+        }
+    }
+
     /** 复用的绘制上下文，避免每帧分配（§12.1；lint DrawAllocation）。 */
     private val gridContext = GridContext()
     private val blockContext = BlockContext()
@@ -116,20 +161,20 @@ class DayTimelineView @JvmOverloads constructor(
         }
     }
 
+    /**
+     * 仅用于**长按超时**检测（§8.2 的 onLongPress）。
+     *
+     * 点击 / 滚动 / 拖拽判定全部由 [GestureArbiter] 自己做（纯状态机，可单测），
+     * 不交给 GestureDetector——那样就无法保证「滑动时绝不误触发长按」。
+     */
     private val gestureDetector = GestureDetector(
         context,
         object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent) = true
 
-            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                // 必须转调 performClick，否则屏幕阅读器无法激活（lint / UF-003）
-                performClick()
-                // M4 交互闭环在此接入：命中日程块 → 选中并回调点击；命中空白 → 新建编辑态
-                return true
-            }
-
             override fun onLongPress(e: MotionEvent) {
-                // M4：长按日程块进入编辑态；长按空白不进入编辑（§8.2）
+                // 只标记「长按已触发」；真正的进入编辑态在抬手时判定（§8.2）
+                gestureArbiter.onLongPressTimeout()
             }
         },
     )
@@ -319,7 +364,55 @@ class DayTimelineView @JvmOverloads constructor(
             painter.paint(canvas, blockContext, colors, blockPaints)
         }
 
+        drawEditLayer(canvas, contentLeft, contentRight)
+
         }
+    }
+
+    /**
+     * 绘制编辑层（PRD §7.7）。
+     *
+     * 编辑块与刻度线**左右对齐**（左起于时间轴区域右侧，右止于右侧边距），
+     * 与普通日程块不同——这是 §7.7 的明确要求。
+     *
+     * 手柄视觉直径 6dp，触摸热区 48dp 由 [HitTester] 负责，两者解耦（UF-001）。
+     */
+    private fun drawEditLayer(canvas: Canvas, contentLeft: Int, contentRight: Int) {
+        val session = editSession ?: return
+        val top = dimens.topPadding +
+            Geometry.minuteToOffset(session.startMinute.toFloat(), dimens.effectiveHourHeight).toInt()
+        val height = Geometry.blockHeight(
+            session.startMinute, session.endMinute, dimens.effectiveHourHeight, dimens.blockMinHeight,
+        )
+        if (height <= 0) return // D4：绝不为负
+
+        val left = contentLeft.toFloat()
+        val right = contentRight.toFloat()
+        val bottom = top + height
+
+        paints.editLayer.color = colors.editLayerBg
+        canvas.drawRect(left, top.toFloat(), right, bottom.toFloat(), paints.editLayer)
+
+        paints.selection.color = colors.selected
+        paints.selection.strokeWidth = dimens.editStrokeWidth.toFloat()
+        canvas.drawRect(left, top.toFloat(), right, bottom.toFloat(), paints.selection)
+
+        // 起止时间显示在时间轴区域内侧右对齐（§7.7）
+        paints.nowLabel.color = colors.editLayerTime
+        paints.nowLabel.textAlign = android.graphics.Paint.Align.RIGHT
+        val labelX = (contentLeft - dimens.gridLineWidth).toFloat()
+        canvas.drawText(
+            session.start.toString(), labelX, top.toFloat(), paints.nowLabel,
+        )
+        canvas.drawText(
+            session.end.toString(), labelX, bottom.toFloat(), paints.nowLabel,
+        )
+
+        // 手柄：左上 / 右下实心圆点，视觉直径 6dp
+        val r = dimens.handleVisualSize / 2f
+        paints.editHandle.color = colors.editHandle
+        canvas.drawCircle(left + r, top + r, r, paints.editHandle)
+        canvas.drawCircle(right - r, bottom - r, r, paints.editHandle)
     }
 
     // ================= 刷新收敛（AD-06 / D17） =================
@@ -354,31 +447,377 @@ class DayTimelineView @JvmOverloads constructor(
     private fun relayout() {
         val available = (width - dimens.endMargin - resolveAxisEnd(width)).coerceAtLeast(0)
         blocks = OverlapLayoutEngine.layout(events, available, dimens.blockGap)
+        cacheBlockGeometry()
+    }
+
+    /**
+     * 预先算好每个块的顶边与高度，供命中测试使用。
+     *
+     * 命中测试在每次触摸时都会遍历这些值，若每次都重算几何会引入不必要的
+     * 开销；缓存后 [HitTester] 只做数值比较。
+     */
+    private fun cacheBlockGeometry() {
+        if (blocks.size != blockTops.size) {
+            blockTops = IntArray(blocks.size)
+            blockHeights = IntArray(blocks.size)
+        }
+        val hourHeight = dimens.effectiveHourHeight
+        for (i in blocks.indices) {
+            val s = blocks[i].event.start.minuteOfDay
+            val e = blocks[i].event.end.minuteOfDay
+            blockTops[i] = dimens.topPadding +
+                Geometry.minuteToOffset(s.toFloat(), hourHeight).toInt()
+            blockHeights[i] = Geometry.blockHeight(s, e, hourHeight, dimens.blockMinHeight)
+        }
     }
 
     // ================= 滚动 =================
 
     /**
-     * 触摸分发。
+     * 确认编辑（PRD FI-008）。
+     *
+     * **这是唯一会发出数据变更事件的出口。** 取消走 [cancelEdit]，
+     * 那条路径在 [EditSession.cancel] 的类型上就不可能携带数据（D3）。
+     */
+    fun confirmEdit() {
+        val session = editSession ?: return
+        val commit = session.commit() ?: return
+        editSession = null
+        selectedId = null
+        val handled = editController?.onDone(commit.rangeOrEmpty(), commit.isCreate()) == true
+        if (handled) {
+            requestRefresh()
+            return
+        }
+        when (commit) {
+            is EditSession.Commit.Create -> listener?.onEventCreated(commit.startMinute..commit.endMinute)
+            is EditSession.Commit.Modify -> {
+                listener?.onEventModified(commit.event.source, commit.range, commit.hasConflict)
+                // 本地同步显示，避免业务方未回传数据时界面无反应
+                if (!commit.hasConflict) {
+                    replaceLocally(commit.event.id, commit.range)
+                }
+            }
+        }
+        requestRefresh()
+    }
+
+    /**
+     * 取消编辑（PRD FI-009 / FI-010）。
+     *
+     * **D3 硬性要求：绝不在此发出任何数据变更通知。**
+     * 唯一允许的回调是 [TimelineListener.onEditCancelled]，它不携带数据，
+     * 业务方只能用于统计「编辑完成率」（§15）。
+     */
+    fun cancelEdit() {
+        if (editSession == null) return
+        editSession?.cancel() // 返回无字段对象，确保没有任何数据被带出
+        editSession = null
+        selectedId = null
+        grabbedHandle = 0
+        editController?.onCancel()
+        listener?.onEditCancelled()
+        requestRefresh()
+    }
+
+    /** 删除日程（PRD FI-011），带二次确认。 */
+    fun requestDelete() {
+        val session = editSession ?: return
+        val event = session.origin ?: return
+        if (editController?.onDelete() == true) {
+            editSession = null
+            return
+        }
+        val title = event.content?.toString()
+            ?: context.getString(R.string.day_timeline_a11y_no_content)
+        val controller = editController
+        if (controller != null) {
+            controller.confirmDelete(context, title) { performDelete(event) }
+        } else {
+            defaultConfirmDelete(title) { performDelete(event) }
+        }
+    }
+
+    private fun defaultConfirmDelete(title: String, onConfirmed: () -> Unit) {
+        android.app.AlertDialog.Builder(this.context)
+            .setTitle(R.string.day_timeline_delete_confirm_title)
+            .setMessage(R.string.day_timeline_delete_confirm_message)
+            .setNegativeButton(R.string.day_timeline_delete_confirm_negative, null)
+            .setPositiveButton(R.string.day_timeline_delete_confirm_positive) { _, _ -> onConfirmed() }
+            .show()
+    }
+
+    private fun performDelete(event: SanitizedEvent) {
+        editSession = null
+        selectedId = null
+        removeEvent(event.id)
+        listener?.onEventDeleted(event.source)
+    }
+
+    /** 是否处于编辑态。 */
+    fun isEditing(): Boolean = editSession != null
+
+    /** 私有扩展：取提交结果的起止范围。 */
+    private fun EditSession.Commit.rangeOrEmpty(): IntRange = when (this) {
+        is EditSession.Commit.Create -> startMinute..endMinute
+        is EditSession.Commit.Modify -> range
+    }
+
+    private fun EditSession.Commit.isCreate(): Boolean = this is EditSession.Commit.Create
+
+    private fun replaceLocally(id: String, range: IntRange) {
+        val updated = events.map {
+            if (it.id == id) it.copy(
+                start = MinuteOfDay.ofMinute(range.first),
+                end = MinuteOfDay.ofMinute(range.last),
+            ) else it
+        }
+        events = updated
+        states = TimeStateResolver.resolveAll(events, nowMinute)
+        relayout()
+    }
+
+    /**
+     * 触摸分发（PRD §8.2 / M4 / AD-04）。
+     *
+     * 判定顺序严格按 §8.2：先看位移是否超过阈值（决定滚动/拖拽），
+     * 再看是否已触发长按（决定编辑态），最后才是点击。
      *
      * ## 关于 lint ClickableViewAccessibility 的豁免
      *
-     * 该检查只在 [onTouchEvent] 的函数体里做**直接**调用扫描，无法穿透
-     * [GestureDetector] 的委托，因此看不到我们在 [gestureDetector] 的
-     * `onSingleTapConfirmed` 中确实调用了 [performClick]。
-     *
-     * 无障碍契约本身是满足的：轻点会经 `onSingleTapConfirmed` → `performClick()`，
-     * 屏幕阅读器可以正常激活。故此处按 §5.2「显式豁免清单」的做法精确豁免本条，
-     * **不是**全局关闭该检查。M4 交互接入后需在真机上复核（Q8）。
+     * 该检查只在 `onTouchEvent` 函数体内做**直接**调用扫描。本实现已不再经
+     * `GestureDetector` 委托，但仍在此精确豁免：命中日程块的点击最终会走到
+     * [performClick]，契约已满足（UF-003）。按 §5.2「显式豁免清单」处理，
+     * **不是**全局关闭该检查。M5 接入无障碍虚拟视图后需在真机复核（Q8）。
      */
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (config.resolvedScrollMode() == ScrollMode.EXTERNAL) {
-            // §8.6：外部滚动模式不消费垂直手势，交给外层容器
-            // 但点击/长按仍需可用，因此交给 GestureDetector 而不主动消费移动
-            return gestureDetector.onTouchEvent(event)
+        val hourHeight = dimens.effectiveHourHeight
+        if (hourHeight <= 0) return false
+        val x = event.x
+        val y = event.y
+        val contentLeft = resolveAxisEnd(width)
+        val contentRight = (width - dimens.endMargin).coerceAtLeast(contentLeft)
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                scroller.forceFinished(true)
+                // 交给 GestureDetector 只为长按超时；其余判定自己做
+                gestureDetector.onTouchEvent(event)
+                val hit = hitTester.hitTest(
+                    x, y, contentLeft, contentRight,
+                    blocks, blockTops, blockHeights,
+                    editing = editIndex(),
+                    editingTop = editTopPx(),
+                    editingHeight = editHeightPx(),
+                    handleVisualRadius = dimens.handleVisualSize / 2,
+                )
+                grabbedHandle = when (hit) {
+                    is HitTester.Hit.TopHandle -> 1
+                    is HitTester.Hit.BottomHandle -> -1
+                    else -> 0
+                }
+                // 记录按下点相对编辑块起点的偏移，避免拖拽时整块跳动
+                downGrabOffset = (minuteAt(y) - (editSession?.startMinute ?: 0))
+                    .coerceIn(-MinuteOfDay.MINUTES_PER_DAY, MinuteOfDay.MINUTES_PER_DAY)
+                gestureArbiter.onDown(x, y, editingTouching = editSession != null)
+                return true
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                gestureArbiter.onMove(x, y, grabbedHandle)
+                when (gestureArbiter.intent) {
+                    GestureArbiter.Intent.DragMove -> {
+                        dragTo(y)
+                        return true
+                    }
+                    GestureArbiter.Intent.DragResizeTop -> {
+                        editSession?.resizeEndTo(
+                            minuteAt(y), dimens.snapMinutes, dimens.minDurationMinutes,
+                        )
+                        maybeStartEdgeScroll(y)
+                        requestRefresh()
+                        return true
+                    }
+                    GestureArbiter.Intent.DragResizeBottom -> {
+                        editSession?.resizeStartTo(
+                            minuteAt(y), dimens.snapMinutes, dimens.minDurationMinutes,
+                        )
+                        maybeStartEdgeScroll(y)
+                        requestRefresh()
+                        return true
+                    }
+                    // §8.6 / E29：外部滚动模式下把手势让给外层容器
+                    GestureArbiter.Intent.Scroll -> return false
+                    else -> return true
+                }
+            }
+
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val intent = gestureArbiter.onUp()
+                grabbedHandle = 0
+                stopEdgeScroll()
+                when (intent) {
+                    // §8.2：已触发长按但全程未移动 → 进入编辑态（原地选中）
+                    GestureArbiter.Intent.LongPress -> {
+                        enterEditByLongPress(x, y, contentLeft, contentRight)
+                        return true
+                    }
+                    GestureArbiter.Intent.Click -> {
+                        handleTap(x, y, contentLeft, contentRight)
+                        return true
+                    }
+                    // 抬起后保留编辑态，等待用户确认或取消（§8.2）
+                    GestureArbiter.Intent.DragMove,
+                    GestureArbiter.Intent.DragResizeTop,
+                    GestureArbiter.Intent.DragResizeBottom,
+                    -> return true
+                    else -> return false
+                }
+            }
         }
-        return gestureDetector.onTouchEvent(event) || handleSelfScroll(event)
+        return super.onTouchEvent(event)
+    }
+
+    /** 长按日程块 → 编辑态（FI-004）。长按空白处**不**进入编辑态（§8.2）。 */
+    private fun enterEditByLongPress(x: Float, y: Float, contentLeft: Int, contentRight: Int) {
+        performClick() // 无障碍激活
+        if (editSession != null) return
+        val hit = hitTester.hitTest(
+            x, y, contentLeft, contentRight,
+            blocks, blockTops, blockHeights,
+            editing = -1, editingTop = 0, editingHeight = 0,
+            handleVisualRadius = dimens.handleVisualSize / 2,
+        )
+        if (hit is HitTester.Hit.Block) {
+            selectedId = hit.block.event.id
+            editSession = EditSession.beginEdit(hit.block.event)
+            listener?.onEventLongClick(hit.block.event.source)
+        }
+        // 命中空白：等同普通点击（§8.2）
+        requestRefresh()
+    }
+
+    private fun editIndex(): Int {
+        val id = editSession?.origin?.id ?: return -1
+        return blocks.indexOfFirst { it.event.id == id }
+    }
+
+    private fun editTopPx(): Int {
+        val s = editSession ?: return 0
+        return dimens.topPadding +
+            Geometry.minuteToOffset(s.startMinute.toFloat(), dimens.effectiveHourHeight).toInt()
+    }
+
+    private fun editHeightPx(): Int {
+        val s = editSession ?: return 0
+        return Geometry.blockHeight(
+            s.startMinute, s.endMinute, dimens.effectiveHourHeight, dimens.blockMinHeight,
+        )
+    }
+
+    /** 视口 y → 当天分钟。 */
+    private fun minuteAt(viewY: Float): Int {
+        val contentY = viewY + scrollOffset - dimens.topPadding
+        return Geometry.offsetToMinute(contentY.toFloat(), dimens.effectiveHourHeight)
+    }
+
+    private fun dragTo(viewY: Float) {
+        val session = editSession ?: return
+        session.moveTo(
+            minuteAt(viewY) - downGrabOffset,
+            dimens.snapMinutes,
+            dimens.minDurationMinutes,
+            dimens.maxDurationMinutes,
+        )
+        requestRefresh()
+        maybeStartEdgeScroll(viewY)
+    }
+
+    /**
+     * 空白处点击 → 新建；点击已有日程 → 选中并上抛点击事件（§8.2）。
+     *
+     * 编辑态下点击外部区域视为取消（FI-010），语义与「取消」完全一致，
+     * 因此同样**不会**发出任何数据变更通知（D3）。
+     */
+    private fun handleTap(x: Float, y: Float, contentLeft: Int, contentRight: Int) {
+        if (editSession != null) {
+            val topInView = editTopPx() - scrollOffset
+            val inside = x >= contentLeft - dimens.endMargin &&
+                x <= contentRight + dimens.endMargin &&
+                y >= topInView - dimens.endMargin &&
+                y <= topInView + editHeightPx() + dimens.endMargin
+            if (!inside) cancelEdit() // FI-010
+            return
+        }
+        val hit = hitTester.hitTest(
+            x, y, contentLeft, contentRight,
+            blocks, blockTops, blockHeights,
+            editing = -1, editingTop = 0, editingHeight = 0,
+            handleVisualRadius = dimens.handleVisualSize / 2,
+        )
+        when (hit) {
+            is HitTester.Hit.Block -> {
+                selectedId = hit.block.event.id
+                listener?.onEventClick(hit.block.event.source)
+            }
+            // FI-005：点击空白进入新建编辑态，默认时长 1 小时
+            HitTester.Hit.Empty -> {
+                if (x >= contentLeft && x <= contentRight) {
+                    editSession = EditSession.beginCreate(
+                        minuteAt(y), dimens.snapMinutes, dimens.defaultNewDurationMinutes,
+                    )
+                }
+            }
+            else -> Unit
+        }
+        requestRefresh()
+    }
+
+    // ---- 边缘自动滚动（FI-014 / §8.4）：跟随**被拖动的块**，而非手指 ----
+
+    private fun maybeStartEdgeScroll(@Suppress("UNUSED_PARAMETER") viewY: Float) {
+        if (!(config.edgeAutoScrollEnabled ?: true)) return
+        if (editSession == null) return
+        val trigger = dimens.edgeScrollTriggerSize
+        val blockTop = editTopPx() - scrollOffset
+        val blockBottom = blockTop + editHeightPx()
+        val delta = when {
+            blockTop < trigger -> -dimens.edgeScrollStepSize
+            blockBottom > height - trigger -> dimens.edgeScrollStepSize
+            else -> 0
+        }
+        edgeScrollDelta = delta
+        if (delta != 0 && !edgeScrollScheduled) {
+            edgeScrollScheduled = true
+            handler.post(edgeScrollRunnable)
+        }
+    }
+
+    private var edgeScrollDelta = 0
+    private var downGrabOffset = 0
+    private val edgeScrollRunnable = object : Runnable {
+        override fun run() {
+            if (editSession == null || edgeScrollDelta == 0) {
+                edgeScrollScheduled = false
+                return
+            }
+            val before = scrollOffset
+            scrollOffset = (scrollOffset + edgeScrollDelta).coerceIn(0, maxScroll())
+            if (scrollOffset != before) {
+                lastRenderSignature = Long.MIN_VALUE
+                invalidate()
+            }
+            handler.postDelayed(this, EDGE_SCROLL_INTERVAL_MS)
+        }
+    }
+
+    private fun stopEdgeScroll() {
+        edgeScrollDelta = 0
+        if (edgeScrollScheduled) {
+            handler.removeCallbacks(edgeScrollRunnable)
+            edgeScrollScheduled = false
+        }
     }
 
     /**
@@ -513,6 +952,7 @@ class DayTimelineView @JvmOverloads constructor(
         }
 
         companion object {
+        /** 边缘自动滚动帧间隔：约 60fps。 */
             @JvmField
             val CREATOR = object : android.os.Parcelable.Creator<SavedState> {
                 override fun createFromParcel(source: android.os.Parcel) = SavedState(source)
@@ -565,6 +1005,9 @@ class DayTimelineView @JvmOverloads constructor(
             ca.get(java.util.Calendar.DAY_OF_YEAR) == cb.get(java.util.Calendar.DAY_OF_YEAR)
     }
 }
+
+/** 边缘自动滚动帧间隔：约 60fps（FI-014）。 */
+private const val EDGE_SCROLL_INTERVAL_MS = 16L
 
 /** 把内部 [Theme] 映射为对外的 [TimelineColors]（供定制方取色）。 */
 private fun Theme.toPublicColors(): TimelineColors = TimelineColors(

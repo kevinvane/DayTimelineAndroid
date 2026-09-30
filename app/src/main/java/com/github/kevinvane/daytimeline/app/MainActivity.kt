@@ -6,6 +6,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.github.kevinvane.daytimeline.library.DayTimelineView
 import com.github.kevinvane.daytimeline.library.api.TimelineConfig
+import com.github.kevinvane.daytimeline.library.api.TimelineListener
+import com.github.kevinvane.daytimeline.library.core.DataIssue
 import com.github.kevinvane.daytimeline.library.core.MinuteOfDay
 import com.github.kevinvane.daytimeline.library.core.TimelineEvent
 
@@ -30,7 +32,41 @@ class MainActivity : AppCompatActivity() {
 
         timeline = findViewById(R.id.timeline)
         timeline.setConfig(TimelineConfig(showTimeSubtitle = true))
+        timeline.listener = object : TimelineListener {
+            override fun onEventClick(event: TimelineEvent) {
+                android.util.Log.i(TAG, "点击 ${event.id}")
+            }
+
+            override fun onEventLongClick(event: TimelineEvent) {
+                android.util.Log.i(TAG, "长按 ${event.id} → 进入编辑态")
+            }
+
+            override fun onEventCreated(range: IntRange) {
+                android.util.Log.i(TAG, "新建 $range")
+            }
+
+            override fun onEventModified(event: TimelineEvent, range: IntRange, hasConflict: Boolean) {
+                android.util.Log.i(TAG, "修改 ${event.id} → $range，冲突=$hasConflict")
+            }
+
+            override fun onEventDeleted(event: TimelineEvent) {
+                android.util.Log.i(TAG, "删除 ${event.id}")
+            }
+
+            // D3：取消只允许用于统计编辑完成率，不得据此改数据
+            override fun onEditCancelled() {
+                android.util.Log.i(TAG, "编辑取消（无数据变更）")
+            }
+
+            override fun onDataIssues(issues: List<DataIssue>) {
+                android.util.Log.w(TAG, "数据异常 ${issues.size} 条")
+            }
+        }
         timeline.submitEvents(SampleEvents.today())
+    }
+
+    companion object {
+        private const val TAG = "DayTimelineDemo"
     }
 }
 
