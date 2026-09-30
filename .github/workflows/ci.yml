@@ -1,0 +1,83 @@
+name: CI
+
+# 门禁顺序与 PRD §12.4 一致：静态检查 → 构建 → 单元测试 → 覆盖率 → 平台规范检查。
+# 任何一步失败即阻断，不提供「跳过」入口——门禁的意义就在于阻断。
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 设置 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # local.properties 被 gitignore，新克隆的仓库没有它（见 AGENTS.md）
+      - name: 配置 Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 授予 Gradle 缓存权限
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: 编译组件库与示例应用
+        run: ./gradlew :library:assembleDebug :app:assembleDebug --stacktrace
+
+      - name: JVM 单元测试
+        run: ./gradlew :library:testDebugUnitTest --stacktrace
+
+      # 核心逻辑覆盖率门禁（PRD T4：≥ 90%）
+      - name: 核心逻辑覆盖率门禁
+        run: ./gradlew :library:verifyCoreCoverage --stacktrace
+
+      # 平台规范检查（PRD T6：0 错误 0 警告）
+      - name: lint
+        run: ./gradlew :library:lintDebug --stacktrace
+
+      - name: 统计测试数量
+        run: |
+          COUNT=$(grep -ho 'tests="[0-9]*"' library/build/test-results/testDebugUnitTest/*.xml \
+            | grep -o '[0-9]*' | paste -sd+ | bc)
+          echo "单元测试总数: $COUNT"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: library/build/reports/jacoco/**
+          retention-days: 7
+
+  # 仪器测试需要设备或模拟器，单独一个 job 便于按需触发
+  instrumented:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          script: ./gradlew :library:connectedDebugAndroidTest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: instrumented-report
+          path: library/build/reports/androidTests/**
+          retention-days: 7
