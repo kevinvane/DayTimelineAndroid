@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DayTimeline 文案。
+
+  PRD FC-003 / D13：组件内不得存在硬编码中文或英文，全部文案走本文件，
+  随系统语言变化。业务方可在自己的资源里覆盖同名项。
+-->
+<resources>
+
+    <!-- ============ 编辑态按钮 ============ -->
+    <string name="day_timeline_action_done">完成</string>
+    <string name="day_timeline_action_cancel">取消</string>
+    <string name="day_timeline_action_delete">删除</string>
+
+    <!-- ============ 删除二次确认（PRD 场景 E / FI-011） ============ -->
+    <string name="day_timeline_delete_confirm_title">删除该日程？</string>
+    <string name="day_timeline_delete_confirm_message">删除后无法恢复。</string>
+    <string name="day_timeline_delete_confirm_positive">删除</string>
+    <string name="day_timeline_delete_confirm_negative">取消</string>
+
+    <!-- ============ 无障碍（Q8 / UF-002 / UF-003） ============ -->
+    <!-- 虚拟节点的动作说明，%1$s 为日程内容 -->
+    <string name="day_timeline_a11y_event">日程，%1$s，%2$s 至 %3$s，%4$s</string>
+    <!-- 无日程内容时的时间轴节点 -->
+    <string name="day_timeline_a11y_grid">时间轴，%1$s</string>
+    <string name="day_timeline_a11y_state_past">已过</string>
+    <string name="day_timeline_a11y_state_ongoing">进行中</string>
+    <string name="day_timeline_a11y_state_upcoming">未开始</string>
+    <string name="day_timeline_a11y_handle_top">调整开始时间</string>
+    <string name="day_timeline_a11y_handle_bottom">调整结束时间</string>
+    <!-- 手柄热区比视觉大得多，读屏需说明这一点 -->
+    <string name="day_timeline_a11y_hint_handle">双击并拖动以调整时间</string>
+    <!-- 未配置显示内容时的占位说明 -->
+    <string name="day_timeline_a11y_no_content">未命名日程</string>
+
+</resources>

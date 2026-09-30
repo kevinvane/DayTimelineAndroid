@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DayTimeline 尺寸规格。
+
+  唯一定义处：PRD §7.2。§19.2 是速查副本，如有不一致以本节为准。
+  组件代码内禁止出现尺寸字面量（T3 / D8 / FC-001），一律经 Dimens 读取本文件。
+  业务方换肤 / 改尺寸只需覆盖同名资源，勿改组件源码。
+-->
+<resources>
+
+    <!-- ============ 网格 ============ -->
+    <!-- 每小时格高：组件的基本纵向单位，外部滚动模式的组件高度由此算出 -->
+    <dimen name="day_timeline_hour_height">56dp</dimen>
+    <!-- 小时格高兜底下限：格高被设成极小值时自动抬升到此值（PRD E17） -->
+    <dimen name="day_timeline_hour_height_min">24dp</dimen>
+    <!-- 顶部留白：00:00 标签上方 -->
+    <dimen name="day_timeline_top_padding">8dp</dimen>
+    <!-- 底部留白：24:00 标签下方 -->
+    <dimen name="day_timeline_bottom_padding">8dp</dimen>
+    <!-- 时间轴区域宽度：左侧时间文字区（RTL 下位于右侧） -->
+    <dimen name="day_timeline_axis_width">56dp</dimen>
+    <!-- 右侧边距：日程块与屏幕右边缘距离 -->
+    <dimen name="day_timeline_end_margin">16dp</dimen>
+    <!-- 刻度线粗细：24 小时共 25 条 -->
+    <dimen name="day_timeline_grid_line_width">1dp</dimen>
+    <!-- 轴标签字号 -->
+    <dimen name="day_timeline_axis_label_size">12sp</dimen>
+    <!-- 当前时间线时间字号：与轴标签是两个独立配置项（PRD §7.2 注） -->
+    <dimen name="day_timeline_now_label_size">12sp</dimen>
+
+    <!-- ============ 日程块 ============ -->
+    <!-- 相邻日程块之间的缝隙，W2 计算列宽时需扣除 -->
+    <dimen name="day_timeline_block_gap">1dp</dimen>
+    <dimen name="day_timeline_block_corner">4dp</dimen>
+    <dimen name="day_timeline_block_padding_horizontal">8dp</dimen>
+    <dimen name="day_timeline_block_padding_vertical">4dp</dimen>
+    <!-- 极短日程的显示保障：低于此值按此值绘制，文字可能不显示 -->
+    <dimen name="day_timeline_block_min_height">20dp</dimen>
+    <!-- 日程块左侧色条宽度 -->
+    <dimen name="day_timeline_block_accent_bar">4dp</dimen>
+    <!-- 日程块描边粗细 -->
+    <dimen name="day_timeline_block_stroke_width">1dp</dimen>
+
+    <!-- ============ 当前时间线 ============ -->
+    <dimen name="day_timeline_now_dot_diameter">6dp</dimen>
+    <dimen name="day_timeline_now_line_width">2dp</dimen>
+
+    <!-- ============ 编辑态 ============ -->
+    <!-- 视觉直径 6dp，但触摸热区必须 48x48dp（UF-001 / FI-015） -->
+    <dimen name="day_timeline_handle_visual">6dp</dimen>
+    <dimen name="day_timeline_handle_touch">48dp</dimen>
+    <!-- 编辑块与被编辑日程的视觉描边宽度 -->
+    <dimen name="day_timeline_edit_stroke_width">2dp</dimen>
+
+    <!-- ============ 触摸与滚动 ============ -->
+    <!-- 最小触摸目标：所有可点元素的触摸热区不得小于此值 -->
+    <dimen name="day_timeline_min_touch_target">48dp</dimen>
+    <!-- 边缘自动滚动触发区：视口上下各 48dp -->
+    <dimen name="day_timeline_edge_scroll_trigger">48dp</dimen>
+    <!-- 边缘自动滚动单次量：8dp 小步长更跟手 -->
+    <dimen name="day_timeline_edge_scroll_step">8dp</dimen>
+    <!-- 首次定位时，当前时间向上偏移约三分之一屏的余量 -->
+    <dimen name="day_timeline_first_locate_lead_in">48dp</dimen>
+
+    <!-- ============ 非尺寸类默认值（PRD §7.2 尾部） ============ -->
+    <!-- 吸附步长：15 分钟。设为 0 表示关闭吸附，但保留最短/最长时长兜底 -->
+    <integer name="day_timeline_snap_minutes">15</integer>
+    <integer name="day_timeline_min_duration_minutes">5</integer>
+    <integer name="day_timeline_max_duration_minutes">1440</integer>
+    <integer name="day_timeline_default_new_duration_minutes">60</integer>
+    <!-- 当前时间线刷新间隔：30 秒（再短对用户无感知，仅徒增耗电） -->
+    <integer name="day_timeline_now_refresh_seconds">30</integer>
+    <!-- 拖拽触发阈值 = 系统标准阈值 * 该系数（0.3 倍，兼顾灵敏度与防误触） -->
+    <item name="day_timeline_drag_threshold_ratio" format="float" type="dimen">0.3</item>
+
+</resources>

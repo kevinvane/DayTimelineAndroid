@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DayTimeline 语义色项 —— 浅色取值。
+
+  PRD §7.3 定义语义色项，本文件与 values-night/colors.xml 提供取值，共 17 项。
+  强制要求（§7.3）：
+    ① 组件代码内不得出现色值字面量，只能引用语义色项；
+    ② 深色模式适配仅通过替换资源取值完成，不允许编写分支逻辑。
+  因此两个文件必须声明完全相同的色项名称，缺一即在运行期崩溃。
+
+  ⚠️ 取值来源：Material 3 baseline 调色板（与 app 主题 Theme.Material3.DayNight.NoActionBar 同源）。
+     M0 设计定稿尚未完成，此处为工程占位基线，非设计终稿。
+     定稿后只改本文件与 values-night/colors.xml 的取值，不动组件代码。
+     详见 docs/DayTimeline-技术方案与实施计划.md 决策 AD-12。
+-->
+<resources>
+
+    <!-- 1 背景色：整体底色、标签遮挡矩形。必须为纯色（§7.5 R3 依赖） -->
+    <color name="day_timeline_background">#FEF7FF</color>
+
+    <!-- 2 刻度线色：小时分隔线。要求弱于文字 -->
+    <color name="day_timeline_grid_line">#E7E0EC</color>
+
+    <!-- 3 轴标签文字色：时间轴上的时间文字 -->
+    <color name="day_timeline_axis_label">#49454F</color>
+
+    <!-- 4 当前时间线色：红线、圆点、当前时间文字。要求高辨识度 -->
+    <color name="day_timeline_now">#B3261E</color>
+
+    <!-- 5 日程块底色（已过）：弱化 -->
+    <color name="day_timeline_block_bg_past">#F0EDF2</color>
+    <!-- 6 日程块底色（进行中）：突出 -->
+    <color name="day_timeline_block_bg_ongoing">#EADDFF</color>
+    <!-- 7 日程块底色（未到）：常规 -->
+    <color name="day_timeline_block_bg_upcoming">#E7E0EC</color>
+
+    <!-- 8 日程块文字色（已过）：低对比度，体现已失效 -->
+    <color name="day_timeline_block_text_past">#79747E</color>
+    <!-- 9 日程块文字色（进行中/未到）：正常对比度 -->
+    <color name="day_timeline_block_text">#1D1B20</color>
+
+    <!-- 10 日程块色条色（已过）：弱化 -->
+    <color name="day_timeline_block_accent_past">#CAC4D0</color>
+    <!-- 11 日程块色条色（进行中/未到）：高辨识度 -->
+    <color name="day_timeline_block_accent">#6750A4</color>
+
+    <!-- 12 日程块描边色：极淡 -->
+    <color name="day_timeline_block_stroke">#E7E0EC</color>
+
+    <!-- 13 选中态色：被选中日程块的强调，要求与常规态明显可辨 -->
+    <color name="day_timeline_selected">#6750A4</color>
+
+    <!-- 14 编辑层底色：编辑浮层背景。要求半透明（alpha 已含在取值内，深色适配不靠代码分支） -->
+    <color name="day_timeline_edit_layer_bg">#66EADDFF</color>
+    <!-- 15 编辑层文字色：编辑浮层内容文字，与底色强对比 -->
+    <color name="day_timeline_edit_layer_text">#1D1B20</color>
+    <!-- 16 编辑层时间文字色：编辑态起止时间 -->
+    <color name="day_timeline_edit_layer_time">#6750A4</color>
+    <!-- 17 编辑手柄色：上下手柄圆点。高辨识度 -->
+    <color name="day_timeline_edit_handle">#6750A4</color>
+
+</resources>

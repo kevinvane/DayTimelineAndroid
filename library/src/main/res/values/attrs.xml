@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DayTimeline 界面配置项。
+
+  PRD §10.1 / FC-005：每一项都必须同时支持「界面配置」与「代码配置」，
+  且两者一一对应、效果完全一致。本文件是「界面配置」这一侧的入口；
+  另一侧是 TimelineConfig（代码配置）。改一处请同步另一处。
+
+  所有默认值均引用 @dimen / @color / @integer，不在本文件写死数值，
+  以保证 §7.2（尺寸唯一定义处）与 §7.3（语义色项）仍是唯一来源。
+-->
+<resources>
+
+    <declare-styleable name="DayTimelineView">
+
+        <!-- ============ 布局尺寸（对应 §7.2） ============ -->
+        <attr name="dtHourHeight" format="dimension" />
+        <attr name="dtAxisWidth" format="dimension" />
+        <attr name="dtTopPadding" format="dimension" />
+        <attr name="dtBottomPadding" format="dimension" />
+        <attr name="dtEndMargin" format="dimension" />
+        <attr name="dtGridLineWidth" format="dimension" />
+        <attr name="dtAxisLabelSize" format="dimension" />
+        <!-- 与 dtAxisLabelSize 是两个独立配置项，可分别调整（§7.2 注） -->
+        <attr name="dtNowLabelSize" format="dimension" />
+
+        <!-- ============ 日程块外观 ============ -->
+        <attr name="dtBlockGap" format="dimension" />
+        <attr name="dtBlockCorner" format="dimension" />
+        <attr name="dtBlockPaddingHorizontal" format="dimension" />
+        <attr name="dtBlockPaddingVertical" format="dimension" />
+        <attr name="dtBlockMinHeight" format="dimension" />
+        <attr name="dtBlockAccentBarWidth" format="dimension" />
+        <attr name="dtBlockStrokeWidth" format="dimension" />
+        <!-- 是否在块内显示时间副标题 -->
+        <attr name="dtShowTimeSubtitle" format="boolean" />
+
+        <!-- ============ 当前时间线 ============ -->
+        <attr name="dtShowNowIndicator" format="boolean" />
+        <attr name="dtNowIndicatorTodayOnly" format="boolean" />
+        <attr name="dtNowDotDiameter" format="dimension" />
+        <attr name="dtNowLineWidth" format="dimension" />
+        <!-- 首次显示是否自动定位到当前时间 -->
+        <attr name="dtAutoLocateOnFirstShow" format="boolean" />
+
+        <!-- ============ 时间行为 ============ -->
+        <attr name="dtTimeFormat" format="enum">
+            <!-- 跟随系统（默认） -->
+            <enum name="system" value="0" />
+            <enum name="h24" value="1" />
+            <enum name="h12" value="2" />
+        </attr>
+        <!-- 吸附步长（分钟），0 表示关闭吸附但保留最短/最长时长兜底 -->
+        <attr name="dtSnapMinutes" format="integer" />
+        <attr name="dtMinDurationMinutes" format="integer" />
+        <attr name="dtMaxDurationMinutes" format="integer" />
+        <attr name="dtDefaultNewDurationMinutes" format="integer" />
+
+        <!-- ============ 滚动行为 ============ -->
+        <attr name="dtScrollMode" format="enum">
+            <!-- 组件自身滚动（默认）：高度填满父容器 -->
+            <enum name="self" value="0" />
+            <!-- 外部容器滚动：高度须等于全天内容高度（§8.6） -->
+            <enum name="external" value="1" />
+        </attr>
+        <attr name="dtEdgeAutoScrollEnabled" format="boolean" />
+        <attr name="dtEdgeScrollTriggerSize" format="dimension" />
+        <attr name="dtEdgeScrollStepSize" format="dimension" />
+        <!-- 拖拽触发阈值 = 系统标准阈值 × 该系数 -->
+        <attr name="dtDragThresholdRatio" format="float" />
+
+        <!-- ============ 编辑交互 ============ -->
+        <attr name="dtShowEditActions" format="boolean" />
+        <attr name="dtShowDeleteAction" format="boolean" />
+        <attr name="dtEditHandleVisualSize" format="dimension" />
+        <!-- 触摸热区不得小于 48dp（UF-001），业务方只应调大不应调小 -->
+        <attr name="dtEditHandleTouchSize" format="dimension" />
+        <attr name="dtMinTouchTarget" format="dimension" />
+
+        <!-- ============ 颜色：17 项语义色项（§7.3） ============ -->
+        <attr name="dtColorBackground" format="color" />
+        <attr name="dtColorGridLine" format="color" />
+        <attr name="dtColorAxisLabel" format="color" />
+        <attr name="dtColorNow" format="color" />
+        <attr name="dtColorBlockBgPast" format="color" />
+        <attr name="dtColorBlockBgOngoing" format="color" />
+        <attr name="dtColorBlockBgUpcoming" format="color" />
+        <attr name="dtColorBlockTextPast" format="color" />
+        <attr name="dtColorBlockText" format="color" />
+        <attr name="dtColorBlockAccentPast" format="color" />
+        <attr name="dtColorBlockAccent" format="color" />
+        <attr name="dtColorBlockStroke" format="color" />
+        <attr name="dtColorSelected" format="color" />
+        <attr name="dtColorEditLayerBg" format="color" />
+        <attr name="dtColorEditLayerText" format="color" />
+        <attr name="dtColorEditLayerTime" format="color" />
+        <attr name="dtColorEditHandle" format="color" />
+
+    </declare-styleable>
+
+    <!--
+      第二至四层定制（D7 / §10.2）需要传入自定义绘制器与交互接管器。
+      这些是接口类型，不能用 XML 声明，因此只在代码侧设置（TimelineConfig.custom*）。
+      此处仅保留占位说明，避免使用者误以为 XML 里能配。
+    -->
+
+</resources>

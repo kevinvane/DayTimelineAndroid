@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DayTimeline 语义色项 —— 深色取值。
+
+  ⚠️ 必须与 values/colors.xml 声明完全相同的 17 个色项名称。
+     §7.3 强制要求：深色模式适配仅通过替换资源取值完成，不允许编写分支逻辑。
+     因此「少写一个名字」= 运行期找不到资源而崩溃，请用 diff 校对。
+-->
+<resources>
+
+    <!-- 1 背景色 -->
+    <color name="day_timeline_background">#141218</color>
+
+    <!-- 2 刻度线色：仍可见但弱于文字 -->
+    <color name="day_timeline_grid_line">#49454F</color>
+
+    <!-- 3 轴标签文字色：提亮，保证可读 -->
+    <color name="day_timeline_axis_label">#CAC4D0</color>
+
+    <!-- 4 当前时间线色：提亮，保证可读 -->
+    <color name="day_timeline_now">#F2B8B5</color>
+
+    <!-- 5 日程块底色（已过）：弱化 -->
+    <color name="day_timeline_block_bg_past">#211F26</color>
+    <!-- 6 日程块底色（进行中）：突出 -->
+    <color name="day_timeline_block_bg_ongoing">#4F378B</color>
+    <!-- 7 日程块底色（未到）：常规 -->
+    <color name="day_timeline_block_bg_upcoming">#49454F</color>
+
+    <!-- 8 日程块文字色（已过）：低对比度 -->
+    <color name="day_timeline_block_text_past">#938F99</color>
+    <!-- 9 日程块文字色（进行中/未到）：提亮 -->
+    <color name="day_timeline_block_text">#E6E0E9</color>
+
+    <!-- 10 日程块色条色（已过）：弱化 -->
+    <color name="day_timeline_block_accent_past">#49454F</color>
+    <!-- 11 日程块色条色（进行中/未到）：提亮 -->
+    <color name="day_timeline_block_accent">#D0BCFF</color>
+
+    <!-- 12 日程块描边色：微亮 -->
+    <color name="day_timeline_block_stroke">#49454F</color>
+
+    <!-- 13 选中态色 -->
+    <color name="day_timeline_selected">#D0BCFF</color>
+
+    <!-- 14 编辑层底色：半透明 -->
+    <color name="day_timeline_edit_layer_bg">#664F378B</color>
+    <!-- 15 编辑层文字色 -->
+    <color name="day_timeline_edit_layer_text">#E6E0E9</color>
+    <!-- 16 编辑层时间文字色：提亮 -->
+    <color name="day_timeline_edit_layer_time">#D0BCFF</color>
+    <!-- 17 编辑手柄色：提亮 -->
+    <color name="day_timeline_edit_handle">#D0BCFF</color>
+
+</resources>
