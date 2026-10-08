@@ -39,6 +39,8 @@
         <!-- ============ 当前时间线 ============ -->
         <attr name="dtShowNowIndicator" format="boolean" />
         <attr name="dtNowIndicatorTodayOnly" format="boolean" />
+        <!-- 当前时间文字覆盖重叠的整点轴标签（默认 true） -->
+        <attr name="dtNowIndicatorSkipOverlappingHourLabel" format="boolean" />
         <attr name="dtNowDotDiameter" format="dimension" />
         <attr name="dtNowLineWidth" format="dimension" />
         <!-- 首次显示是否自动定位到当前时间 -->

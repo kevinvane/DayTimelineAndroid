@@ -55,12 +55,15 @@ internal object DefaultGridPainter : GridPainter {
                 } else {
                     y + context.hourHeight / 2
                 }
-                canvas.drawText(
-                    formatHour(hour),
-                    (context.axisAreaEnd - context.gridLineWidth).toFloat(),
-                    textY.toFloat(),
-                    defaultPaints.axisLabel,
-                )
+                // 轴标签文字带与红字/红线文字带重叠时，跳过该轴标签，红字覆盖之（§7.6）
+                if (!(context.skipOverlappingHourLabel && overlapsNowLabel(textY, y, context, defaultPaints))) {
+                    canvas.drawText(
+                        formatHour(hour),
+                        (context.axisAreaEnd - context.gridLineWidth).toFloat(),
+                        textY.toFloat(),
+                        defaultPaints.axisLabel,
+                    )
+                }
             }
         }
 
@@ -69,18 +72,77 @@ internal object DefaultGridPainter : GridPainter {
             defaultPaints.nowLabel.color = colors.now
             defaultPaints.nowLabel.textAlign = Paint.Align.RIGHT
             canvas.drawText(
-                formatHour(context.nowMinute / MinuteOfDay.MINUTES_PER_HOUR),
+                formatNow(context.nowMinute),
                 (context.axisAreaEnd - context.gridLineWidth).toFloat(),
-                y.toFloat(),
+                // 红字必须与红线+圆点同一「时刻」对齐——文字垂直居中于红线 y
+                y - (defaultPaints.nowLabel.fontMetrics.ascent + defaultPaints.nowLabel.fontMetrics.descent) / 2f,
                 defaultPaints.nowLabel,
             )
         }
+    }
+
+    /**
+     * 当前时间线前景（圆点 + 2dp 红线）。§7.6：
+     * 必须画在日程块**之上**，否则会被块背景盖住。
+     * 由 [DayTimelineView] 在块层之后调用，网格层 [paint] 只画时间文字。
+     */
+    fun paintNowForeground(
+        canvas: Canvas,
+        context: GridContext,
+        colors: TimelineColors,
+        defaultPaints: GridPainter.Paints,
+    ) {
+        if (!context.showNowIndicator) return
+        val y = context.minuteToY(context.nowMinute)
+        val line = defaultPaints.nowLine
+        if (line != null) {
+            line.color = colors.now
+            line.strokeWidth = context.nowLineWidth.toFloat()
+            canvas.drawLine(
+                context.axisAreaEnd.toFloat(), y.toFloat(),
+                context.contentEnd.toFloat(), y.toFloat(), line,
+            )
+        }
+        val dot = defaultPaints.nowDot
+        if (dot != null) {
+            dot.color = colors.now
+            canvas.drawCircle(
+                context.axisAreaEnd.toFloat(), y.toFloat(),
+                context.nowDotDiameter / 2f, dot,
+            )
+        }
+    }
+
+    /** 某轴标签基线 textY 是否与红字文字带重叠。 */
+    private fun overlapsNowLabel(
+        textY: Int,
+        gridlineY: Int,
+        context: GridContext,
+        defaultPaints: GridPainter.Paints,
+    ): Boolean {
+        if (!context.showNowIndicator) return false
+        val aFm = defaultPaints.axisLabel.fontMetrics
+        val nFm = defaultPaints.nowLabel.fontMetrics
+        val axisTop = textY + aFm.ascent
+        val axisBottom = textY + aFm.descent
+        val redY = context.minuteToY(context.nowMinute)
+        val nowBaseline = redY - (nFm.ascent + nFm.descent) / 2f
+        val nowTop = nowBaseline + nFm.ascent
+        val nowBottom = nowBaseline + nFm.descent
+        return axisTop < nowBottom && nowTop < axisBottom
     }
 
     /** 网格内的时间文字统一走 24 小时制；12 小时制由日程块副标题体现（FC-004）。 */
     private fun formatHour(hour: Int): String {
         val h = hour % MinuteOfDay.HOURS_PER_DAY
         return if (h < 10) "0$h:00" else "$h:00"
+    }
+
+    /** 当前时间文字：「几点几分」（§7.6），不能只显示整点——15:49 显示成 15:00 会误导。 */
+    private fun formatNow(minuteOfDay: Int): String {
+        val h = minuteOfDay / MinuteOfDay.MINUTES_PER_HOUR
+        val m = minuteOfDay % MinuteOfDay.MINUTES_PER_HOUR
+        return "${if (h < 10) "0$h" else h}:${if (m < 10) "0$m" else m}"
     }
 }
 

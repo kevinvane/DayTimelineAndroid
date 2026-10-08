@@ -67,6 +67,8 @@ internal data class Theme(
         val nowLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = dimens.nowLabelSize.toFloat()
         }
+        val nowLine = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        val nowDot = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         val blockBackground = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
         }

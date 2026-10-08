@@ -31,6 +31,13 @@ class GridContext {
     var showNowIndicator = false
     var nowMinute = 0
 
+    /** 当前时间线圆点直径（px）、红线粗细（px）（§7.6）。 */
+    var nowDotDiameter = 0
+    var nowLineWidth = 0
+
+    /** 当前时间文字带重叠整点轴标签时跳过该轴标签（默认 true）。 */
+    var skipOverlappingHourLabel = true
+
     /**
      * 标签显示密度：1 = 每小时都显示，2 = 隔 2 小时，3 = 隔 3 小时。
      * 字体放大时自动降密度（PRD E14），但刻度线始终完整。
@@ -95,6 +102,10 @@ interface GridPainter {
         val gridLine: Paint,
         val axisLabel: Paint,
         val nowLabel: Paint,
+        /** 当前时间线（红线）；为 null 时默认绘制方不画线。 */
+        val nowLine: Paint? = null,
+        /** 当前时间线圆点；为 null 时默认绘制方不画点。 */
+        val nowDot: Paint? = null,
     )
 }
 

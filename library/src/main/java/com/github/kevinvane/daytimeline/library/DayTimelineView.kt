@@ -151,7 +151,7 @@ class DayTimelineView @JvmOverloads constructor(
     private val blockContext = BlockContext()
 
     /** 复用的 Paints 包装（§12.1：不在 onDraw 里分配对象）。 */
-    private var gridPaints = GridPainter.Paints(paints.gridLine, paints.axisLabel, paints.nowLabel)
+    private var gridPaints = GridPainter.Paints(paints.gridLine, paints.axisLabel, paints.nowLabel, nowLine = paints.nowLine, nowDot = paints.nowDot)
     private var blockPaints = EventBlockPainter.Paints(
         paints.blockBackground, paints.blockText, paints.blockAccent, paints.blockStroke,
     )
@@ -210,7 +210,7 @@ class DayTimelineView @JvmOverloads constructor(
         dimens = Dimens.resolve(context, config)
         paints = buildPaints()
         colors = dimens.theme.toPublicColors()
-        gridPaints = GridPainter.Paints(paints.gridLine, paints.axisLabel, paints.nowLabel)
+        gridPaints = GridPainter.Paints(paints.gridLine, paints.axisLabel, paints.nowLabel, nowLine = paints.nowLine, nowDot = paints.nowDot)
         blockPaints = EventBlockPainter.Paints(
             paints.blockBackground, paints.blockText, paints.blockAccent, paints.blockStroke,
         )
@@ -363,6 +363,9 @@ class DayTimelineView @JvmOverloads constructor(
             gridLineWidth = dimens.gridLineWidth
             showNowIndicator = shouldShowNow()
             nowMinute = this@DayTimelineView.nowMinute
+            nowDotDiameter = dimens.nowDotDiameter
+            nowLineWidth = dimens.nowLineWidth
+            skipOverlappingHourLabel = config.nowIndicatorSkipOverlappingHourLabel ?: true
             labelStep = labelStepFor(fontScaleOf())
         }
         (gridPainter ?: DefaultGridPainter).paint(canvas, gridContext, colors, gridPaints)
@@ -403,6 +406,12 @@ class DayTimelineView @JvmOverloads constructor(
                 tooShortForText = blockH < dimens.blockMinHeight
             }
             painter.paint(canvas, blockContext, colors, blockPaints)
+        }
+
+        // §7.6：当前时间线压在日程块之上（网格层画的只是时间文字，红线/圆点在此画；
+        // 业务方自定义 GridPainter 时由其自行决定是否绘制）
+        if (gridPainter == null) {
+            DefaultGridPainter.paintNowForeground(canvas, gridContext, colors, gridPaints)
         }
 
         drawEditLayer(canvas, contentLeft, contentRight)

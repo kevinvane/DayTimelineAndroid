@@ -71,6 +71,8 @@ data class TimelineConfig(
     // ---- 当前时间线 ----
     val showNowIndicator: Boolean? = null,
     val nowIndicatorTodayOnly: Boolean? = null,
+    /** 当前时间文字带重叠整点轴标签时跳过之（默认开启）。 */
+    val nowIndicatorSkipOverlappingHourLabel: Boolean? = null,
     val nowDotDiameter: Int? = null,
     val nowLineWidth: Int? = null,
     val autoLocateOnFirstShow: Boolean? = null,
@@ -167,6 +169,7 @@ data class TimelineConfig(
 
         showNowIndicator = other.showNowIndicator ?: showNowIndicator,
         nowIndicatorTodayOnly = other.nowIndicatorTodayOnly ?: nowIndicatorTodayOnly,
+        nowIndicatorSkipOverlappingHourLabel = other.nowIndicatorSkipOverlappingHourLabel ?: nowIndicatorSkipOverlappingHourLabel,
         nowDotDiameter = other.nowDotDiameter ?: nowDotDiameter,
         nowLineWidth = other.nowLineWidth ?: nowLineWidth,
 
