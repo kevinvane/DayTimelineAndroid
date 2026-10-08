@@ -28,16 +28,29 @@ class DayTimelineViewTest {
     private val context: Context
         get() = InstrumentationRegistry.getInstrumentation().targetContext
 
+    /**
+     * 在主线程构造 View。
+     *
+     * View 构造会创建 GestureDetector → Handler，而 Instrumentation 的测试线程没有
+     * `Looper.prepare()`，直接 new 会抛
+     * `RuntimeException: Can't create handler inside thread ...`。
+     */
+    private fun newView(): DayTimelineView {
+        var view: DayTimelineView? = null
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { view = DayTimelineView(context) }
+        return view!!
+    }
+
     /** 构造不得抛异常——这正是上一轮真机崩溃的场景。 */
     @Test
     fun constructsWithoutCrash() {
-        assertNotNull(DayTimelineView(context))
+        assertNotNull(newView())
     }
 
     /** 默认配置下应能完成测量与绘制，且真的画出了东西。 */
     @Test
     fun defaultConfigMeasuresAndDraws() {
-        val view = DayTimelineView(context)
+        val view = newView()
         measureAndLayout(view, 320, 480)
 
         val bitmap = Bitmap.createBitmap(320, 480, Bitmap.Config.ARGB_8888)
@@ -48,7 +61,7 @@ class DayTimelineViewTest {
     /** 代码配置应真正生效（FC-005「代码配置」侧）。 */
     @Test
     fun codeConfigIsApplied() {
-        val view = DayTimelineView(context)
+        val view = newView()
         view.setConfig(TimelineConfig(hourHeight = 100))
         assertEquals(100, readDimensInt(view, "effectiveHourHeight"))
     }
@@ -61,7 +74,7 @@ class DayTimelineViewTest {
      */
     @Test
     fun setConfigMergesInsteadOfReplacing() {
-        val view = DayTimelineView(context)
+        val view = newView()
         view.setConfig(TimelineConfig(hourHeight = 100, axisWidth = 77))
         // 第二次只改一个字段
         view.setConfig(TimelineConfig(blockCorner = 9))
@@ -74,7 +87,7 @@ class DayTimelineViewTest {
     /** 触摸热区不得小于 48dp（Q10 / UF-001 / FI-015）。 */
     @Test
     fun touchHotAreaIsAtLeast48dp() {
-        val view = DayTimelineView(context)
+        val view = newView()
         val fortyEightDp = TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP, 48f, context.resources.displayMetrics,
         ).toInt()
@@ -92,7 +105,7 @@ class DayTimelineViewTest {
     /** 手柄视觉尺寸允许小于热区（§7.2：视觉 6dp / 热区 48dp）。 */
     @Test
     fun handleVisualIsSmallerThanHotArea() {
-        val view = DayTimelineView(context)
+        val view = newView()
         assertTrue(
             "手柄视觉直径应小于热区",
             readDimensInt(view, "handleVisualSize") < readDimensInt(view, "handleTouchSize"),
@@ -102,7 +115,7 @@ class DayTimelineViewTest {
     /** 外部滚动模式下高度应等于全天内容高度（§8.6 高度约定）。 */
     @Test
     fun externalScrollModeUsesFullContentHeight() {
-        val view = DayTimelineView(context)
+        val view = newView()
         view.setConfig(TimelineConfig(scrollMode = ScrollMode.EXTERNAL))
         measureAndLayout(view, 320, View.MeasureSpec.UNSPECIFIED)
 
@@ -115,7 +128,7 @@ class DayTimelineViewTest {
     /** 格高被设成极小值时应兜底而非崩溃（PRD E17）。 */
     @Test
     fun tinyHourHeightIsFloored() {
-        val view = DayTimelineView(context)
+        val view = newView()
         view.setConfig(TimelineConfig(hourHeight = 1))
         assertTrue(
             "极小格高应被抬升到可显示的最小值",
@@ -143,8 +156,13 @@ class DayTimelineViewTest {
         val dimensField = DayTimelineView::class.java.getDeclaredField("dimens")
             .apply { isAccessible = true }
         val dimens = dimensField.get(view)!!
-        val target = dimens.javaClass.getDeclaredField(name).apply { isAccessible = true }
-        return (target.get(dimens) as Number).toInt()
+        val cls = dimens.javaClass
+        val field = runCatching { cls.getDeclaredField(name) }.getOrNull()
+        if (field != null) return (field.apply { isAccessible = true }.get(dimens) as Number).toInt()
+        // effectiveHourHeight 是计算属性，只有 getter 没有字段
+        val getter = cls.getDeclaredMethod("get" + name.replaceFirstChar { it.uppercase() })
+            .apply { isAccessible = true }
+        return (getter.invoke(dimens) as Number).toInt()
     }
 
     private fun hasNonTransparentPixel(bitmap: Bitmap): Boolean {

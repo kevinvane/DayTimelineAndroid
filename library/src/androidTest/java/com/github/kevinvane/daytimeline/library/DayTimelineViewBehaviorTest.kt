@@ -41,12 +41,16 @@ class DayTimelineViewBehaviorTest {
 
     @Before
     fun setUp() {
-        view = DayTimelineView(context)
-        view.measure(
-            View.MeasureSpec.makeMeasureSpec(WIDTH, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(HEIGHT, View.MeasureSpec.EXACTLY),
-        )
-        view.layout(0, 0, WIDTH, HEIGHT)
+        // View 构造会创建 GestureDetector → Handler，必须在主线程（Looper 已 prepare），
+        // 否则抛 "Can't create handler inside thread ... that has not called Looper.prepare()"
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            view = DayTimelineView(context)
+            view.measure(
+                View.MeasureSpec.makeMeasureSpec(WIDTH, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(HEIGHT, View.MeasureSpec.EXACTLY),
+            )
+            view.layout(0, 0, WIDTH, HEIGHT)
+        }
     }
 
     /**
@@ -64,6 +68,8 @@ class DayTimelineViewBehaviorTest {
 
         val textSized = mutableListOf<Pair<String, Float>>()
         paints.javaClass.declaredFields.forEach { f ->
+            // Paints 声明在 internal 嵌套类中，字段非 public，必须逐个打开访问权限
+            f.isAccessible = true
             val value = f.get(paints)
             if (value is android.graphics.Paint) {
                 val name = f.name
@@ -256,7 +262,13 @@ class DayTimelineViewBehaviorTest {
     private fun readInt(name: String): Int {
         val f = DayTimelineView::class.java.getDeclaredField("dimens").apply { isAccessible = true }
         val d = f.get(view)!!
-        return (d.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(d) as Number).toInt()
+        val cls = d.javaClass
+        val field = runCatching { cls.getDeclaredField(name) }.getOrNull()
+        if (field != null) return (field.apply { isAccessible = true }.get(d) as Number).toInt()
+        // contentHeight / effectiveHourHeight 是计算属性，只有 getter 没有字段
+        val getter = cls.getDeclaredMethod("get" + name.replaceFirstChar { it.uppercase() })
+            .apply { isAccessible = true }
+        return (getter.invoke(d) as Number).toInt()
     }
 
     private companion object {
