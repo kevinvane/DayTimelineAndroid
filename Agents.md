@@ -13,7 +13,7 @@
 ## 需求与技术方案来源
 
 - `docs/DayTimeline-产品与需求文档.md`（PRD，v1.1，1225 行，UTF-8 中文，状态：待评审）——**唯一需求来源，动手前先读它。**
-- `docs/DayTimeline-技术方案与实施计划.md`（v0.3 草案）——架构决策 AD-01~AD-18、M0–M6 任务拆解、测试与门禁落地、实施进度、开放问题。**PRD §1.2 把架构与实现方案排除在外，这两份要配套读。**
+- `docs/DayTimeline-技术方案与实施计划.md`（v0.4 草案）——架构决策 AD-01~AD-20、M0–M6 任务拆解、测试与门禁落地、实施进度、开放问题。**PRD §1.2 把架构与实现方案排除在外，这两份要配套读。**
 
 读取注意：两个文件都是 UTF-8 中文，**PowerShell 控制台会显示成乱码**——用 read 工具读，或先设 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`。
 
@@ -70,6 +70,10 @@ PRD 中最该记住的几条：
   详见 `dimens.xml` 内的警示注释与技术方案 AD-15。
 - **`res.getDimension()` 返回的已是 px**，不要再套一层 `TypedValue.applyDimension`，
   否则 density 被乘两次（字号在 density=3 设备上放大三倍）。见 AD-16。
+- **凡是用 `Paint` 绘制文字，都要显式 `textSize`**——默认值是 12 **原始像素**不是 12sp。
+  曾因 `blockText` 漏设，真机上块内文字小到看不见。见 AD-19。
+- **手势"判定"与"执行"必须一起实现**。曾出现 arbiter 正确判定出滚动意图，
+  回调里却只 `return false`，拖拽滚动根本没写，结果只能看到一屏。见 AD-20。
 
 ## 常用命令
 

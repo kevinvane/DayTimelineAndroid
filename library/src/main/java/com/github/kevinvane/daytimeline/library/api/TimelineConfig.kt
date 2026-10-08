@@ -65,6 +65,7 @@ data class TimelineConfig(
     val blockMinHeight: Int? = null,
     val blockAccentBarWidth: Int? = null,
     val blockStrokeWidth: Int? = null,
+    val blockTextSize: Int? = null,
     val showTimeSubtitle: Boolean? = null,
 
     // ---- 当前时间线 ----
@@ -161,6 +162,7 @@ data class TimelineConfig(
         blockMinHeight = other.blockMinHeight ?: blockMinHeight,
         blockAccentBarWidth = other.blockAccentBarWidth ?: blockAccentBarWidth,
         blockStrokeWidth = other.blockStrokeWidth ?: blockStrokeWidth,
+        blockTextSize = other.blockTextSize ?: blockTextSize,
         showTimeSubtitle = other.showTimeSubtitle ?: showTimeSubtitle,
 
         showNowIndicator = other.showNowIndicator ?: showNowIndicator,

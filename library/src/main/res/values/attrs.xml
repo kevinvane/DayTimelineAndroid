@@ -32,6 +32,7 @@
         <attr name="dtBlockMinHeight" format="dimension" />
         <attr name="dtBlockAccentBarWidth" format="dimension" />
         <attr name="dtBlockStrokeWidth" format="dimension" />
+        <attr name="dtBlockTextSize" format="dimension" />
         <!-- 是否在块内显示时间副标题 -->
         <attr name="dtShowTimeSubtitle" format="boolean" />
 

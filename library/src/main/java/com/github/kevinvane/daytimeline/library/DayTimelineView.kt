@@ -96,6 +96,11 @@ class DayTimelineView @JvmOverloads constructor(
     private var scrollOffset = 0
     private var hasLocatedFirstTime = false
 
+    /** 拖拽滚动的状态（FI-001）。 */
+    private var lastScrollTouchY = 0f
+    private var parentDisallowRequested = false
+    private var lastVelocityTracker: android.view.VelocityTracker? = null
+
     /** 绘制签名：只有它变化才真正 invalidate（AD-06 / D17）。 */
     private var lastRenderSignature: Long = Long.MIN_VALUE
 
@@ -659,14 +664,68 @@ class DayTimelineView @JvmOverloads constructor(
     }
 
     /**
-     * 触摸分发（PRD §8.2 / M4 / AD-04）。
+     * 拖拽滚动（PRD FI-001 自身滚动模式）。
      *
-     * 判定顺序严格按 §8.2：先看位移是否超过阈值（决定滚动/拖拽），
+     * 手指上移 → 内容上移 → `scrollOffset` 增大。用**增量**而非绝对值，
+     * 这样即使某一帧事件丢失也不会跳位。
+     *
+     * §8.5：边界回弹关闭，因此直接钳制而非交给 `OverScroller` 的 overscroll。
+     */
+    private fun dragScroll(viewY: Float) {
+        if (maxScroll() <= 0) return
+        // 自身滚动模式下一律拦住父容器，避免下拉刷新抢手势（E29）
+        if (!parentDisallowRequested) {
+            parent?.requestDisallowInterceptTouchEvent(true)
+            parentDisallowRequested = true
+        }
+        val dy = lastScrollTouchY - viewY
+        if (dy == 0f) return
+        lastScrollTouchY = viewY
+        val next = (scrollOffset + dy.toInt()).coerceIn(0, maxScroll())
+        if (next == scrollOffset) return
+        scrollOffset = next
+        // 滚动是真实内容位移，不走渲染签名比对
+        lastRenderSignature = Long.MIN_VALUE
+        invalidate()
+    }
+
+    /**
+     * 抬手：交给 [OverScroller] 做惯性（§8.5「惯性跟随系统原生手感」），
+     * 并解除对父容器的拦截。
+     */
+    private fun endScrollGesture(viewY: Float) {
+        val velocityTracker = lastVelocityTracker
+        val max = maxScroll()
+        if (velocityTracker != null && max > 0) {
+            velocityTracker.computeCurrentVelocity(1000) // px/s
+            // 手指上滑（负 dy）→ 向下滚动 → 正速度
+            val velocityY = -velocityTracker.getYVelocity().toFloat()
+            scroller.fling(
+                scrollOffset, 0, 0, velocityY.toInt(),
+                0, max, 0, 0,
+            )
+            lastVelocityTracker = null
+            if (scroller.computeScrollOffset()) postInvalidateOnAnimation()
+        }
+        lastScrollTouchY = viewY
+        if (parentDisallowRequested) {
+            parent?.requestDisallowInterceptTouchEvent(false)
+            parentDisallowRequested = false
+        }
+    }
+
+    /**
+     * 触摸分发（PRD §8.2 / M4 / AD-04 / FI-001）。
+     *
+     * 判定顺序严格按 §8.2：先看位移是否超过阈值（决定滚动 / 拖拽），
      * 再看是否已触发长按（决定编辑态），最后才是点击。
+     *
+     * 自身滚动模式下 [Intent.Scroll] 会被真正消费并执行拖拽滚动 + 惯性；
+     * 外部滚动模式下则让给外层容器（§8.6 / E29）。
      *
      * ## 关于 lint ClickableViewAccessibility 的豁免
      *
-     * 该检查只在 `onTouchEvent` 函数体内做**直接**调用扫描。本实现已不再经
+     * 该检查只在 `onTouchEvent` 函数体内做**直接**调用扫描。本实现不再经
      * `GestureDetector` 委托，但仍在此精确豁免：命中日程块的点击最终会走到
      * [performClick]，契约已满足（UF-003）。按 §5.2「显式豁免清单」处理，
      * **不是**全局关闭该检查。M5 接入无障碍虚拟视图后需在真机复核（Q8）。
@@ -683,6 +742,13 @@ class DayTimelineView @JvmOverloads constructor(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 scroller.forceFinished(true)
+                lastScrollTouchY = y
+                parentDisallowRequested = false
+                // 速度跟踪：抬手后据此算惯性（FI-001）
+                lastVelocityTracker?.recycle()
+                lastVelocityTracker = android.view.VelocityTracker.obtain().also {
+                    it.addMovement(event)
+                }
                 // 交给 GestureDetector 只为长按超时；其余判定自己做
                 gestureDetector.onTouchEvent(event)
                 val hit = hitTester.hitTest(
@@ -706,6 +772,7 @@ class DayTimelineView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_MOVE -> {
+                lastVelocityTracker?.addMovement(event)
                 gestureArbiter.onMove(x, y, grabbedHandle)
                 when (gestureArbiter.intent) {
                     GestureArbiter.Intent.DragMove -> {
@@ -728,8 +795,15 @@ class DayTimelineView @JvmOverloads constructor(
                         requestRefresh()
                         return true
                     }
-                    // §8.6 / E29：外部滚动模式下把手势让给外层容器
-                    GestureArbiter.Intent.Scroll -> return false
+                    // §8.6 / E29：外部滚动模式下把手势让给外层容器；
+                    // 自身滚动模式则真正消费并执行拖拽滚动（FI-001）
+                    GestureArbiter.Intent.Scroll -> {
+                        if (config.resolvedScrollMode() == ScrollMode.SELF) {
+                            dragScroll(y)
+                            return true
+                        }
+                        return false
+                    }
                     else -> return true
                 }
             }
@@ -738,6 +812,14 @@ class DayTimelineView @JvmOverloads constructor(
                 val intent = gestureArbiter.onUp()
                 grabbedHandle = 0
                 stopEdgeScroll()
+                if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    parentDisallowRequested = false
+                    lastVelocityTracker?.recycle()
+                    lastVelocityTracker = null
+                } else {
+                    endScrollGesture(y)
+                }
                 when (intent) {
                     // §8.2：已触发长按但全程未移动 → 进入编辑态（原地选中）
                     GestureArbiter.Intent.LongPress -> {
@@ -952,6 +1034,8 @@ class DayTimelineView @JvmOverloads constructor(
         handler.removeCallbacks(edgeScrollRunnable)
         edgeScrollScheduled = false
         scroller.forceFinished(true)
+        lastVelocityTracker?.recycle()
+        lastVelocityTracker = null
         super.onDetachedFromWindow()
     }
 
@@ -1072,6 +1156,7 @@ class DayTimelineView @JvmOverloads constructor(
             gridLineWidth = dimens.gridLineWidth,
             axisLabelSize = dimens.axisLabelSize,
             nowLabelSize = dimens.nowLabelSize,
+            blockTextSize = dimens.blockTextSize,
             editStrokeWidth = dimens.editStrokeWidth,
         ),
     )

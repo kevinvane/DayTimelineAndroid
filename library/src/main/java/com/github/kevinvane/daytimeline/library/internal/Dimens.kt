@@ -35,6 +35,7 @@ internal class Dimens private constructor(
     val blockMinHeight: Int,
     val blockAccentBarWidth: Int,
     val blockStrokeWidth: Int,
+    val blockTextSize: Int,
     val nowDotDiameter: Int,
     val nowLineWidth: Int,
     val handleVisualSize: Int,
@@ -135,6 +136,10 @@ internal class Dimens private constructor(
                 blockStrokeWidth = pick(
                     config.blockStrokeWidth,
                     R.dimen.day_timeline_block_stroke_width,
+                ),
+                blockTextSize = pick(
+                    config.blockTextSize,
+                    R.dimen.day_timeline_block_text_size,
                 ),
                 nowDotDiameter = pick(config.nowDotDiameter, R.dimen.day_timeline_now_dot_diameter),
                 nowLineWidth = pick(config.nowLineWidth, R.dimen.day_timeline_now_line_width),

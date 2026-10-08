@@ -58,9 +58,10 @@ internal object ConfigFromAttrs {
                 blockAccentBarWidth = dimOrNull(ta, 
                     R.styleable.DayTimelineView_dtBlockAccentBarWidth,
                 ),
-                blockStrokeWidth = dimOrNull(ta, 
+                blockStrokeWidth = dimOrNull(ta,
                     R.styleable.DayTimelineView_dtBlockStrokeWidth,
                 ),
+                blockTextSize = dimOrNull(ta, R.styleable.DayTimelineView_dtBlockTextSize),
                 showTimeSubtitle = boolOrNull(ta, R.styleable.DayTimelineView_dtShowTimeSubtitle),
 
                 showNowIndicator = boolOrNull(ta, 

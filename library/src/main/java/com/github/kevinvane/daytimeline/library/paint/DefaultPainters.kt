@@ -152,16 +152,42 @@ internal object DefaultEventBlockPainter : EventBlockPainter {
         val baseline = contentTop - defaultPaints.text.fontMetrics.ascent
 
         if (context.showTimeSubtitle) {
-            val subtitle = "${context.startText} - ${context.endText}"
+            val subtitle = ellipsize("${context.startText} - ${context.endText}", maxTextWidth, defaultPaints.text)
             canvas.drawText(subtitle, textLeft, baseline, defaultPaints.text)
             canvas.drawText(
-                content?.toString() ?: "",
+                ellipsize(content?.toString() ?: "", maxTextWidth, defaultPaints.text),
                 textLeft,
                 baseline + defaultPaints.text.textSize * 1.2f,
                 defaultPaints.text,
             )
         } else {
-            canvas.drawText(content?.toString() ?: "", textLeft, baseline, defaultPaints.text)
+            canvas.drawText(
+                ellipsize(content?.toString() ?: "", maxTextWidth, defaultPaints.text),
+                textLeft,
+                baseline,
+                defaultPaints.text,
+            )
         }
+    }
+
+    /**
+     * 按可用宽度截断文本并追加省略号（PRD §7.4「超出以省略号截断」）。
+     *
+     * 窄列（重叠分栏后可能只有 1/3 宽）下不截断会让文字直接压在相邻块上，
+     * 是最容易被一眼看出的绘制缺陷。用 `measureText` 二分查找，单次 O(log n) 次测量。
+     */
+    private fun ellipsize(text: String, maxWidth: Float, paint: Paint): String {
+        if (maxWidth <= 0f) return ""
+        if (paint.measureText(text) <= maxWidth) return text
+        val ellipsis = "…"
+        val budget = maxWidth - paint.measureText(ellipsis)
+        if (budget <= 0f) return ""
+        var low = 0
+        var high = text.length
+        while (low < high) {
+            val mid = (low + high + 1) / 2
+            if (paint.measureText(text.substring(0, mid)) <= budget) low = mid else high = mid - 1
+        }
+        return text.substring(0, low) + ellipsis
     }
 }

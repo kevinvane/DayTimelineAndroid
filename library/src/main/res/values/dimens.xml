@@ -40,6 +40,8 @@
     <dimen name="day_timeline_block_accent_bar">4dp</dimen>
     <!-- 日程块描边粗细 -->
     <dimen name="day_timeline_block_stroke_width">1dp</dimen>
+    <!-- 日程块内容文字字号 -->
+    <dimen name="day_timeline_block_text_size">12sp</dimen>
 
     <!-- ============ 当前时间线 ============ -->
     <dimen name="day_timeline_now_dot_diameter">6dp</dimen>

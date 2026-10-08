@@ -70,7 +70,16 @@ internal data class Theme(
         val blockBackground = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
         }
-        val blockText = Paint(Paint.ANTI_ALIAS_FLAG)
+        /**
+         * 日程块内容文字。
+         *
+         * **必须显式设置 textSize**：`Paint` 的默认值是 12 个**原始像素**，
+         * 不是 12sp。漏设会让块内文字在 density=3 的设备上只有 12px 高，
+         * 看上去几乎看不见（真机上出现过的现象）。
+         */
+        val blockText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = dimens.blockTextSize.toFloat()
+        }
         val blockAccent = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         val blockStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
         val selection = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -86,6 +95,7 @@ internal data class Theme(
         val gridLineWidth: Int,
         val axisLabelSize: Int,
         val nowLabelSize: Int,
+        val blockTextSize: Int,
         val editStrokeWidth: Int,
     )
 

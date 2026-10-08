@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v0.3（草案） |
+| 文档版本 | v0.4（草案） |
 | 状态 | 待评审 |
 | 编写日期 | 2026-09-30 |
 | 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.1 |
@@ -366,6 +366,74 @@ TypedValue.applyDimension(COMPLEX_UNIT_DIP, res.getDimension(id), res.displayMet
 
 ### AD-18　补真机测试作为「资源契约」的守门人　【执行期决策】
 
+**决策**：新增仪器测试文件，专治「JVM 单测看不见」的那一类缺陷：
+
+| 文件 | 作用 |
+|---|---|
+| `ResourceContractTest` | 遍历**全部** `R.dimen` / `R.integer` / `R.color`，用生产代码同样的方式读取；任何类型不匹配立刻失败。另断言 17 项语义色项齐全、字号等于 12sp 换算值 |
+| `DayTimelineViewTest` | 构造视图并走完测量/绘制；断言代码配置生效、`setConfig` 为合并语义、热区 ≥48dp、外部滚动模式高度 = 全天内容高度、极小格高被兜底 |
+| `DayTimelineViewBehaviorTest` | 全部文字 Paint 的 `textSize` 非零、自身模式确实可滚、偏移钳制、绘制含多种颜色、脏数据容错 |
+
+**这是对 AD-15 那次事故的直接回应**：单纯修好那一行不够，
+必须让「同类错误无法再次通过门禁」。这三份用例均在 `connectedDebugAndroidTest` 中执行。
+
+### AD-19　块内文字必须显式设置 textSize；窄列需省略号截断　【执行期决策】
+
+**背景（真机可见缺陷）**：`Theme.Paints` 中 `blockText` 写成
+`Paint(Paint.ANTI_ALIAS_FLAG)`，**没有设置 `textSize`**。
+`Paint` 的默认值是 **12 个原始像素**（不是 12sp），因此在 density=3 的设备上
+块内文字只有 12px 高，真机上「基本看不见」。
+
+`axisLabel` / `nowLabel` 都设了 `textSize`，唯独漏了 `blockText`——
+这类"漏一行"的缺陷编译期与 lint 都无法发现。
+
+**决策**：
+1. 新增 `day_timeline_block_text_size`（12sp），并显式写入 `blockText.textSize`。
+   PRD §7.2 未规定块内字号，取与轴标签一致的 12sp，同时作为可配置项
+   （`dtBlockTextSize`）暴露，避免再次硬编码（FC-001）。
+2. **顺带修掉文字溢出**：原绘制直接 `drawText` 不截断，重叠分栏后窄列
+   （可能只有 1/3 宽）里文字会直接压在相邻块上。改为按可用宽度二分查找截断
+   并加省略号（PRD §7.4「超出以省略号截断」），单次 O(log n) 次 `measureText`。
+
+**回归防线**：`DayTimelineViewBehaviorTest.everyTextPaintHasSaneTextSize`
+用反射**遍历全部 Paint**，找出名字含 label/text 的并断言 `textSize >= 8px`。
+这样下次新增 Paint 漏设同样会被抓到，而不是只守住 `blockText` 一个。
+
+### AD-20　自身滚动必须真正消费手势　【执行期决策】
+
+**背景（真机可见缺陷）**：`GestureArbiter` 会正确判定出 `Intent.Scroll`，
+但 `onTouchEvent` 里对该分支只写了 `return false`——**拖拽滚动根本没实现**。
+`scrollOffset` 只会被 `scrollToMinute` 和边缘自动滚动改动，
+结果就是只能看到一屏内容。
+
+根因是 M4 只实现了"手势判定"却没接上"手势执行"，判定与执行脱节。
+
+**决策**：补齐 FI-001 的完整链路：
+- `ACTION_DOWN`：记录 `lastScrollTouchY`，创建 `VelocityTracker`
+- `Intent.Scroll` + `SELF` 模式 → `dragScroll()` 按**增量**更新 `scrollOffset`
+  （用增量而非绝对值，丢帧时也不会跳位），并 `requestDisallowInterceptTouchEvent(true)`
+  拦住下拉刷新（E29）
+- `ACTION_UP` → `endScrollGesture()` 用 `OverScroller.fling` 做惯性
+  （§8.5「惯性跟随系统原生手感」），随后解除父容器拦截
+- 边界**直接钳制**而非 overscroll，因为 §8.5 明确「边界回弹关闭」
+- `ACTION_CANCEL` 与 `onDetachedFromWindow` 回收 `VelocityTracker`（Q6）
+
+**外部滚动模式保持不变**：该分支仍 `return false` 把手势让给外层（§8.6 / AD-04）。
+因为外部模式下组件高度等于全天内容高度，`maxScroll()` 天然为 0，组件本身不会滚。
+
+**回归防线**：`DayTimelineViewBehaviorTest` 覆盖滚动偏移钳制、跳转到首尾、
+外部模式自身不滚，以及"绘制结果含多种颜色"（防止改坏绘制却看不出来）。
+
+
+
+
+**决策**：新增仪器测试文件，专治「JVM 单测看不见」的那一类缺陷：
+| 文件 | 作用 |
+|---|---|
+| `ResourceContractTest` | 遍历**全部** `R.dimen` / `R.integer` / `R.color`，用生产代码同样的方式读取；任何类型不匹配立刻失败。另断言 17 项语义色项齐全、字号等于 12sp 换算值 |
+| `DayTimelineViewTest` | 构造视图并走完测量/绘制；断言代码配置生效、`setConfig` 为合并语义、热区 ≥48dp、外部滚动模式高度 = 全天内容高度、极小格高被兜底 |
+| `DayTimelineViewBehaviorTest` | 全部文字 Paint 的 textSize 非零、自身模式确实可滚、偏移钳制、绘制含多种颜色、脏数据容错 |
+
 **决策**：新增两个仪器测试文件，它们专治「JVM 单测看不见」的那一类缺陷：
 
 | 文件 | 作用 |
@@ -591,6 +659,7 @@ TypedValue.applyDimension(COMPLEX_UNIT_DIP, res.getDimension(id), res.displayMet
 | v0.1 | 2026-09-30 | 初稿。基于 PRD v1.1 输出架构决策 AD-01~AD-11、M0–M6 任务拆解、测试与门禁落地方案、8 项开放问题。给出 R9 的技术结论（`value class` 使 minSdk 23 与 D18 兼容）。 | — |
 | v0.2 | 2026-09-30 | 开工后补充执行期决策 AD-12（色项占位）、AD-13（core-ktx 降级）、AD-14（绘制上下文复用），并回写 §9 实施进度。 | — |
 | v0.3 | 2026-10-08 | 真机崩溃排查后补 AD-15~AD-18：format=float 导致 TYPE_FLOAT 与 getDimension 不兼容、单位二次换算致字号放大三倍、XML 配置此前从未被读取且 setConfig 应为合并语义、补真机资源契约测试。 | — |
+| v0.4 | 2026-10-08 | 真机暴露两个新缺陷后补 AD-19/AD-20：块内文字漏设 textSize 用了 Paint 默认的 12 原始像素；以及自身滚动模式**根本没实现拖拽滚动**（判定有、执行无）。同时补窄列文字省略号截断与对应真机回归测试。 | — |
 
 ---
 
