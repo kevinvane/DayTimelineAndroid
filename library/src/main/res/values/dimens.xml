@@ -70,7 +70,17 @@
     <integer name="day_timeline_default_new_duration_minutes">60</integer>
     <!-- 当前时间线刷新间隔：30 秒（再短对用户无感知，仅徒增耗电） -->
     <integer name="day_timeline_now_refresh_seconds">30</integer>
-    <!-- 拖拽触发阈值 = 系统标准阈值 * 该系数（0.3 倍，兼顾灵敏度与防误触） -->
-    <item name="day_timeline_drag_threshold_ratio" format="float" type="dimen">0.3</item>
+
+    <!--
+      ⚠️ 不要在本文件里用 <item format="float" type="dimen"> 声明无量纲比值。
+      format 会覆盖 type，值被编译成 TYPE_FLOAT(0x4)，而 Resources.getDimension()
+      只接受 TYPE_DIMENSION(0x5)，运行期会抛
+      Resources$NotFoundException: Resource ID #0x… type #0x4 is not valid。
+
+      无量纲比值的正确落位：
+        · 需要被业务方覆盖 → 声明为 <attr format="float">，用 TypedArray.getFloat() 读
+        · 仅作组件默认值 → 放代码常量，见 Dimens.DEFAULT_DRAG_THRESHOLD_RATIO
+      本文件只放真正带单位的 dp / sp 资源。
+    -->
 
 </resources>

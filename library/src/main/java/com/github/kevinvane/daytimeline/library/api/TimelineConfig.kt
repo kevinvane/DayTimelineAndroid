@@ -91,8 +91,9 @@ data class TimelineConfig(
     val dragThresholdRatio: Float? = null,
 
     // ---- 编辑交互 ----
-    val showEditActions: Boolean? = null,
-    val showDeleteAction: Boolean? = null,
+    // 注：内置「完成/取消/删除」按钮尚未实现，故 showEditActions / showDeleteAction
+    // 暂时不存在，避免出现声明了却无人消费的字段（违反 T5 死代码 0 处）。
+    // 实现按钮时连同 attrs.xml 中的 dtShowEditActions / dtShowDeleteAction 一并加回。
     val editHandleVisualSize: Int? = null,
     /** 触摸热区。业务方只应调大不应调小（UF-001 下限 48dp）。 */
     val editHandleTouchSize: Int? = null,
@@ -128,4 +129,77 @@ data class TimelineConfig(
     fun resolvedScrollMode(): ScrollMode = scrollMode ?: ScrollMode.SELF
 
     fun resolvedTimeFormat(): TimeFormat = timeFormat ?: TimeFormat.SYSTEM
+
+    /**
+     * 与 [other] 合并：**other 的非 null 字段覆盖本对象，其余保留**。
+     *
+     * ## 为什么是合并而不是替换
+     *
+     * 本类所有字段都是可空，且 `null` 的含义是「用资源默认值」。因此：
+     * - 布局 XML 通过 `app:dtXxx` 写入了一部分配置；
+     * - 业务方随后调用 `setConfig(TimelineConfig(hourHeight = …))`；
+     * - 若整体替换，XML 里那些**没提到**的字段会被清成 null 而悄悄退回默认值，
+     *   表现为「XML 配置好像没生效」，且没有任何报错。
+     *
+     * 合并语义让「XML 打底 + 代码微调」这种最常见的组合自然成立，
+     * 也符合 FC-005「两侧一一对应、效果完全一致」的要求。
+     */
+    fun mergedWith(other: TimelineConfig): TimelineConfig = TimelineConfig(
+        hourHeight = other.hourHeight ?: hourHeight,
+        axisWidth = other.axisWidth ?: axisWidth,
+        topPadding = other.topPadding ?: topPadding,
+        bottomPadding = other.bottomPadding ?: bottomPadding,
+        endMargin = other.endMargin ?: endMargin,
+        gridLineWidth = other.gridLineWidth ?: gridLineWidth,
+        axisLabelSize = other.axisLabelSize ?: axisLabelSize,
+        nowLabelSize = other.nowLabelSize ?: nowLabelSize,
+
+        blockGap = other.blockGap ?: blockGap,
+        blockCorner = other.blockCorner ?: blockCorner,
+        blockPaddingHorizontal = other.blockPaddingHorizontal ?: blockPaddingHorizontal,
+        blockPaddingVertical = other.blockPaddingVertical ?: blockPaddingVertical,
+        blockMinHeight = other.blockMinHeight ?: blockMinHeight,
+        blockAccentBarWidth = other.blockAccentBarWidth ?: blockAccentBarWidth,
+        blockStrokeWidth = other.blockStrokeWidth ?: blockStrokeWidth,
+        showTimeSubtitle = other.showTimeSubtitle ?: showTimeSubtitle,
+
+        showNowIndicator = other.showNowIndicator ?: showNowIndicator,
+        nowIndicatorTodayOnly = other.nowIndicatorTodayOnly ?: nowIndicatorTodayOnly,
+        nowDotDiameter = other.nowDotDiameter ?: nowDotDiameter,
+        nowLineWidth = other.nowLineWidth ?: nowLineWidth,
+
+        timeFormat = other.timeFormat ?: timeFormat,
+        snapMinutes = other.snapMinutes ?: snapMinutes,
+        minDurationMinutes = other.minDurationMinutes ?: minDurationMinutes,
+        maxDurationMinutes = other.maxDurationMinutes ?: maxDurationMinutes,
+        defaultNewDurationMinutes = other.defaultNewDurationMinutes ?: defaultNewDurationMinutes,
+
+        scrollMode = other.scrollMode ?: scrollMode,
+        edgeAutoScrollEnabled = other.edgeAutoScrollEnabled ?: edgeAutoScrollEnabled,
+        edgeScrollTriggerSize = other.edgeScrollTriggerSize ?: edgeScrollTriggerSize,
+        edgeScrollStepSize = other.edgeScrollStepSize ?: edgeScrollStepSize,
+        dragThresholdRatio = other.dragThresholdRatio ?: dragThresholdRatio,
+
+        editHandleVisualSize = other.editHandleVisualSize ?: editHandleVisualSize,
+        editHandleTouchSize = other.editHandleTouchSize ?: editHandleTouchSize,
+        minTouchTarget = other.minTouchTarget ?: minTouchTarget,
+
+        colorBackground = other.colorBackground ?: colorBackground,
+        colorGridLine = other.colorGridLine ?: colorGridLine,
+        colorAxisLabel = other.colorAxisLabel ?: colorAxisLabel,
+        colorNow = other.colorNow ?: colorNow,
+        colorBlockBgPast = other.colorBlockBgPast ?: colorBlockBgPast,
+        colorBlockBgOngoing = other.colorBlockBgOngoing ?: colorBlockBgOngoing,
+        colorBlockBgUpcoming = other.colorBlockBgUpcoming ?: colorBlockBgUpcoming,
+        colorBlockTextPast = other.colorBlockTextPast ?: colorBlockTextPast,
+        colorBlockText = other.colorBlockText ?: colorBlockText,
+        colorBlockAccentPast = other.colorBlockAccentPast ?: colorBlockAccentPast,
+        colorBlockAccent = other.colorBlockAccent ?: colorBlockAccent,
+        colorBlockStroke = other.colorBlockStroke ?: colorBlockStroke,
+        colorSelected = other.colorSelected ?: colorSelected,
+        colorEditLayerBg = other.colorEditLayerBg ?: colorEditLayerBg,
+        colorEditLayerText = other.colorEditLayerText ?: colorEditLayerText,
+        colorEditLayerTime = other.colorEditLayerTime ?: colorEditLayerTime,
+        colorEditHandle = other.colorEditHandle ?: colorEditHandle,
+    )
 }

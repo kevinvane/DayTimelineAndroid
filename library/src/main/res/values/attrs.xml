@@ -70,8 +70,11 @@
         <attr name="dtDragThresholdRatio" format="float" />
 
         <!-- ============ 编辑交互 ============ -->
-        <attr name="dtShowEditActions" format="boolean" />
-        <attr name="dtShowDeleteAction" format="boolean" />
+        <!--
+          ⚠️ dtShowEditActions / dtShowDeleteAction 暂未声明。
+          内置「完成/取消/删除」按钮尚未实现（PRD §7.7 要求可配置是否内置），
+          声明一个不生效的属性只会让接入方误以为配了有效。实现后一并加回。
+        -->
         <attr name="dtEditHandleVisualSize" format="dimension" />
         <!-- 触摸热区不得小于 48dp（UF-001），业务方只应调大不应调小 -->
         <attr name="dtEditHandleTouchSize" format="dimension" />

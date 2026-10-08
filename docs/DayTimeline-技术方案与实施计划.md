@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v0.2（草案） |
+| 文档版本 | v0.3（草案） |
 | 状态 | 待评审 |
 | 编写日期 | 2026-09-30 |
 | 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.1 |
@@ -298,7 +298,85 @@ interface TimelineEvent {
 
 **影响**：保留 AGP 8.13.2 / Kotlin 2.0.21 / Gradle 8.13 不变；未来若整体升级工具链，可再把 core-ktx 升回 1.19.x。
 
-### AD-14　绘制上下文改为可变复用对象　【执行期决策】
+### AD-15　无量纲比值不得放进 dimens.xml　【执行期决策】
+
+**背景（真实事故）**：`day_timeline_drag_threshold_ratio` 曾声明为
+`<item name="..." format="float" type="dimen">0.3</item>`。
+
+AAPT2 中 `format` **覆盖** `type`，因此该值被编译为 `TYPE_FLOAT(0x4)`；
+而 `Resources.getDimension()` 只接受 `TYPE_DIMENSION(0x5)`，
+真机启动即抛 `Resources$NotFoundException: Resource ID #0x… type #0x4 is not valid`，
+崩溃点在 `DayTimelineView` 构造函数内，App 直接起不来。
+
+**为什么 JVM 单测、lint、覆盖率门禁全部漏掉**：三者都不加载 Android 资源，
+「资源类型与读取方式是否匹配」对它们完全不可见。
+
+**决策**：
+1. 从 `dimens.xml` 移除该条目，改用代码常量 `Dimens.DEFAULT_DRAG_THRESHOLD_RATIO = 0.3f`。
+   **无量纲比值本来就不是尺寸**，放进 dimen 目录本身就是错的落位。
+2. 需要业务方覆盖时走 `<attr format="float">` + `TypedArray.getFloat()`，
+   这是 API 1 起就支持的安全路径。
+3. 在 `dimens.xml` 内留下警示注释，说明这条坑，避免复发。
+
+**替代方案与否决理由**：改为 `<integer>` 千分比（`300` / 1000f）也能解决，
+但引入一个语义别扭的资源名，且与「XML 侧用 float attr」的表达方式不一致。
+
+### AD-16　单位换算以资源声明为准，禁止二次 applyDimension　【执行期决策】
+
+**背景（与 AD-15 同一次排查发现）**：`Dimens.resolve` 原先写的是
+```kotlin
+TypedValue.applyDimension(COMPLEX_UNIT_DIP, res.getDimension(id), res.displayMetrics)
+```
+
+`Resources.getDimension()` 返回的**已经是**按资源自身单位换算好的 px
+（`12sp` → `12 × scaledDensity`）。再套一层 `COMPLEX_UNIT_DIP` 会把 density 乘第二次：
+在 density=3 的设备上 `12sp` 变成 108px 而不是 36px，**字号放大三倍**。
+
+**决策**：删除 `dp()` / `sp()` 两个辅助函数，统一为
+`dim(id) = res.getDimension(id).toInt()`。单位由资源声明本身（`12dp` / `12sp`）决定，
+代码不再、也不应该区分——这也顺带消除了 `sp()` 这个从未被调用的死代码（T5）。
+
+**遗留**：`Dimens` 中所有 dp 语义尺寸不受影响（它们本来也只被乘一次 density）。
+
+### AD-17　XML 配置经 TypedArray 读取，且 setConfig 采用合并语义　【执行期决策】
+
+**背景**：`attrs.xml` 声明了 53 项属性，但**从未有任何 `obtainStyledAttributes` 调用**，
+即 §10.1 的「界面配置」侧完全没实现——业务方写 `app:dtHourHeight="80dp"`
+不报错也不生效，是典型的静默失败（FC-005 的一半缺失）。
+
+**决策 1 —— 读取**：
+新增 `internal/ConfigFromAttrs.read(context, attrs)`，与 `TimelineConfig` 字段一一对应。
+**每个字段都以 `TypedArray.hasValue()` 把关**，未书写的属性保持 `null`，
+因为 `null` 才表示「用资源默认值」，落成 `0`/`false` 会被当成业务方显式要求取 0。
+
+**决策 2 —— 构造顺序**：Kotlin 属性初始化器按声明顺序执行，`dimens` 的初值
+在 `init` 块**之前**求出，拿不到 attrs。因此在 `init` 中读一次 XML 配置后
+整体重算（`rebindDerivedState()`）。构造只发生一次，多这一次开销可忽略。
+
+**决策 3 —— `setConfig` 改为合并语义**：原先是整体替换。实现 XML 配置后立刻暴露一个问题：
+业务方在 XML 打底之后再调 `setConfig(TimelineConfig(hourHeight = …))`，
+**XML 里其它字段会被悄悄清成 null 退回默认值**，表现为「XML 配置好像没生效」且无任何报错。
+因此新增 `TimelineConfig.mergedWith(other)`——`other` 的非 null 字段覆盖，其余保留。
+这样「XML 打底 + 代码微调」自然成立，也符合 FC-005「两侧一一对应、效果完全一致」。
+
+**未映射的属性**：`dtShowEditActions` / `dtShowDeleteAction` 已从 `attrs.xml` 移除，
+`TimelineConfig.showEditActions` / `showDeleteAction` 同步移除。
+原因是内置「完成/取消/删除」按钮尚未实现（§7.7）——声明一个不生效的属性，
+比不声明更糟。实现按钮时一并加回。
+
+### AD-18　补真机测试作为「资源契约」的守门人　【执行期决策】
+
+**决策**：新增两个仪器测试文件，它们专治「JVM 单测看不见」的那一类缺陷：
+
+| 文件 | 作用 |
+|---|---|
+| `ResourceContractTest` | 遍历**全部** `R.dimen` / `R.integer` / `R.color`，用生产代码同样的方式读取；任何类型不匹配立刻失败。另断言 17 项语义色项齐全、字号等于 12sp 换算值 |
+| `DayTimelineViewTest` | 构造视图并走完测量/绘制；断言代码配置生效、`setConfig` 为合并语义、热区 ≥48dp、外部滚动模式高度 = 全天内容高度、极小格高被兜底 |
+
+**这是对 AD-15 那次事故的直接回应**：单纯修好那一行不够，
+必须让「同类错误无法再次通过门禁」。
+
+
 
 **背景**：首版把 `GridContext` / `BlockContext` 写成不可变 `data class`，在 `onDraw` 中每帧构造。`lint` 的 `DrawAllocation` 报为错误（我们配置了 `warningsAsErrors`，符合 T6）。
 
@@ -512,6 +590,7 @@ interface TimelineEvent {
 |---|---|---|---|
 | v0.1 | 2026-09-30 | 初稿。基于 PRD v1.1 输出架构决策 AD-01~AD-11、M0–M6 任务拆解、测试与门禁落地方案、8 项开放问题。给出 R9 的技术结论（`value class` 使 minSdk 23 与 D18 兼容）。 | — |
 | v0.2 | 2026-09-30 | 开工后补充执行期决策 AD-12（色项占位）、AD-13（core-ktx 降级）、AD-14（绘制上下文复用），并回写 §9 实施进度。 | — |
+| v0.3 | 2026-10-08 | 真机崩溃排查后补 AD-15~AD-18：format=float 导致 TYPE_FLOAT 与 getDimension 不兼容、单位二次换算致字号放大三倍、XML 配置此前从未被读取且 setConfig 应为合并语义、补真机资源契约测试。 | — |
 
 ---
 

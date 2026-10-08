@@ -31,7 +31,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         timeline = findViewById(R.id.timeline)
-        timeline.setConfig(TimelineConfig(showTimeSubtitle = true))
+        // 布局 XML 里已通过 app:dtXxx 配置了尺寸与行为（FC-005 的界面配置侧）。
+        // 这里再用代码配置补充一项 XML 没覆盖的字段，验证两条路径可叠加。
+        timeline.setConfig(TimelineConfig(defaultNewDurationMinutes = 30))
         timeline.listener = object : TimelineListener {
             override fun onEventClick(event: TimelineEvent) {
                 android.util.Log.i(TAG, "点击 ${event.id}")

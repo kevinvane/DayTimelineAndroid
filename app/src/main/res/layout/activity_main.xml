@@ -8,10 +8,23 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
+    <!--
+      XML 配置示例（PRD §10.1 / FC-005「界面配置」侧）。
+      与代码侧 setConfig(TimelineConfig(...)) 一一对应、效果完全一致。
+      这里故意改动几项，便于在真机上一眼看出 XML 配置确实生效。
+    -->
     <com.github.kevinvane.daytimeline.library.DayTimelineView
         android:id="@+id/timeline"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        app:dtHourHeight="64dp"
+        app:dtAxisWidth="60dp"
+        app:dtBlockCorner="6dp"
+        app:dtShowTimeSubtitle="true"
+        app:dtNowIndicatorTodayOnly="true"
+        app:dtSnapMinutes="5"
+        app:dtTimeFormat="h24"
+        app:dtEdgeAutoScrollEnabled="true"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"

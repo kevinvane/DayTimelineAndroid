@@ -2,7 +2,6 @@ package com.github.kevinvane.daytimeline.library.internal
 
 import android.content.Context
 import android.content.res.Configuration
-import android.util.TypedValue
 import androidx.annotation.ColorInt
 import androidx.core.content.ContextCompat
 import com.github.kevinvane.daytimeline.library.R
@@ -73,26 +72,44 @@ internal class Dimens private constructor(
     }
 
     companion object {
+        /**
+         * 拖拽触发阈值系数（PRD §7.2：系统标准阈值的 0.3 倍）。
+         *
+         * 为什么放代码常量而不是资源：**它是无量纲比值，不是尺寸**。
+         * 曾用 `<item format="float" type="dimen">` 声明，导致 AAPT2 把它编译成
+         * `TYPE_FLOAT(0x4)`，而 `Resources.getDimension()` 只接受 `TYPE_DIMENSION(0x5)`，
+         * 真机上直接抛 `Resources$NotFoundException`（见 dimens.xml 内的警示注释）。
+         *
+         * 需要被业务方覆盖时走 `<attr format="float">` + `TypedArray.getFloat()`，
+         * 那是 API 1 起就支持的安全路径。
+         */
+        const val DEFAULT_DRAG_THRESHOLD_RATIO = 0.3f
+
         fun resolve(context: Context, config: TimelineConfig): Dimens {
             val res = context.resources
-            fun dp(id: Int) = TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, res.getDimension(id), res.displayMetrics,
-            ).toInt()
 
-            fun sp(id: Int) = TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_SP, res.getDimension(id), res.displayMetrics,
-            ).toInt()
+            /**
+             * 读取尺寸资源，返回 **px**。
+             *
+             * 注意这里**不能**再套一层 `TypedValue.applyDimension`：
+             * `Resources.getDimension()` 返回的已经是按资源自身单位换算好的 px，
+             * 再按 DIP 换算会把 density 乘第二次（12sp 在 density=3 的设备上会变成
+             * 108px 而非 36px，字号放大三倍）。
+             *
+             * 单位由资源声明本身决定（`12dp` 或 `12sp`），代码不需要也不应该区分。
+             */
+            fun dim(id: Int): Int = res.getDimension(id).toInt()
 
-            fun pick(configured: Int?, resource: Int) = configured ?: dp(resource)
+            fun pick(configured: Int?, resource: Int) = configured ?: dim(resource)
 
             @ColorInt
             fun color(configured: Int?, resource: Int): Int =
                 configured ?: ContextCompat.getColor(context, resource)
 
-
             return Dimens(
                 hourHeight = pick(config.hourHeight, R.dimen.day_timeline_hour_height),
-                hourHeightMin = dp(R.dimen.day_timeline_hour_height_min),
+                hourHeightMin = dim(R.dimen.day_timeline_hour_height_min),
+
                 topPadding = pick(config.topPadding, R.dimen.day_timeline_top_padding),
                 bottomPadding = pick(config.bottomPadding, R.dimen.day_timeline_bottom_padding),
                 axisWidth = pick(config.axisWidth, R.dimen.day_timeline_axis_width),
@@ -139,8 +156,8 @@ internal class Dimens private constructor(
                     config.edgeScrollStepSize,
                     R.dimen.day_timeline_edge_scroll_step,
                 ),
-                firstLocateLeadIn = dp(R.dimen.day_timeline_first_locate_lead_in),
-                editStrokeWidth = dp(R.dimen.day_timeline_edit_stroke_width),
+                firstLocateLeadIn = dim(R.dimen.day_timeline_first_locate_lead_in),
+                editStrokeWidth = dim(R.dimen.day_timeline_edit_stroke_width),
                 snapMinutes = config.resolvedSnapMinutes(
                     res.getInteger(R.integer.day_timeline_snap_minutes),
                 ),
@@ -154,10 +171,8 @@ internal class Dimens private constructor(
                     config.defaultNewDurationMinutes
                         ?: res.getInteger(R.integer.day_timeline_default_new_duration_minutes)
                     ).coerceAtLeast(1),
-                dragThresholdRatio = (
-                    config.dragThresholdRatio
-                        ?: res.getDimension(R.dimen.day_timeline_drag_threshold_ratio)
-                    ).coerceIn(0.05f, 1f),
+                dragThresholdRatio = (config.dragThresholdRatio ?: DEFAULT_DRAG_THRESHOLD_RATIO)
+                    .coerceIn(0.05f, 1f),
                 nowRefreshMillis = res.getInteger(
                     R.integer.day_timeline_now_refresh_seconds,
                 ) * 1000L,

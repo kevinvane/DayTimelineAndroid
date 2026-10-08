@@ -35,6 +35,8 @@ import com.github.kevinvane.daytimeline.library.core.PlacedBlock
 import com.github.kevinvane.daytimeline.library.core.SanitizedEvent
 import com.github.kevinvane.daytimeline.library.core.TimeStateResolver
 import com.github.kevinvane.daytimeline.library.core.TimelineEvent
+import com.github.kevinvane.daytimeline.library.internal.ConfigFromAttrs
+import com.github.kevinvane.daytimeline.library.paint.InstallAccessibility
 import com.github.kevinvane.daytimeline.library.internal.Dimens
 import com.github.kevinvane.daytimeline.library.paint.DefaultEventBlockPainter
 import com.github.kevinvane.daytimeline.library.paint.DefaultGridPainter
@@ -182,11 +184,34 @@ class DayTimelineView @JvmOverloads constructor(
     )
 
     init {
-        // E31 / E30：存活期间切换语言或深色模式时即时重绘
-        com.github.kevinvane.daytimeline.library.paint.InstallAccessibility.install(this)
+        // ---- 先解析 XML 配置，再重算尺寸与色值 ----
+        //
+        // Kotlin 的属性初始化器按声明顺序执行，`dimens` 的初值在下面的 `init` **之前**
+        // 求出，因此拿不到 attrs。所以这里读一次 XML 配置并整体重算——
+        // 构造只发生一次，多这一次开销可以忽略，换来「XML 与代码配置走同一条路」。
+        val fromXml = ConfigFromAttrs.read(context, attrs)
+        if (fromXml != config) {
+            config = config.mergedWith(fromXml)
+            rebindDerivedState()
+        }
+        // AD-05 无障碍虚拟视图（Q8 / UF-002 / FI-016）
+        InstallAccessibility.install(this)
         isClickable = true
         isFocusable = true
     }
+
+    /** 依据当前 [config] 重算 dimens / paints / colors / 布局。 */
+    private fun rebindDerivedState() {
+        dimens = Dimens.resolve(context, config)
+        paints = buildPaints()
+        colors = dimens.theme.toPublicColors()
+        gridPaints = GridPainter.Paints(paints.gridLine, paints.axisLabel, paints.nowLabel)
+        blockPaints = EventBlockPainter.Paints(
+            paints.blockBackground, paints.blockText, paints.blockAccent, paints.blockStroke,
+        )
+        relayout()
+    }
+
 
     // ================= 对外方法 =================
 
@@ -248,20 +273,21 @@ class DayTimelineView @JvmOverloads constructor(
     }
 
     /** 设置参数配置（PRD §10.1 第一层 / FC-005）。 */
+    /**
+     * 以 [newConfig] 覆盖当前配置。
+     *
+     * 采用**合并**语义（见 [TimelineConfig.mergedWith]）：[newConfig] 中的非 null 字段
+     * 生效，其余保持不变。因此可以「XML 打底 + 代码微调」，
+     * 而不会像整体替换那样把 XML 里没提到的字段悄悄退回默认值。
+     */
     fun setConfig(newConfig: TimelineConfig) {
-        config = newConfig
-        dimens = Dimens.resolve(context, config)
-        paints = buildPaints()
-        colors = dimens.theme.toPublicColors()
-        gridPaints = GridPainter.Paints(paints.gridLine, paints.axisLabel, paints.nowLabel)
-        blockPaints = EventBlockPainter.Paints(
-            paints.blockBackground, paints.blockText, paints.blockAccent, paints.blockStroke,
-        )
-        relayout()
+        config = config.mergedWith(newConfig)
+        rebindDerivedState()
         clampScroll()
         requestRefresh()
     }
 
+    /** 当前生效配置的只读快照（未设置项为 null，表示用资源默认值）。 */
     fun getConfig(): TimelineConfig = config
 
     /** 跳转到指定时刻（PRD §11.2 / FI-013）。 */
@@ -949,14 +975,7 @@ class DayTimelineView @JvmOverloads constructor(
             Configuration.UI_MODE_NIGHT_MASK) to Locale.getDefault()
         if (current == lastBoundUiMode) return
         lastBoundUiMode = current
-        dimens = Dimens.resolve(context, config)
-        paints = buildPaints()
-        colors = dimens.theme.toPublicColors()
-        gridPaints = GridPainter.Paints(paints.gridLine, paints.axisLabel, paints.nowLabel)
-        blockPaints = EventBlockPainter.Paints(
-            paints.blockBackground, paints.blockText, paints.blockAccent, paints.blockStroke,
-        )
-        relayout()
+        rebindDerivedState()
         requestRefresh()
     }
 

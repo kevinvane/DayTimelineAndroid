@@ -111,6 +111,24 @@ timeline.eventBlockPainter = object : EventBlockPainter {
 }
 ```
 
+### XML 配置
+
+每个配置项都可写在布局里，**与代码配置一一对应、效果完全一致**：
+
+```xml
+<com.github.kevinvane.daytimeline.library.DayTimelineView
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:dtHourHeight="64dp"
+    app:dtShowTimeSubtitle="true"
+    app:dtSnapMinutes="5"
+    app:dtTimeFormat="h24"
+    app:dtScrollMode="self" />
+```
+
+`setConfig()` 采用**合并**语义：只会覆盖你显式写出的字段，XML 里其余配置保持不变。
+因此可以放心「XML 打底 + 代码里再微调几项」。
+
 ---
 
 ## 工程结构
@@ -149,7 +167,8 @@ JVM 单测直接跑，不需要设备也不需要 Robolectric。
 |---|:--:|---|
 | 核心逻辑覆盖率 ≥ 90% | **达标** | 实际 91.08% |
 | 平台规范检查 0 错误 0 警告 | **达标** | `lintDebug` 通过 |
-| 单元测试 | **达标** | 107 个用例全绿，含 U1–U16 逐条验收 |
+| 单元测试 | **达标** | 100 个用例全绿，含 U1–U16 逐条验收 |
+| 资源契约（真机） | 待验证 | 仪器测试已就位，需设备执行 |
 | 全库覆盖率 ≥ 75% | **未达标** | View 层只能由仪器测试覆盖，见下 |
 | 死代码 0 处 | 部分 | 已手工清理，未接入自动检查工具 |
 | R8 混淆验证 | 待验证 | 规则已就位，尚无 minify 消费端验证 |
@@ -157,6 +176,12 @@ JVM 单测直接跑，不需要设备也不需要 Robolectric。
 > **关于全库覆盖率**：`api` / `paint` / `internal` 三个包（含 View 绘制与无障碍）无法用 JVM
 > 单测覆盖，而零依赖约束排除了 Robolectric，因此该口径必须靠仪器测试。相关门禁在无设备
 > 环境下必然不达标——这是约束冲突，不是实现缺陷。
+
+> **编译通过不等于能运行。** 曾出现过 lint 干净、107 个单测全绿、覆盖率达标，
+> 但真机启动即崩的情况：`dimens.xml` 里用 `<item format="float" type="dimen">` 声明
+> 无量纲比值，AAPT2 按 `format` 编译成 `TYPE_FLOAT`，而 `Resources.getDimension()`
+> 只接受 `TYPE_DIMENSION`。此类问题对 JVM 单测与 lint 完全不可见，
+> 因此仓库现已有真机仪器测试专门守住资源契约。
 
 ---
 

@@ -4,14 +4,16 @@
 
 ## 仓库现状（先看这个，避免误判）
 
-- `library/src/main/java/` **不存在**——组件本体一行代码都还没有，只有 Android Studio 模板生成的 `Example*Test`。
-- `app` 只有模板 `MainActivity`（edge-to-edge + window insets），**且 `app/build.gradle.kts` 并不依赖 `project(":library")`**。任何 demo/示例工作都必须先自己补上这条依赖。
-- Git 已初始化：分支 **`master`**（不是 `main`），目前只有一个 `init` 提交，**且未配置任何 remote**（`git push` 无处可推；要发布需先 `git remote add`）。
+- 组件已实现到 **M6**：`library` 有完整实现，`app` 是可运行的 demo（`:app` 已依赖 `:library`）。
+  `library/src/main/java/` 下的 `core/` 是**纯 Kotlin、零 `android.*` 依赖**的核心算法，
+  改它必须同步补单测。
+- Git 已初始化，分支 `master`，remote 为 `git@github.com:kevinvane/DayTimelineAndroid.git`。
+- `docs/` 下只有 PRD 与技术方案两份文档。
 
 ## 需求与技术方案来源
 
 - `docs/DayTimeline-产品与需求文档.md`（PRD，v1.1，1225 行，UTF-8 中文，状态：待评审）——**唯一需求来源，动手前先读它。**
-- `docs/DayTimeline-技术方案与实施计划.md`（v0.1 草案）——架构决策 AD-01~AD-11、M0–M6 任务拆解、测试与门禁落地、开放问题。**PRD §1.2 把架构与实现方案排除在外，这两份要配套读。**
+- `docs/DayTimeline-技术方案与实施计划.md`（v0.3 草案）——架构决策 AD-01~AD-18、M0–M6 任务拆解、测试与门禁落地、实施进度、开放问题。**PRD §1.2 把架构与实现方案排除在外，这两份要配套读。**
 
 读取注意：两个文件都是 UTF-8 中文，**PowerShell 控制台会显示成乱码**——用 read 工具读，或先设 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`。
 
@@ -51,6 +53,24 @@ PRD 中最该记住的几条：
 - `ANDROID_HOME` / `ANDROID_SDK_ROOT` **均未设置**；SDK 路径来自 `local.properties` 的 `sdk.dir=D:\Android\Sdk`。该文件被 gitignore，**新克隆的仓库里没有它**，缺失时构建会在配置阶段直接失败——先让每人本地建一份（或改用 `ANDROID_HOME` 环境变量）。
 - `compileSdk 36` 需要本机装有 `android-36` 平台（已确认存在）。
 
+## 命令 ≠ 能运行（这条最容易踩）
+
+**编译通过、lint 干净、单测全绿，三者都证明不了 App 能起来。**
+2026-10-08 发生过一次真机崩溃：`dimens.xml` 里用 `<item format="float" type="dimen">`
+声明无量纲比值，AAPT2 按 `format` 编译成 `TYPE_FLOAT`，而 `Resources.getDimension()`
+只接受 `TYPE_DIMENSION`，启动即抛 `NotFoundException: type #0x4 is not valid`。
+当时 lint 0 错误、107 个单测全绿、核心覆盖率 91.08% 全部达标——**唯独没在真机上跑过**。
+
+因此：
+
+- **JVM 单测加载不了 Android 资源**，「资源类型与读取方式是否匹配」这类缺陷对单测完全隐形。
+  组件相关改动后至少要跑一次仪器测试：
+  `.\gradlew.bat :library:connectedDebugAndroidTest`（需设备；`adb devices` 可查）
+- **无量纲比值不要写进 `dimens.xml`**：用代码常量，或 `<attr format="float">` + `TypedArray.getFloat()`。
+  详见 `dimens.xml` 内的警示注释与技术方案 AD-15。
+- **`res.getDimension()` 返回的已是 px**，不要再套一层 `TypedValue.applyDimension`，
+  否则 density 被乘两次（字号在 density=3 设备上放大三倍）。见 AD-16。
+
 ## 常用命令
 
 Windows 下用 `gradlew.bat`：
@@ -62,7 +82,9 @@ Windows 下用 `gradlew.bat`：
 .\gradlew.bat :app:installDebug             # 装到已连接设备/模拟器
 .\gradlew.bat test                          # 全部 JVM 单元测试（不需要设备）
 .\gradlew.bat :library:testDebugUnitTest --tests "com.github.kevinvane.daytimeline.library.*"
-.\gradlew.bat connectedAndroidTest           # 需要设备/模拟器，当前仅有模板测试
+.\gradlew.bat :library:verifyCoreCoverage   # 核心逻辑覆盖率门禁 ≥90%（实测 91.08%）
+.\gradlew.bat :library:verifyAllCoverage     # 全库覆盖率门禁 ≥75%，**需设备**
+.\gradlew.bat connectedAndroidTest           # 需要设备/模拟器
 ```
 
 `.\gradlew.bat lint` 可用，但**用的是 AGP 默认规则**——仓库没有配置任何 lint baseline。
@@ -71,8 +93,16 @@ Windows 下用 `gradlew.bat`：
 
 这些**都不存在**，需要时得自己搭，且 PRD 门禁要求它们最终落地：
 
-- 无 CI（没有 `.github/`）、无 pre-commit 钩子。
+- 无 pre-commit 钩子。
 - 无 ktlint / detekt / spotless；`kotlin.code.style=official` 是唯一风格约定。
-- 无测试覆盖率工具配置（§12.4 却要求 ≥90% / ≥75%）。
 - 无死代码检查工具（§12.4 要求 0 处并「纳入自动化阻断」）。
-- 无 R8/混淆验证（§12.5 要求组件在业务方开启混淆后功能正常）。
+- 无 R8/混淆验证（§12.5 要求组件在业务方开启混淆后功能正常）——`consumer-rules.pro` 已写，但**没有 minify 消费端验证过**。
+
+已具备：CI（`.github/workflows/ci.yml`）、JaCoCo 覆盖率门禁（核心 ≥90%，实测 91.08%）、
+`lint { warningsAsErrors = true }`、两个仪器测试（资源契约 + 视图构造）。
+
+## 一条自省的教训
+
+**我曾把「编译通过、lint 干净、单测全绿」当成「功能正常」汇报过一次，结果 App 在真机上直接崩。**
+这三项都不加载或不过问 Android 运行时。凡是声称「没问题」的结论，
+要么说清覆盖了什么，要么明确写「未在真机验证」。
