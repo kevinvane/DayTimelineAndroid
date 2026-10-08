@@ -12,6 +12,7 @@ import com.github.kevinvane.daytimeline.library.core.EventSanitizer
 import com.github.kevinvane.daytimeline.library.core.MinuteOfDay
 import com.github.kevinvane.daytimeline.library.core.TimelineEvent
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -208,7 +209,9 @@ class DayTimelineViewBehaviorTest {
         val start = readScrollOffset()
         var previous = start
         var frames = 0
-        while (frames < 200 && isScrollerRunning()) {
+        val deadline = System.currentTimeMillis() + 10_000
+        while (frames < 200 && isScrollerRunning() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(16) // OverScroller 按墙钟推进，不让帧间隔开会一直读到同一帧
             view.computeScroll()
             val now = readScrollOffset()
             // 动画必须朝目标单向推进，不得回落到更小的偏移
@@ -220,6 +223,7 @@ class DayTimelineViewBehaviorTest {
             frames++
         }
         assertTrue("动画帧数为 0，说明 startScroll 根本没启动", frames > 0)
+        assertFalse("动画应在帧数上限内跑完", isScrollerRunning())
 
         val max = (readInt("contentHeight") - HEIGHT).coerceAtLeast(0)
         assertTrue("最终偏移应离开起点，实际 $previous == $start", previous != start)

@@ -37,10 +37,10 @@ class GestureArbiter(
         /** 编辑态中拖动块整体（移动时间）。 */
         object DragMove : Intent()
 
-        /** 编辑态中拖上边缘（改结束时间）。 */
+        /** 编辑态中拖上边缘（改开始时间）。 */
         object DragResizeTop : Intent()
 
-        /** 编辑态中拖下边缘（改开始时间）。 */
+        /** 编辑态中拖下边缘（改结束时间）。 */
         object DragResizeBottom : Intent()
     }
 

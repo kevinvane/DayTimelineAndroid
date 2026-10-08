@@ -62,12 +62,12 @@ class EditSession private constructor(
         endMinute = moved.last
     }
 
-    /** 拖上边缘：结束时间吸附并保证最短时长（§8.3）。 */
+    /** 拖下边缘：结束时间吸附并保证最短时长（§8.3）。 */
     fun resizeEndTo(rawEndMinute: Int, snapMinutes: Int, minDuration: Int) {
         endMinute = SnapCalculator.snapResizeEnd(startMinute, rawEndMinute, snapMinutes, minDuration)
     }
 
-    /** 拖下边缘：开始时间吸附并保证最短时长、不得晚于 24:00（§8.3）。 */
+    /** 拖上边缘：开始时间吸附并保证最短时长、不得晚于 24:00（§8.3）。 */
     fun resizeStartTo(rawStartMinute: Int, snapMinutes: Int, minDuration: Int) {
         startMinute = SnapCalculator.snapResizeStart(
             rawStart = rawStartMinute,

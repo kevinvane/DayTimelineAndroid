@@ -246,6 +246,8 @@ class DayTimelineView @JvmOverloads constructor(
         )
         events = newEvents
         states = TimeStateResolver.resolveAll(events, nowMinute)
+        // E20 / E21 / E28：业务方回传新数据后，编辑态要么自动取消，要么打冲突标记
+        editSession = editSession?.onDataChanged(newEvents.associateBy { it.id })
         relayout()
         scrollOffset = EventDiff.restoreOffset(
             anchor, blocks, dimens.effectiveHourHeight, dimens.topPadding, scrollOffset,
@@ -272,7 +274,7 @@ class DayTimelineView @JvmOverloads constructor(
     /** 指定「当前时间」，用于测试与特殊场景（PRD §11.1 / FD-006）。 */
     fun setNowMinute(minute: Int?) {
         overrideNowMinute = minute?.coerceIn(0, MinuteOfDay.END_OF_DAY_MINUTE)
-        if (overrideNowMinute != null) nowMinute = overrideNowMinute!!
+        nowMinute = overrideNowMinute ?: currentMinuteOfDay()
         states = TimeStateResolver.resolveAll(events, nowMinute)
         requestRefresh()
     }
@@ -475,11 +477,17 @@ class DayTimelineView @JvmOverloads constructor(
         h = h * 31 + height
         h = h * 31 + scrollOffset
         h = h * 31 + nowMinute
-        h = h * 31 + events.size
+        // 内容变化（改标题 / 改时间 / 数量变化）都必须触发重绘，不能只看 size
+        h = h * 31 + events.hashCode()
         h = h * 31 + (selectedId?.hashCode() ?: 0)
         h = h * 31 + dimens.effectiveHourHeight
         // 状态集合参与签名：跨过「已过」分界时才能重绘（FR-009 要求 30 秒内更新）
-        h = h * 31 + states.values.fold(0) { acc, s -> acc + s.ordinal }
+        h = h * 31 + states.hashCode()
+        // 编辑态几何：拖拽 / 缩放必须逐帧重绘（走 requestRefresh 收敛）
+        h = h * 31 + (editSession?.startMinute ?: -1)
+        h = h * 31 + (editSession?.endMinute ?: -1)
+        // isToday 决定 now 指示线显隐（setViewDate 切日时能重绘）
+        h = h * 31 + if (isToday) 1 else 0
         return h
     }
 
@@ -704,7 +712,7 @@ class DayTimelineView @JvmOverloads constructor(
             // 手指上滑 → getYVelocity() 为负 → 取反得到向下的正速度
             val velocityY = (-velocityTracker.getYVelocity()).toInt()
             velocityTracker.recycle()
-            if (max > 0 && velocityY != 0) {
+            if (max > 0 && velocityY != 0 && config.resolvedScrollMode() == ScrollMode.SELF) {
                 // **必须用 Y 轴**：computeScroll() 读的是 scroller.currY。
                 // 早先误把参数填到 X 轴上（startX/minX/maxX），currY 恒为 0，
                 // 于是惯性期间每帧把 scrollOffset 写回 0 —— 表现为「滑一下就弹回顶部」。
@@ -764,9 +772,9 @@ class DayTimelineView @JvmOverloads constructor(
                 gestureDetector.onTouchEvent(event)
                 val hit = hitTester.hitTest(
                     x, y, contentLeft, contentRight,
-                    blocks, blockTops, blockHeights,
+                    blocks, blockTopsInView(), blockHeights,
                     editing = editIndex(),
-                    editingTop = editTopPx(),
+                    editingTop = editTopPx() - scrollOffset,
                     editingHeight = editHeightPx(),
                     handleVisualRadius = dimens.handleVisualSize / 2,
                 )
@@ -791,7 +799,7 @@ class DayTimelineView @JvmOverloads constructor(
                         return true
                     }
                     GestureArbiter.Intent.DragResizeTop -> {
-                        editSession?.resizeEndTo(
+                        editSession?.resizeStartTo(
                             minuteAt(y), dimens.snapMinutes, dimens.minDurationMinutes,
                         )
                         maybeStartEdgeScroll(y)
@@ -799,7 +807,7 @@ class DayTimelineView @JvmOverloads constructor(
                         return true
                     }
                     GestureArbiter.Intent.DragResizeBottom -> {
-                        editSession?.resizeStartTo(
+                        editSession?.resizeEndTo(
                             minuteAt(y), dimens.snapMinutes, dimens.minDurationMinutes,
                         )
                         maybeStartEdgeScroll(y)
@@ -869,7 +877,7 @@ class DayTimelineView @JvmOverloads constructor(
         if (editSession != null) return
         val hit = hitTester.hitTest(
             x, y, contentLeft, contentRight,
-            blocks, blockTops, blockHeights,
+            blocks, blockTopsInView(), blockHeights,
             editing = -1, editingTop = 0, editingHeight = 0,
             handleVisualRadius = dimens.handleVisualSize / 2,
         )
@@ -885,6 +893,15 @@ class DayTimelineView @JvmOverloads constructor(
     private fun editIndex(): Int {
         val id = editSession?.origin?.id ?: return -1
         return blocks.indexOfFirst { it.event.id == id }
+    }
+
+    /**
+     * 视口坐标下的块顶边。缓存的 [blockTops] 是内容坐标（未扣滚动），
+     * 而触摸坐标是视口坐标，命中测试前必须减掉 [scrollOffset]。
+     */
+    private fun blockTopsInView(): IntArray {
+        if (scrollOffset == 0) return blockTops
+        return IntArray(blockTops.size) { i -> blockTops[i] - scrollOffset }
     }
 
     private fun editTopPx(): Int {
@@ -936,7 +953,7 @@ class DayTimelineView @JvmOverloads constructor(
         }
         val hit = hitTester.hitTest(
             x, y, contentLeft, contentRight,
-            blocks, blockTops, blockHeights,
+            blocks, blockTopsInView(), blockHeights,
             editing = -1, editingTop = 0, editingHeight = 0,
             handleVisualRadius = dimens.handleVisualSize / 2,
         )
