@@ -49,11 +49,12 @@ internal object DefaultGridPainter : GridPainter {
 
             // 时间标签：按 labelStep 降密度（PRD E14）
             if (hour % step == 0) {
-                val textY = if (hour == MinuteOfDay.HOURS_PER_DAY) {
+                val textY: Float = if (hour == MinuteOfDay.HOURS_PER_DAY) {
                     // 24:00 的标签落在最后一条线下方，否则会贴到屏幕外
-                    y + baselineOffset / 2
+                    y + baselineOffset / 2f
                 } else {
-                    y + context.hourHeight / 2
+                    // 轴标签与整点刻度线垂直居中对齐
+                    y - (defaultPaints.axisLabel.fontMetrics.ascent + defaultPaints.axisLabel.fontMetrics.descent) / 2
                 }
                 // 轴标签文字带与红字/红线文字带重叠时，跳过该轴标签，红字覆盖之（§7.6）
                 if (!(context.skipOverlappingHourLabel && overlapsNowLabel(textY, y, context, defaultPaints))) {
@@ -115,7 +116,7 @@ internal object DefaultGridPainter : GridPainter {
 
     /** 某轴标签基线 textY 是否与红字文字带重叠。 */
     private fun overlapsNowLabel(
-        textY: Int,
+        textY: Float,
         gridlineY: Int,
         context: GridContext,
         defaultPaints: GridPainter.Paints,
