@@ -148,7 +148,7 @@ internal object DefaultGridPainter : GridPainter {
 }
 
 /**
- * 日程块默认绘制：底色 + 左侧色条 + 描边 + 内容 + 可选时间副标题。
+ * 日程块默认绘制：底色 + 左侧色条 + 内容 + 可选时间副标题，选中态额外加描边。
  *
  * 三态样式由 [TimelineColors] 按状态取色实现（§9.4 样式选择），
  * 本类不含任何深浅色分支。
@@ -184,15 +184,10 @@ internal object DefaultEventBlockPainter : EventBlockPainter {
             )
         }
 
-        // 描边：选中态用强调色加粗，否则用常规描边色
-        if (context.selected) {
+        // 描边：常规态不描边，仅选中态用「选中态色 + 加粗」（PRD §7.4 选中态）
+        if (context.selected && context.strokeWidth > 0) {
             defaultPaints.stroke.color = colors.selected
             defaultPaints.stroke.strokeWidth = context.strokeWidth.toFloat()
-        } else {
-            defaultPaints.stroke.color = colors.blockStroke
-            defaultPaints.stroke.strokeWidth = context.strokeWidth.toFloat()
-        }
-        if (defaultPaints.stroke.strokeWidth > 0f) {
             val half = defaultPaints.stroke.strokeWidth / 2f
             canvas.drawRoundRect(
                 left + half, top + half, right - half, bottom - half,

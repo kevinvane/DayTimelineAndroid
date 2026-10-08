@@ -64,6 +64,7 @@ data class TimelineConfig(
     val blockPaddingVertical: Int? = null,
     val blockMinHeight: Int? = null,
     val blockAccentBarWidth: Int? = null,
+    /** 选中态描边粗细（常规态不描边），`null` 表示用资源默认值。 */
     val blockStrokeWidth: Int? = null,
     val blockTextSize: Int? = null,
     val showTimeSubtitle: Boolean? = null,

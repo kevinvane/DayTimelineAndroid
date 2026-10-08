@@ -38,8 +38,8 @@
     <dimen name="day_timeline_block_min_height">20dp</dimen>
     <!-- 日程块左侧色条宽度 -->
     <dimen name="day_timeline_block_accent_bar">4dp</dimen>
-    <!-- 日程块描边粗细 -->
-    <dimen name="day_timeline_block_stroke_width">1dp</dimen>
+    <!-- 选中态描边粗细（常规态不描边）。PRD §7.4：选中态 = 选中态色 + 轻微加粗 -->
+    <dimen name="day_timeline_block_stroke_width">2dp</dimen>
     <!-- 日程块内容文字字号 -->
     <dimen name="day_timeline_block_text_size">12sp</dimen>
 

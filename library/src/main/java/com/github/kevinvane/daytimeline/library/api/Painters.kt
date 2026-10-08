@@ -61,6 +61,7 @@ data class TimelineColors(
     @ColorInt val blockText: Int,
     @ColorInt val blockAccentPast: Int,
     @ColorInt val blockAccent: Int,
+    /** §7.3「日程块描边色」；默认绘制方常规态不描边，此色留给自定义 [EventBlockPainter]。 */
     @ColorInt val blockStroke: Int,
     @ColorInt val selected: Int,
     @ColorInt val editLayerBg: Int,
@@ -132,6 +133,7 @@ class BlockContext {
     var paddingHorizontal = 0
     var paddingVertical = 0
     var accentBarWidth = 0
+    /** 选中态描边粗细（默认绘制方仅在选中态描边，常规态不描边）。 */
     var strokeWidth = 0
     var selected = false
     var editing = false
