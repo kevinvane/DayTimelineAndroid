@@ -189,6 +189,62 @@ class DayTimelineViewBehaviorTest {
         assertTrue("脏数据应产生数据异常事件，实际 ${issues.size} 条", issues.isNotEmpty())
     }
 
+    /**
+     * 回归 3：**平滑滚动后不能被弹回原处**。
+     *
+     * 曾出现 `fling()` / `startScroll()` 把参数填到 X 轴，而 `computeScroll()` 读的是
+     * `currY` —— `currY` 恒为 0，于是惯性期间每帧把 `scrollOffset` 写回 0，
+     * 表现为「拖得动，一松手就弹回顶部」。
+     *
+     * 这里用带动画的 [DayTimelineView.scrollToMinute] 走完整条
+     * `startScroll → computeScroll` 链路，逐帧推进直到动画结束，
+     * 断言偏移单调走到目标附近且不会中途回落到起点。
+     */
+    @Test
+    fun smoothScrollDoesNotSnapBack() {
+        val target = 14 * 60
+        view.scrollToMinute(target, smooth = true)
+
+        val start = readScrollOffset()
+        var previous = start
+        var frames = 0
+        while (frames < 200 && isScrollerRunning()) {
+            view.computeScroll()
+            val now = readScrollOffset()
+            // 动画必须朝目标单向推进，不得回落到更小的偏移
+            assertTrue(
+                "动画期间偏移回退了：$now < 上一帧 $previous（起点 $start，目标 $target）",
+                now >= previous,
+            )
+            previous = now
+            frames++
+        }
+        assertTrue("动画帧数为 0，说明 startScroll 根本没启动", frames > 0)
+
+        val max = (readInt("contentHeight") - HEIGHT).coerceAtLeast(0)
+        assertTrue("最终偏移应离开起点，实际 $previous == $start", previous != start)
+        assertTrue("最终偏移应在合法范围内", previous in 0..max)
+    }
+
+    /** 惯性 fling 结束后偏移必须稳定在终点，不能每帧归零。 */
+    @Test
+    fun scrollOffsetStaysPutAfterGesture() {
+        view.setScrollOffset(800)
+        view.computeScroll()
+        val afterFirst = readScrollOffset()
+        // 连续多次调用 computeScroll 不应改变一个已经稳定的偏移
+        repeat(3) { view.computeScroll() }
+        assertEquals("未在动画中时 computeScroll 不应改动偏移", afterFirst, readScrollOffset())
+    }
+
+    /** 组件内部的 OverScroller 是否仍在跑动画。 */
+    private fun isScrollerRunning(): Boolean {
+        val f = DayTimelineView::class.java.getDeclaredField("scroller").apply { isAccessible = true }
+        val s = f.get(view) as android.widget.OverScroller
+        // isFinished 是只读查询，不会推进动画状态，因此可以安全调用
+        return !s.isFinished
+    }
+
     // ---- 工具 ----
 
     private fun readScrollOffset(): Int = view.getScrollOffset()

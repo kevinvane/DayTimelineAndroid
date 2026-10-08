@@ -304,7 +304,9 @@ class DayTimelineView @JvmOverloads constructor(
         val maxScroll = maxScroll()
         val clamped = target.coerceAtMost(maxScroll)
         if (smooth) {
-            scroller.startScroll(scrollOffset, clamped, clamped - scrollOffset, 0, 220)
+            // 全程使用 Y 轴：scrollOffset 是纵向偏移，computeScroll() 读的也是 currY。
+            // 早先误用 X 轴（currX 变化而 currY 恒为 0）会导致抬手后每帧被写回 0，表现为回弹。
+            scroller.startScroll(0, scrollOffset, 0, clamped - scrollOffset, SCROLL_DURATION_MS)
             postInvalidateOnAnimation()
         } else {
             scrollOffset = clamped
@@ -695,17 +697,26 @@ class DayTimelineView @JvmOverloads constructor(
      */
     private fun endScrollGesture(viewY: Float) {
         val velocityTracker = lastVelocityTracker
+        lastVelocityTracker = null
         val max = maxScroll()
-        if (velocityTracker != null && max > 0) {
+        if (velocityTracker != null) {
             velocityTracker.computeCurrentVelocity(1000) // px/s
-            // 手指上滑（负 dy）→ 向下滚动 → 正速度
-            val velocityY = -velocityTracker.getYVelocity().toFloat()
-            scroller.fling(
-                scrollOffset, 0, 0, velocityY.toInt(),
-                0, max, 0, 0,
-            )
-            lastVelocityTracker = null
-            if (scroller.computeScrollOffset()) postInvalidateOnAnimation()
+            // 手指上滑 → getYVelocity() 为负 → 取反得到向下的正速度
+            val velocityY = (-velocityTracker.getYVelocity()).toInt()
+            velocityTracker.recycle()
+            if (max > 0 && velocityY != 0) {
+                // **必须用 Y 轴**：computeScroll() 读的是 scroller.currY。
+                // 早先误把参数填到 X 轴上（startX/minX/maxX），currY 恒为 0，
+                // 于是惯性期间每帧把 scrollOffset 写回 0 —— 表现为「滑一下就弹回顶部」。
+                //
+                // minY=0 / maxY=max 即为钳制，配合 §8.5「边界回弹关闭」不做 overscroll。
+                scroller.fling(
+                    0, scrollOffset,      // startX, startY
+                    0, velocityY,         // velocityX, velocityY
+                    0, 0, 0, max,          // minX, maxX, minY, maxY
+                )
+                postInvalidateOnAnimation()
+            }
         }
         lastScrollTouchY = viewY
         if (parentDisallowRequested) {
@@ -818,8 +829,18 @@ class DayTimelineView @JvmOverloads constructor(
                     lastVelocityTracker?.recycle()
                     lastVelocityTracker = null
                 } else {
-                    endScrollGesture(y)
+                    // 只在确实判为滚动时才做惯性收尾；点击 / 长按 / 编辑拖拽
+                    // 不应启动 scroller 动画，否则会与编辑态的绘制时序打架
+                    if (intent == GestureArbiter.Intent.Scroll) {
+                        endScrollGesture(y)
+                    } else {
+                        lastVelocityTracker?.recycle()
+                        lastVelocityTracker = null
+                        parent?.requestDisallowInterceptTouchEvent(false)
+                        parentDisallowRequested = false
+                    }
                 }
+
                 when (intent) {
                     // §8.2：已触发长按但全程未移动 → 进入编辑态（原地选中）
                     GestureArbiter.Intent.LongPress -> {
@@ -1011,6 +1032,7 @@ class DayTimelineView @JvmOverloads constructor(
 
     override fun computeScroll() {
         if (scroller.computeScrollOffset()) {
+            // 一律读 currY：scrollOffset 是纵向偏移，fling/startScroll 也都配在 Y 轴上
             scrollOffset = scroller.currY.coerceIn(0, maxScroll())
             // 滚动必须重绘（内容位移属于真实变化），不走签名比对
             lastRenderSignature = Long.MIN_VALUE
@@ -1197,6 +1219,9 @@ class DayTimelineView @JvmOverloads constructor(
 
 /** 边缘自动滚动帧间隔：约 60fps（FI-014）。 */
 private const val EDGE_SCROLL_INTERVAL_MS = 16L
+
+/** 平滑滚动到指定时刻的时长（ms）。§8.5 未规定，取 220ms 的常见手感。 */
+private const val SCROLL_DURATION_MS = 220
 
 /** 把内部 [Theme] 映射为对外的 [TimelineColors]（供定制方取色）。 */
 private fun Theme.toPublicColors(): TimelineColors = TimelineColors(

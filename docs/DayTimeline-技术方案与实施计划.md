@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v0.4（草案） |
+| 文档版本 | v0.5（草案） |
 | 状态 | 待评审 |
 | 编写日期 | 2026-09-30 |
 | 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.1 |
@@ -424,6 +424,39 @@ TypedValue.applyDimension(COMPLEX_UNIT_DIP, res.getDimension(id), res.displayMet
 **回归防线**：`DayTimelineViewBehaviorTest` 覆盖滚动偏移钳制、跳转到首尾、
 外部模式自身不滚，以及"绘制结果含多种颜色"（防止改坏绘制却看不出来）。
 
+### AD-21　惯性动画必须与读取的轴一致　【执行期决策】
+
+**背景（真机可见缺陷）**：滑动可用，但**一松手就弹回原处**——
+滚到 17 点附近立刻被弹回 00~09。
+
+根因是 `fling()` / `startScroll()` 的参数填到了 **X 轴**，而 `computeScroll()` 读的是
+**`scroller.currY`**：
+
+```kotlin
+scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
+//        ↑startX      ↑startY ↑vx   ↑vy      ↑minX ↑maxX ↑minY ↑maxY
+```
+
+`currY` 因此恒为 0，惯性期间 `computeScroll()` 每帧把 `scrollOffset` 写回 0。
+拖拽阶段走的是 `dragScroll()`（直接改 `scrollOffset`），所以拖得动、一抬手就回弹。
+
+**决策**：
+1. `fling` / `startScroll` / `computeScroll` **统一使用 Y 轴**；
+   `scrollOffset` 本就是纵向偏移，Y 轴才是唯一自洽的选择。
+2. 边界用 `minY=0 / maxY=max` 直接钳制，不启用 overscroll（§8.5「边界回弹关闭」）。
+3. **只有判定为滚动的抬手才启动惯性**。原先每次 `ACTION_UP` 都会走
+   `endScrollGesture()`，点击 / 长按 / 编辑拖拽也会碰 scroller，
+   容易与编辑态绘制时序打架。现在按 `Intent.Scroll` 把关。
+
+**教训**：`OverScroller` 有 X/Y 两套平行的参数位，填错轴**编译不会报错**、
+运行也只是"不弹了"而非崩溃，属于极易漏过的一类。
+`startScroll` 同理，此前 `scrollToMinute(smooth=true)` 也一直静默失效。
+
+**回归防线**：`DayTimelineViewBehaviorTest` 新增两条：
+- `smoothScrollDoesNotSnapBack`：逐帧推进动画，断言偏移**单调不减**（不回退）
+  且最终离开起点
+- `scrollOffsetStaysPutAfterGesture`：不在动画中时反复调 `computeScroll()` 不得改动偏移
+
 
 
 
@@ -660,6 +693,7 @@ TypedValue.applyDimension(COMPLEX_UNIT_DIP, res.getDimension(id), res.displayMet
 | v0.2 | 2026-09-30 | 开工后补充执行期决策 AD-12（色项占位）、AD-13（core-ktx 降级）、AD-14（绘制上下文复用），并回写 §9 实施进度。 | — |
 | v0.3 | 2026-10-08 | 真机崩溃排查后补 AD-15~AD-18：format=float 导致 TYPE_FLOAT 与 getDimension 不兼容、单位二次换算致字号放大三倍、XML 配置此前从未被读取且 setConfig 应为合并语义、补真机资源契约测试。 | — |
 | v0.4 | 2026-10-08 | 真机暴露两个新缺陷后补 AD-19/AD-20：块内文字漏设 textSize 用了 Paint 默认的 12 原始像素；以及自身滚动模式**根本没实现拖拽滚动**（判定有、执行无）。同时补窄列文字省略号截断与对应真机回归测试。 | — |
+| v0.5 | 2026-10-08 | 真机复测「滑动后回弹」后补 AD-21：`fling`/`startScroll` 参数填到了 X 轴而 `computeScroll` 读 `currY`，`currY` 恒为 0 导致惯性期间每帧写回 0。统一到 Y 轴并按 Intent 把关是否启动惯性。 | — |
 
 ---
 
