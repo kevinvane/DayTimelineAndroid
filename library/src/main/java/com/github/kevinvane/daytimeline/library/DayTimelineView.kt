@@ -416,7 +416,7 @@ class DayTimelineView @JvmOverloads constructor(
      * 编辑块与刻度线**左右对齐**（左起于时间轴区域右侧，右止于右侧边距），
      * 与普通日程块不同——这是 §7.7 的明确要求。
      *
-     * 手柄视觉直径 6dp，触摸热区 48dp 由 [HitTester] 负责，两者解耦（UF-001）。
+     * 手柄为上下边缘水平居中的胶囊，视觉厚 6dp × 宽 24dp，触摸热区 48dp 由 [HitTester] 负责（UF-001）。
      */
     private fun drawEditLayer(canvas: Canvas, contentLeft: Int, contentRight: Int) {
         val session = editSession ?: return
@@ -449,11 +449,19 @@ class DayTimelineView @JvmOverloads constructor(
             session.end.toString(), labelX, bottom.toFloat(), paints.nowLabel,
         )
 
-        // 手柄：左上 / 右下实心圆点，视觉直径 6dp
-        val r = dimens.handleVisualSize / 2f
+        // 手柄：上下边缘水平中心的胶囊（视觉 6dp 厚 × 4 倍宽，热区仍由 HitTester 保 48dp）
+        val handleH = dimens.handleVisualSize.toFloat()
+        val handleW = handleH * 4f
+        val cx = (left + right) / 2f
         paints.editHandle.color = colors.editHandle
-        canvas.drawCircle(left + r, top + r, r, paints.editHandle)
-        canvas.drawCircle(right - r, bottom - r, r, paints.editHandle)
+        canvas.drawRoundRect(
+            cx - handleW / 2, top - handleH / 2, cx + handleW / 2, top + handleH / 2,
+            handleH / 2, handleH / 2, paints.editHandle,
+        )
+        canvas.drawRoundRect(
+            cx - handleW / 2, bottom - handleH / 2, cx + handleW / 2, bottom + handleH / 2,
+            handleH / 2, handleH / 2, paints.editHandle,
+        )
     }
 
     // ================= 刷新收敛（AD-06 / D17） =================
@@ -776,7 +784,6 @@ class DayTimelineView @JvmOverloads constructor(
                     editing = editIndex(),
                     editingTop = editTopPx() - scrollOffset,
                     editingHeight = editHeightPx(),
-                    handleVisualRadius = dimens.handleVisualSize / 2,
                 )
                 grabbedHandle = when (hit) {
                     is HitTester.Hit.TopHandle -> 1
@@ -879,7 +886,6 @@ class DayTimelineView @JvmOverloads constructor(
             x, y, contentLeft, contentRight,
             blocks, blockTopsInView(), blockHeights,
             editing = -1, editingTop = 0, editingHeight = 0,
-            handleVisualRadius = dimens.handleVisualSize / 2,
         )
         if (hit is HitTester.Hit.Block) {
             selectedId = hit.block.event.id
@@ -955,7 +961,6 @@ class DayTimelineView @JvmOverloads constructor(
             x, y, contentLeft, contentRight,
             blocks, blockTopsInView(), blockHeights,
             editing = -1, editingTop = 0, editingHeight = 0,
-            handleVisualRadius = dimens.handleVisualSize / 2,
         )
         when (hit) {
             is HitTester.Hit.Block -> {

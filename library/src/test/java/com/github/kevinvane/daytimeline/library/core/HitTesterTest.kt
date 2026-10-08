@@ -9,7 +9,6 @@ class HitTesterTest {
 
     private val minTarget = 48
     private val handleTouch = 48
-    private val handleVisual = 6
     private val tester = HitTester(minTarget, handleTouch)
 
     private fun block(id: String, start: Int, end: Int, left: Int, width: Int): PlacedBlock {
@@ -67,25 +66,23 @@ class HitTesterTest {
     fun `视觉 6dp 的手柄热区可达 48dp`() {
         val b = block("a", 540, 600, left = 0, width = 200)
         val hit = tester.hitTest(
-            // 距视觉手柄中心 20px，视觉半径仅 3px，但热区半径 24px
-            x = 20f, y = 120f,
+            // 距上手柄视觉中心 20px，视觉半径仅 3px，但热区半径 24px
+            x = 120f, y = 120f, // 上手柄中点 (100,120)
             contentLeft = 0, contentRight = 200,
             blocks = listOf(b), blockTops = intArrayOf(100), blockHeights = intArrayOf(100),
             editing = 0, editingTop = 120, editingHeight = 100,
-            handleVisualRadius = handleVisual,
         )
         assertEquals(HitTester.Hit.TopHandle, hit)
     }
 
     @Test
-    fun `下手柄在右下角`() {
+    fun `下手柄居中于底边`() {
         val b = block("a", 540, 600, left = 0, width = 200)
         val hit = tester.hitTest(
-            x = 180f, y = 200f,
+            x = 100f, y = 200f, // 底边中点（contentLeft+contentRight)/2=100
             contentLeft = 0, contentRight = 200,
             blocks = listOf(b), blockTops = intArrayOf(100), blockHeights = intArrayOf(100),
             editing = 0, editingTop = 100, editingHeight = 100,
-            handleVisualRadius = handleVisual,
         )
         assertEquals(HitTester.Hit.BottomHandle, hit)
     }
@@ -94,14 +91,13 @@ class HitTesterTest {
     fun `手柄热区 48dp 内的空白也能命中手柄而非空白`() {
         val b = block("a", 540, 600, left = 0, width = 200)
         val hit = tester.hitTest(
-            x = 15f, y = 112f,
+            x = 115f, y = 112f, // 距上手柄中点 (100,120) 约 17px，热区半径 24px
             contentLeft = 0, contentRight = 200,
             blocks = listOf(b), blockTops = intArrayOf(100), blockHeights = intArrayOf(200),
             editing = 0, editingTop = 120, editingHeight = 200,
-            handleVisualRadius = handleVisual,
         )
         assertTrue(
-            "视觉手柄只有 6dp，但热区 48dp，故 15px 处应命中手柄",
+            "视觉手柄只有 6dp，但热区 48dp，故 17px 处应命中手柄",
             hit == HitTester.Hit.TopHandle || hit is HitTester.Hit.Block,
         )
     }

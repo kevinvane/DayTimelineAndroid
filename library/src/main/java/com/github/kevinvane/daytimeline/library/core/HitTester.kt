@@ -42,7 +42,6 @@ class HitTester(
      * @param editing 编辑态块的下标；无编辑态为 -1。
      * @param editingTop 编辑块顶边 y；无编辑态时忽略。
      * @param editingHeight 编辑块高度；无编辑态时忽略。
-     * @param handleVisualRadius 手柄**视觉**半径（px）。
      */
     fun hitTest(
         x: Float,
@@ -55,20 +54,20 @@ class HitTester(
         editing: Int = -1,
         editingTop: Int = 0,
         editingHeight: Int = 0,
-        handleVisualRadius: Int = 0,
     ): Hit {
         // ---- 1. 先判编辑手柄（热区远大于视觉，且优先级最高） ----
         if (editing >= 0) {
             val topHandleY = editingTop
             val bottomHandleY = editingTop + editingHeight
-            // 上手柄在左上角，下手柄在右下角（§7.7）
+            // 手柄居中于上下边缘水平中心（胶囊形，§7.7）
+            val handleX = (contentLeft + contentRight) / 2f
             val handleHit = handleTouchSize / 2
-            if ((x - handleX(contentLeft, top = true, handleVisualRadius)).let { abs(it) } <= handleHit &&
+            if ((x - handleX).let { abs(it) } <= handleHit &&
                 (y - topHandleY).let { abs(it) } <= handleHit
             ) {
                 return Hit.TopHandle
             }
-            if ((x - handleX(contentRight, top = false, handleVisualRadius)).let { abs(it) } <= handleHit &&
+            if ((x - handleX).let { abs(it) } <= handleHit &&
                 (y - bottomHandleY).let { abs(it) } <= handleHit
             ) {
                 return Hit.BottomHandle
@@ -106,10 +105,6 @@ class HitTester(
         out[2] = (centerX + half).toInt()
         out[3] = (centerY + half).toInt()
     }
-
-    private fun handleX(alignLeft: Int, top: Boolean, handleVisualRadius: Int): Float =
-        if (top) alignLeft.toFloat() + handleVisualRadius
-        else alignLeft.toFloat() - handleVisualRadius
 
     private fun abs(v: Float): Float = if (v < 0) -v else v
 }

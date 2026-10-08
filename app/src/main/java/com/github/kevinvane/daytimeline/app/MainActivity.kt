@@ -31,9 +31,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         timeline = findViewById(R.id.timeline)
+        val events = SampleEvents.today().toMutableList()
         // 布局 XML 里已通过 app:dtXxx 配置了尺寸与行为（FC-005 的界面配置侧）。
         // 这里再用代码配置补充一项 XML 没覆盖的字段，验证两条路径可叠加。
         timeline.setConfig(TimelineConfig(defaultNewDurationMinutes = 30))
+
+        findViewById<android.widget.Button>(R.id.btn_done).setOnClickListener { timeline.confirmEdit() }
+        findViewById<android.widget.Button>(R.id.btn_cancel).setOnClickListener { timeline.cancelEdit() }
+        findViewById<android.widget.Button>(R.id.btn_delete).setOnClickListener { timeline.requestDelete() }
+
         timeline.listener = object : TimelineListener {
             override fun onEventClick(event: TimelineEvent) {
                 android.util.Log.i(TAG, "点击 ${event.id}")
@@ -45,14 +51,23 @@ class MainActivity : AppCompatActivity() {
 
             override fun onEventCreated(range: IntRange) {
                 android.util.Log.i(TAG, "新建 $range")
+                events.add(DemoEvent("local_${range.first}_${range.last}", range.first, range.last, "新建日程"))
+                timeline.submitEvents(events)
             }
 
             override fun onEventModified(event: TimelineEvent, range: IntRange, hasConflict: Boolean) {
                 android.util.Log.i(TAG, "修改 ${event.id} → $range，冲突=$hasConflict")
+                val i = events.indexOfFirst { it.id == event.id }
+                if (i >= 0 && !hasConflict) {
+                    events[i] = DemoEvent(event.id, range.first, range.last, event.content)
+                    timeline.submitEvents(events)
+                }
             }
 
             override fun onEventDeleted(event: TimelineEvent) {
                 android.util.Log.i(TAG, "删除 ${event.id}")
+                events.removeAll { it.id == event.id }
+                timeline.submitEvents(events)
             }
 
             // D3：取消只允许用于统计编辑完成率，不得据此改数据
@@ -64,7 +79,7 @@ class MainActivity : AppCompatActivity() {
                 android.util.Log.w(TAG, "数据异常 ${issues.size} 条")
             }
         }
-        timeline.submitEvents(SampleEvents.today())
+        timeline.submitEvents(events)
     }
 
     companion object {
