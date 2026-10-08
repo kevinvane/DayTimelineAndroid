@@ -781,7 +781,9 @@ class DayTimelineView @JvmOverloads constructor(
                 val hit = hitTester.hitTest(
                     x, y, contentLeft, contentRight,
                     blocks, blockTopsInView(), blockHeights,
-                    editing = editIndex(),
+                    // 新建态 origin 为 null → editIndex() == -1，但手柄仍需可点（HitTester 只把 editing >= 0
+                    // 当作「编辑层激活」的门闩，不直接用索引取块）
+                    editing = if (editSession != null) maxOf(0, editIndex()) else -1,
                     editingTop = editTopPx() - scrollOffset,
                     editingHeight = editHeightPx(),
                 )
