@@ -178,8 +178,9 @@ data class TimelineConfig(
         nowIndicatorTodayOnly = other.nowIndicatorTodayOnly ?: nowIndicatorTodayOnly,
         nowIndicatorSkipOverlappingHourLabel = other.nowIndicatorSkipOverlappingHourLabel
             ?: nowIndicatorSkipOverlappingHourLabel,
-        nowDotDiameter = other.nowDotDiameter ?: nowDotDiameter,
+nowDotDiameter = other.nowDotDiameter ?: nowDotDiameter,
         nowLineWidth = other.nowLineWidth ?: nowLineWidth,
+        autoLocateOnFirstShow = other.autoLocateOnFirstShow ?: autoLocateOnFirstShow,
 
         timeFormat = other.timeFormat ?: timeFormat,
         snapMinutes = other.snapMinutes ?: snapMinutes,
