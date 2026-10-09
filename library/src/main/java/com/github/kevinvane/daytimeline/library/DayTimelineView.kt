@@ -398,7 +398,6 @@ class DayTimelineView @JvmOverloads constructor(
                 accentBarWidth = dimens.blockAccentBarWidth
                 strokeWidth = dimens.blockStrokeWidth
                 selected = selectedId == b.event.id
-                editing = false
                 timeFormat = timeFmt
                 startText = b.event.start.toString()
                 endText = b.event.end.toString()
@@ -589,7 +588,12 @@ class DayTimelineView @JvmOverloads constructor(
         val session = editSession ?: return
         val event = session.origin ?: return
         if (editController?.onDelete() == true) {
+            // 业务方已接管：与 [confirmEdit] 的 handled 分支同样收干净三项状态，
+            // 否则选中描边与编辑层会残留到下一次刷新为止
             editSession = null
+            selectedId = null
+            grabbedHandle = 0
+            requestRefresh()
             return
         }
         val title = event.content?.toString()
@@ -1042,24 +1046,9 @@ class DayTimelineView @JvmOverloads constructor(
      *
      * [onTouchEvent] 消费了点击就必须能触发 [performClick]，
      * 否则屏幕阅读器无法激活该控件（UF-003 / Q8）。
-     * M4 会在此接入选中 / 新建逻辑。
      */
     override fun performClick(): Boolean {
         super.performClick()
-        return true
-    }
-
-    private fun handleSelfScroll(event: MotionEvent): Boolean {
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> scroller.forceFinished(true)
-            MotionEvent.ACTION_MOVE -> {
-                // FI-001：自身滚动模式下消费垂直手势
-                parent?.requestDisallowInterceptTouchEvent(true)
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                parent?.requestDisallowInterceptTouchEvent(false)
-            }
-        }
         return true
     }
 

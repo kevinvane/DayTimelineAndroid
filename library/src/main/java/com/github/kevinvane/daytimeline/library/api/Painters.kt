@@ -136,7 +136,6 @@ class BlockContext {
     /** 选中态描边粗细（默认绘制方仅在选中态描边，常规态不描边）。 */
     var strokeWidth = 0
     var selected = false
-    var editing = false
     var timeFormat: TimeFormat = TimeFormat.SYSTEM
 
     /** 已格式化的起止时间文本；副标题与读屏描述可直接使用，无需自行处理 12/24 小时制。 */
