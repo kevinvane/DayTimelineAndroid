@@ -89,24 +89,40 @@ Windows 下用 `gradlew.bat`：
 .\gradlew.bat :app:installDebug             # 装到已连接设备/模拟器
 .\gradlew.bat test                          # 全部 JVM 单元测试（不需要设备）
 .\gradlew.bat :library:testDebugUnitTest --tests "com.github.kevinvane.daytimeline.library.*"
-.\gradlew.bat :library:verifyCoreCoverage   # 核心逻辑覆盖率门禁 ≥90%（实测 91.08%）
-.\gradlew.bat :library:verifyAllCoverage     # 全库覆盖率门禁 ≥75%，**需设备**
+.\gradlew.bat :library:verifyCoreCoverage   # 核心逻辑覆盖率门禁 ≥90%（实测 91.64%）
+.\gradlew.bat :library:verifyAllCoverage     # 全库可测逻辑覆盖率门禁 ≥75%（实测 88.26%，不需要设备）
+.\gradlew.bat detekt                          # 静态检查 + 代码风格 0 违规
+.\gradlew.bat :library:verifyNoDeadCode       # 死代码 0 处（依赖 detekt）
+.\gradlew.bat :r8test:verifyKeptSymbols       # 混淆产物构建 + 对外契约类符号核对（不需要设备）
 .\gradlew.bat connectedAndroidTest           # 需要设备/模拟器
 ```
 
-`.\gradlew.bat lint` 可用，但**用的是 AGP 默认规则**——仓库没有配置任何 lint baseline。
+`lint` 用的是 AGP 默认规则 + `lint { warningsAsErrors = true }`——**没有配置任何 lint baseline**，
+所以新增一条 warning 就会让构建失败。这是刻意的：门禁靠「不容忍」才有意义。
 
-## 尚未建立、但 PRD 要求的基础设施
+## 基础设施现状
 
-这些**都不存在**，需要时得自己搭，且 PRD 门禁要求它们最终落地：
+已具备（PRD §12.4 / §12.5 要求的主要门禁均已落地并接入 CI）：
 
-- 无 pre-commit 钩子。
-- 无 ktlint / detekt / spotless；`kotlin.code.style=official` 是唯一风格约定。
-- 无死代码检查工具（§12.4 要求 0 处并「纳入自动化阻断」）。
-- 无 R8/混淆验证（§12.5 要求组件在业务方开启混淆后功能正常）——`consumer-rules.pro` 已写，但**没有 minify 消费端验证过**。
+- **detekt**（`config/detekt/detekt.yml`）：静态检查 + 代码风格 0 违规。
+- **死代码门禁** `verifyNoDeadCode`：扫描未被引用的私有成员，0 处即通过。
+  与 detekt 分两步跑，失败时能一眼看出是哪条红线。
+- **JaCoCo 覆盖率门禁**：`verifyCoreCoverage`（core ≥90%，实测 91.64%）与
+  `verifyAllCoverage`（core + api 可测逻辑 ≥75%，实测 88.26%）。
+  口径与敏感度边界见 `library/build.gradle.kts` 里 `verifyAllCoverage` 的 KDoc。
+- **R8 混淆消费端验证**（`:r8test` 模块）：核对对外契约类是否按 `consumer-rules.pro`
+  保留，再在**混淆后的 release 变体**上跑仪器测试——这是「业务方开启混淆后功能正常」
+  的唯一有效证据（library 自身不开混淆，保留规则写错也不会有任何东西报错）。
+- **CI**（`.github/workflows/ci.yml`）：三个 job——静态门禁 / 仪器测试 / R8 验证。
+- **仪器测试** 52 个（`connectedDebugAndroidTest`），R8 混淆变体 6 个。
 
-已具备：CI（`.github/workflows/ci.yml`）、JaCoCo 覆盖率门禁（核心 ≥90%，实测 91.08%）、
-`lint { warningsAsErrors = true }`、两个仪器测试（资源契约 + 视图构造）。
+尚未建立：
+
+- 无 pre-commit 钩子（当前只在 CI 里阻断）。
+- 无死代码检查工具之外的「删除前确认」类防护。
+- 仪器测试的执行数据**不并入** JaCoCo JVM 报告，因此覆盖率门禁看不到
+  View / 绘制 / 资源读取层的执行情况。补上需要 `jacoco-android` 等第三方插件，
+  与 K10「零第三方依赖」冲突，待单独评估。
 
 ## 一条自省的教训
 
