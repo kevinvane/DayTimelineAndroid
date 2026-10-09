@@ -8,3 +8,9 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# 各模块的构建产物目录。
+# 上面的 `/build` 只锚定仓库根目录；:library/:app/:r8test 的 build/ 需要单独一条，
+# 否则新增模块时 `git add -A` 会把 APK、DEX、kotlin 缓存全提交进去
+# （踩过一次：r8test/build/ 下数千个文件被误提交）。
+**/build/
