@@ -172,7 +172,9 @@ internal object DefaultEventBlockPainter : EventBlockPainter {
 
         // 左侧色条：已过/进行中/未到三色随状态切换
         if (context.accentBarWidth > 0) {
-            defaultPaints.accent.color = colors.blockAccentColor(context.state)
+            // 业务色优先：PRD §7.7.1 的第三条通道，为 null 时回落到组件主题色
+            defaultPaints.accent.color = context.accentColor
+                ?: colors.blockAccentColor(context.state)
             canvas.drawRoundRect(
                 left,
                 top,

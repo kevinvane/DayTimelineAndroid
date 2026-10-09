@@ -148,4 +148,85 @@ class EditSessionTest {
         assertTrue(kept === s)
         assertFalse(s.hasConflict)
     }
+
+    // ---------- applyEdit：业务方表单一次性改两端 + 标题（AD-22）----------
+
+    @Test
+    fun `applyEdit 起止时间走同一套合法化规则`() {
+        val s = EditSession.beginEdit(event("a", 540, 600))
+        // 步长 0，两端合法 → 原样落地
+        s.applyEdit(660, 780, snapMinutes = 0, minDuration = 5, maxDuration = 1440, newContent = null)
+        assertEquals(660, s.startMinute)
+        assertEquals(780, s.endMinute)
+    }
+
+    @Test
+    fun `applyEdit 越界与填反都被兜底`() {
+        val s = EditSession.beginEdit(event("a", 540, 600))
+        s.applyEdit(1530, 1560, snapMinutes = 0, minDuration = 5, maxDuration = 1440, newContent = null)
+        assertTrue("不得越界，实际 ${s.startMinute}..${s.endMinute}", s.endMinute <= 1440)
+        assertTrue("不得越界，实际 ${s.startMinute}..${s.endMinute}", s.startMinute >= 0)
+
+        val t = EditSession.beginEdit(event("a", 540, 600))
+        t.applyEdit(700, 600, snapMinutes = 0, minDuration = 5, maxDuration = 1440, newContent = null)
+        assertEquals("填反应被交换", 600, t.startMinute)
+        assertEquals(700, t.endMinute)
+    }
+
+    /** 修改态草稿以原标题起步（供表单预填）。 */
+    @Test
+    fun `修改态草稿以原标题起步`() {
+        val target = EventSanitizer.sanitize(
+            listOf(TestEvent("a", 540, 600, content = "旧标题")),
+        ).events.single()
+        val s = EditSession.beginEdit(target)
+        assertEquals("旧标题", s.pendingContent?.toString())
+    }
+
+    /** 三态语义：`null` = 不改，`""` = 清空（AD-22 / PRD 允许空标题）。 */
+    @Test
+    fun `applyEdit 的 null 表示不改而空串表示清空`() {
+        val target = EventSanitizer.sanitize(
+            listOf(TestEvent("a", 540, 600, content = "旧标题")),
+        ).events.single()
+        val s = EditSession.beginEdit(target)
+
+        s.applyEdit(540, 600, snapMinutes = 0, minDuration = 5, maxDuration = 1440, newContent = null)
+        assertEquals("null 应沿用原标题", "旧标题", s.pendingContent?.toString())
+
+        s.applyEdit(540, 600, snapMinutes = 0, minDuration = 5, maxDuration = 1440, newContent = "")
+        assertEquals("空串应清空标题", "", s.pendingContent?.toString())
+    }
+
+    /** 提交结果必须带上待提交的标题，否则标题改了也没人知道。 */
+    @Test
+    fun `commit 携带表单提交的标题`() {
+        val target = EventSanitizer.sanitize(
+            listOf(TestEvent("a", 540, 600, content = "旧标题")),
+        ).events.single()
+        val s = EditSession.beginEdit(target)
+        s.applyEdit(600, 660, snapMinutes = 0, minDuration = 5, maxDuration = 1440, newContent = "新标题")
+
+        val commit = s.commit() as EditSession.Commit.Modify
+        assertEquals("新标题", commit.content?.toString())
+        assertEquals(600..660, commit.range)
+    }
+
+    @Test
+    fun `新建态 applyEdit 后 commit 携带标题`() {
+        val s = EditSession.beginCreate(600, 0, 60)
+        s.applyEdit(600, 660, snapMinutes = 0, minDuration = 5, maxDuration = 1440, newContent = "新日程")
+        val commit = s.commit() as EditSession.Commit.Create
+        assertEquals("新日程", commit.content?.toString())
+        assertEquals(600, commit.startMinute)
+        assertEquals(660, commit.endMinute)
+    }
+
+    /** applyEdit 之后取消仍不得产生任何数据变更（D3 在表单路径上同样成立）。 */
+    @Test
+    fun `D3 applyEdit 之后取消依然零事件`() {
+        val s = EditSession.beginEdit(event("a", 540, 600))
+        s.applyEdit(600, 660, snapMinutes = 0, minDuration = 5, maxDuration = 1440, newContent = "改了")
+        assertTrue("cancel 恒返回无字段对象", s.cancel() is EditSession.CancelResult)
+    }
 }

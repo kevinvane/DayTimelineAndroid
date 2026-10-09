@@ -38,6 +38,20 @@ class EditSession private constructor(
      */
     var hasConflict: Boolean = false
 
+    /**
+     * 待提交的显示内容（标题）。
+     *
+     * ## 为什么草稿要持有内容
+     *
+     * 第四层接管的表单会带回新标题（[applyEdit]），而 `onEventModified` 此前
+     * 只能回传**修改前**的对象——标题在编辑路径上根本改不了（AD-22 缺口 G5）。
+     * 草稿持有它，`commit()` 才能把它一并交出去。
+     *
+     * 语义：修改态初始化为原标题，`applyEdit` 传入 null 表示「不改标题」
+     * 故沿用原值；新建态初始为 null。
+     */
+    var pendingContent: CharSequence? = null
+
     val start: MinuteOfDay get() = MinuteOfDay.ofMinute(startMinute)
     val end: MinuteOfDay get() = MinuteOfDay.ofMinute(endMinute)
 
@@ -67,6 +81,37 @@ class EditSession private constructor(
         endMinute = SnapCalculator.snapResizeEnd(startMinute, rawEndMinute, snapMinutes, minDuration)
     }
 
+    /**
+     * 业务方表单一次性设定起止时间与标题（PRD §8.3.1，AD-22）。
+     *
+     * **不发任何事件**，只改草稿——提交仍必须由调用方显式触发（View 层的
+     * `confirmEdit()`），这保证了 D3「完成是唯一数据变更出口」不被削弱。
+     *
+     * 起止时间走 [SnapCalculator.applyRange] 与拖拽同一套规则，
+     * **两端对称**（D11）；业务方填的越界值、填反的两端都会被兜底。
+     *
+     * [newContent] 为 null 表示「不改标题」，沿用当前 [pendingContent]。
+     */
+    fun applyEdit(
+        rawStartMinute: Int,
+        rawEndMinute: Int,
+        snapMinutes: Int,
+        minDuration: Int,
+        maxDuration: Int,
+        newContent: CharSequence?,
+    ) {
+        val range = SnapCalculator.applyRange(
+            rawStart = rawStartMinute,
+            rawEnd = rawEndMinute,
+            stepMinutes = snapMinutes,
+            minDurationMinutes = minDuration,
+            maxDurationMinutes = maxDuration,
+        )
+        startMinute = range.first
+        endMinute = range.last
+        if (newContent != null) pendingContent = newContent
+    }
+
     /** 拖上边缘：开始时间吸附并保证最短时长、不得晚于 24:00（§8.3）。 */
     fun resizeStartTo(rawStartMinute: Int, snapMinutes: Int, minDuration: Int) {
         startMinute = SnapCalculator.snapResizeStart(
@@ -87,12 +132,13 @@ class EditSession private constructor(
     fun commit(): Commit? {
         val o = origin
         return if (o == null) {
-            Commit.Create(startMinute, endMinute)
+            Commit.Create(startMinute, endMinute, pendingContent)
         } else {
             Commit.Modify(
                 event = o,
                 range = startMinute..endMinute,
                 hasConflict = hasConflict,
+                content = pendingContent,
             )
         }
     }
@@ -140,12 +186,19 @@ class EditSession private constructor(
 
     /** 确认后的动作。 */
     sealed class Commit {
-        data class Create(val startMinute: Int, val endMinute: Int) : Commit()
+        data class Create(
+            val startMinute: Int,
+            val endMinute: Int,
+            /** 新建的显示内容；null 表示未填（PRD §7.7.1 允许空标题）。 */
+            val content: CharSequence?,
+        ) : Commit()
 
         data class Modify(
             val event: SanitizedEvent,
             val range: IntRange,
             val hasConflict: Boolean,
+            /** 修改后的显示内容；null 表示原标题为空。 */
+            val content: CharSequence?,
         ) : Commit()
     }
 
@@ -171,6 +224,9 @@ class EditSession private constructor(
             startMinute = event.start.minuteOfDay.coerceIn(0, MinuteOfDay.END_OF_DAY_MINUTE),
             endMinute = event.end.minuteOfDay.coerceIn(0, MinuteOfDay.END_OF_DAY_MINUTE),
             dragMode = DragMode.NONE,
-        )
+        ).apply {
+            // 草稿以原标题起步；表单传 null 时即为「不改标题」（AD-22）
+            pendingContent = event.content
+        }
     }
 }

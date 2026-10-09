@@ -1,3 +1,21 @@
 <resources>
     <string name="app_name">DayTimeline</string>
+
+    <!-- 业务方自建的日程表单（PRD §7.7.1） -->
+    <string name="form_create_heading">新建日程</string>
+    <string name="form_edit_heading">编辑日程</string>
+    <string name="form_title_hint">标题</string>
+    <string name="form_start_hint">开始 (HH:mm)</string>
+    <string name="form_end_hint">结束 (HH:mm)</string>
+    <string name="form_color_hint">颜色</string>
+    <string name="form_note_hint">备注（仅业务方保存，组件不感知）</string>
+    <string name="form_cancel">取消</string>
+    <string name="form_confirm">确定</string>
+    <string name="form_color_default">默认</string>
+
+    <!-- 业务色按钮的文案；取值见 colors.xml 的 event_* -->
+    <string name="event_blue">蓝</string>
+    <string name="event_green">绿</string>
+    <string name="event_orange">橙</string>
+    <string name="event_purple">紫</string>
 </resources>

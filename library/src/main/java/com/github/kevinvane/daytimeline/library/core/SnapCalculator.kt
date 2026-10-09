@@ -115,4 +115,77 @@ object SnapCalculator {
         val corrected = if (overflow > 0) (start - overflow).coerceAtLeast(0) else start
         return corrected..(corrected + duration)
     }
+
+    /**
+     * 表单同时设定起止时间（PRD §8.3.1，第四层接管的表单一次会改两端）。
+     *
+     * ## 与 [snapResizeStart] / [snapResizeEnd] 的区别
+     *
+     * 那两个是**单边**修正——一个固定开始改结束、一个固定结束改开始，
+     * 只服务于拖拽（一次只有一个手柄在动）。表单两端同时变，复用它们会
+     * 出现「只修了一端」的不对称结果，违反 D11。
+     *
+     * 本函数**双边对称**：两端走同一套 [snap] 规则，再按同一套兜底修正。
+     *
+     * ## 返回值保证的不变式
+     *
+     * `0 <= first < last <= 1440` 且 `minDur <= last - first <= maxDur`。
+     *
+     * ## 兜底顺序（每一步都保持上述不变式）
+     *
+     * 1. 两端各自吸附并钳制到 `[0, 1440]`；
+     * 2. 两端填反了则交换；
+     * 3. 超最长时长则**从开始处截断**（与 [snapMove] 的方向一致）；
+     * 4. 不足最短时长则**优先把结束往后推**；越界则改为把开始往前拉。
+     *
+     * 第 4 步的「优先推结束」是因为表单里用户多半是改开始改过了头，
+     * 保开始比保结束更符合意图。
+     *
+     * ## 关于 minDurationMinutes / maxDurationMinutes 的异常取值
+     *
+     * 二者是业务方通过 [com.github.kevinvane.daytimeline.library.api.TimelineConfig]
+     * 传入的，取值不受组件校验（§11.4：任何输入都不得抛异常给业务方）。
+     * 特别地，若最短时长被设成大于全天（`> 1440`），两者无法同时满足，
+     * 此时**以最短时长为准**并把上限一并拉平——绝不因取值矛盾而抛异常。
+     */
+    fun applyRange(
+        rawStart: Int,
+        rawEnd: Int,
+        stepMinutes: Int,
+        minDurationMinutes: Int,
+        maxDurationMinutes: Int,
+    ): IntRange {
+        val minDur = minDurationMinutes.coerceAtLeast(1)
+        // 注意：不能用 coerceIn(minDur, MINUTES_PER_DAY)——当 minDur > 1440 时
+        // 下界大于上界，Int.coerceIn 会抛 IllegalArgumentException，
+        // 违反 PRD §11.4「任何输入都不把异常抛给业务方」。取值矛盾时以 minDur 为准。
+        val maxDur = maxDurationMinutes
+            .coerceAtLeast(minDur)
+            .coerceAtMost(MinuteOfDay.MINUTES_PER_DAY)
+
+        var start = snap(rawStart, stepMinutes)
+        var end = snap(rawEnd, stepMinutes)
+
+        // 容错：业务方把两端填反了
+        if (start > end) {
+            val swap = start
+            start = end
+            end = swap
+        }
+
+        // 最长时长：从开始处截断
+        if (end - start > maxDur) end = start + maxDur
+
+        // 最短时长：优先推结束；越界则改为拉开始
+        if (end - start < minDur) {
+            val pushedEnd = start + minDur
+            if (pushedEnd <= MinuteOfDay.END_OF_DAY_MINUTE) {
+                end = pushedEnd
+            } else {
+                end = MinuteOfDay.END_OF_DAY_MINUTE
+                start = (end - minDur).coerceAtLeast(0)
+            }
+        }
+        return start..end
+    }
 }

@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  业务方自建的日程编辑表单（PRD §10.2 第四层 / §7.7.1）。
+
+  **组件零新增 View** —— 这个布局完全属于 demo（业务方），组件库不包含任何
+  输入控件。它演示 EditController 接管后的完整闭环：
+
+    onEnterEditing(draft) → 用 draft 预填本表单 → true
+    表单「确定」→ timeline.applyEdit(EditResult(...)) → timeline.confirmEdit()
+    表单「取消」→ timeline.cancelEdit()
+
+  其中「备注」字段刻意**不会**传给组件——它只存在于 DemoEvent 自己的数据类里，
+  组件既不接收也不感知（PRD §7.7.1 职责边界）。
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="20dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/form_heading"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:textAppearance="?attr/textAppearanceTitleMedium" />
+
+        <!-- 标题：组件会接收这个值（TimelineEvent.content） -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/form_title_hint">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/form_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:maxLines="1" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- 起止时间：填非法值也无所谓，组件会按 PRD §8.3.1 合法化 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="@string/form_start_hint">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/form_start"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="time"
+                    android:maxLines="1" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:hint="@string/form_end_hint">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/form_end"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="time"
+                    android:maxLines="1" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+        </LinearLayout>
+
+        <!-- 业务色：组件的第三条颜色通道（PRD §7.7.1），null 表示用默认配色 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/form_color_hint"
+            android:textAppearance="?attr/textAppearanceLabelLarge" />
+
+        <LinearLayout
+            android:id="@+id/form_color_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal" />
+
+        <!--
+          备注：业务方字段，**不进组件**。这里只是演示「组件零参与」——
+          提交时只把标题与时间交给组件，备注存在 DemoEvent 里。
+        -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:hint="@string/form_note_hint">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/form_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textMultiLine"
+                android:maxLines="3" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:gravity="end"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/form_cancel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:text="@string/form_cancel" />
+
+            <Button
+                android:id="@+id/form_confirm"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/form_confirm" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</ScrollView>

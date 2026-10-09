@@ -15,6 +15,8 @@ import androidx.core.graphics.withTranslation
 import androidx.core.view.ViewCompat
 import java.util.Locale
 import com.github.kevinvane.daytimeline.library.api.BlockContext
+import com.github.kevinvane.daytimeline.library.api.EditDraft
+import com.github.kevinvane.daytimeline.library.api.EditResult
 import com.github.kevinvane.daytimeline.library.api.EventBlockPainter
 import com.github.kevinvane.daytimeline.library.api.GridContext
 import com.github.kevinvane.daytimeline.library.api.GridPainter
@@ -106,6 +108,25 @@ class DayTimelineView @JvmOverloads constructor(
 
     /** M4 交互状态。 */
     private var editSession: EditSession? = null
+
+    /**
+     * 编辑态是否已被业务方接管（[EditController.onEnterEditing] 返回了 true）。
+     *
+     * 接管后组件不再执行 FI-010「点外部区域视为取消」——业务方弹出的表单是
+     * 组件外部的窗口，非模态时会被点穿，导致「表单还开着、草稿已取消」
+     * 这种不一致状态。退出路径改由业务方调 `confirmEdit` / `cancelEdit`。
+     * 见 PRD §8.2.1 / AD-22。
+     */
+    private var editTakenOver = false
+
+    /**
+     * 进入编辑态那一刻的草稿快照。
+     *
+     * 与 [editSession] 当前值**刻意不同**：拖拽与 [applyEdit] 都会改动草稿，
+     * 而 [EditController.onDone] / [onCancel] 收到的应是「用户进来时看到的那份」，
+     * 业务方据此能算出自己改了什么。三个出口清零。
+     */
+    private var editDraft: EditDraft? = null
     private val gestureArbiter = GestureArbiter(dragThresholdPx = 48)
     private val hitTester = HitTester(minTouchTarget = 48, handleTouchSize = 48)
     private var grabbedHandle = 0
@@ -124,11 +145,32 @@ class DayTimelineView @JvmOverloads constructor(
 
     /** 第四层定制：接管新建流程 / 编辑层操作。 */
     interface EditController {
-        /** 用户点击「完成」。返回 true 表示已由业务方处理，组件不再自行上抛事件。 */
-        fun onDone(range: IntRange, isCreating: Boolean): Boolean = false
+        /**
+         * 进入编辑态（新建或修改）。返回 `true` 表示业务方接管。
+         *
+         * 业务方典型用法是在此弹出自己的表单（PRD §10.2 第四层 / §7.7.1）：
+         * 用 [draft] 预填，再用 `applyEdit` + `confirmEdit` / `cancelEdit` 收尾。
+         *
+         * **接管后组件不再响应 FI-010**（点外部区域视为取消）——因为表单是
+         * 组件外部的窗口，非模态时会被点穿，导致「表单还开着、草稿已取消」。
+         * 退出路径完全交给业务方（PRD §8.2.1）。
+         */
+        fun onEnterEditing(draft: EditDraft): Boolean = false
 
-        /** 用户点击「取消」。组件内部已保证不会发出任何数据变更。 */
-        fun onCancel() = Unit
+        /**
+         * 用户点击「完成」。返回 `true` 表示已由业务方处理，组件不再自行上抛事件。
+         *
+         * [result] 是业务方经 [applyEdit] 灌入草稿后的**实际生效值**（已合法化），
+         * 不是业务方填的原始值。
+         */
+        fun onDone(draft: EditDraft, result: EditResult): Boolean = false
+
+        /**
+         * 用户点击「取消」。组件内部已保证不会发出任何数据变更（D3）。
+         *
+         * [draft] 供业务方关闭自己的表单，不携带任何数据变更语义。
+         */
+        fun onCancel(draft: EditDraft) = Unit
 
         /** 用户点击「删除」。 */
         fun onDelete(): Boolean = false
@@ -398,6 +440,7 @@ class DayTimelineView @JvmOverloads constructor(
                 accentBarWidth = dimens.blockAccentBarWidth
                 strokeWidth = dimens.blockStrokeWidth
                 selected = selectedId == b.event.id
+                accentColor = b.event.color
                 timeFormat = timeFmt
                 startText = b.event.start.toString()
                 endText = b.event.end.toString()
@@ -537,6 +580,41 @@ class DayTimelineView @JvmOverloads constructor(
     // ================= 滚动 =================
 
     /**
+     * 把业务方表单提交的值灌回编辑草稿（PRD §7.7.1 / AD-22）。
+     *
+     * **不发任何事件，只改草稿。** 提交仍必须由 [confirmEdit] 触发——
+     * 它是唯一的数据变更出口（与 [cancelEdit] 严格镜像，D3）。
+     *
+     * 典型用法：
+     * ```
+     * editController = object : EditController {
+     *     override fun onEnterEditing(draft: EditDraft) = true.also { showMyForm(draft) }
+     * }
+     * // 表单「确定」：
+     * timeline.applyEdit(EditResult(range = 540..600, content = "评审"))
+     * timeline.confirmEdit()
+     * // 表单「取消」：
+     * timeline.cancelEdit()
+     * ```
+     *
+     * 非编辑态下调用是安全的空操作。起止时间会经
+     * [SnapCalculator.applyRange] 合法化（与拖拽同一套规则、两端对称，D11），
+     * 因此业务方填的越界值、填反的两端都会被兜底。
+     */
+    fun applyEdit(result: EditResult) {
+        val session = editSession ?: return
+        session.applyEdit(
+            rawStartMinute = result.range.first,
+            rawEndMinute = result.range.last,
+            snapMinutes = dimens.snapMinutes,
+            minDuration = dimens.minDurationMinutes,
+            maxDuration = dimens.maxDurationMinutes,
+            newContent = result.content,
+        )
+        requestRefresh()
+    }
+
+    /**
      * 确认编辑（PRD FI-008）。
      *
      * **这是唯一会发出数据变更事件的出口。** 取消走 [cancelEdit]，
@@ -545,17 +623,25 @@ class DayTimelineView @JvmOverloads constructor(
     fun confirmEdit() {
         val session = editSession ?: return
         val commit = session.commit() ?: return
+        // 回调拿到的 draft 是**进入编辑态时**的快照，业务方据此能算出改了什么；
+        // result 则是合法化后**即将生效**的值。
+        val draft = editDraft ?: session.toDraft()
         editSession = null
+        editDraft = null
         selectedId = null
-        val handled = editController?.onDone(commit.rangeOrEmpty(), commit.isCreate()) == true
+        editTakenOver = false
+        val handled = editController?.onDone(draft, commit.toResult()) == true
         if (handled) {
             requestRefresh()
             return
         }
         when (commit) {
-            is EditSession.Commit.Create -> listener?.onEventCreated(commit.startMinute..commit.endMinute)
+            is EditSession.Commit.Create ->
+                listener?.onEventCreated(commit.startMinute..commit.endMinute, commit.content)
             is EditSession.Commit.Modify -> {
-                listener?.onEventModified(commit.event.source, commit.range, commit.hasConflict)
+                listener?.onEventModified(
+                    commit.event.source, commit.range, commit.content, commit.hasConflict,
+                )
                 // 本地同步显示，避免业务方未回传数据时界面无反应
                 if (!commit.hasConflict) {
                     replaceLocally(commit.event.id, commit.range)
@@ -573,12 +659,15 @@ class DayTimelineView @JvmOverloads constructor(
      * 业务方只能用于统计「编辑完成率」（§15）。
      */
     fun cancelEdit() {
-        if (editSession == null) return
-        editSession?.cancel() // 返回无字段对象，确保没有任何数据被带出
+        val session = editSession ?: return
+        val draft = editDraft ?: session.toDraft()
+        session.cancel() // 返回无字段对象，确保没有任何数据被带出
         editSession = null
+        editDraft = null
         selectedId = null
         grabbedHandle = 0
-        editController?.onCancel()
+        editTakenOver = false
+        editController?.onCancel(draft)
         listener?.onEditCancelled()
         requestRefresh()
     }
@@ -588,11 +677,13 @@ class DayTimelineView @JvmOverloads constructor(
         val session = editSession ?: return
         val event = session.origin ?: return
         if (editController?.onDelete() == true) {
-            // 业务方已接管：与 [confirmEdit] 的 handled 分支同样收干净三项状态，
+            // 业务方已接管：与 [confirmEdit] 的 handled 分支同样收干净全部编辑状态，
             // 否则选中描边与编辑层会残留到下一次刷新为止
             editSession = null
+            editDraft = null
             selectedId = null
             grabbedHandle = 0
+            editTakenOver = false
             requestRefresh()
             return
         }
@@ -617,7 +708,10 @@ class DayTimelineView @JvmOverloads constructor(
 
     private fun performDelete(event: SanitizedEvent) {
         editSession = null
+        editDraft = null
         selectedId = null
+        grabbedHandle = 0
+        editTakenOver = false
         removeEvent(event.id)
         listener?.onEventDeleted(event.source)
     }
@@ -668,19 +762,41 @@ class DayTimelineView @JvmOverloads constructor(
     internal fun dispatchEventLongClickForAccessibility(block: PlacedBlock) {
         selectedId = block.event.id
         editSession = EditSession.beginEdit(block.event)
+        notifyEnterEditing()
         listener?.onEventLongClick(block.event.source)
         requestRefresh()
     }
 
     internal fun currentHourRangeText(): String = "00:00 - 24:00"
 
-    /** 私有扩展：取提交结果的起止范围。 */
-    private fun EditSession.Commit.rangeOrEmpty(): IntRange = when (this) {
-        is EditSession.Commit.Create -> startMinute..endMinute
-        is EditSession.Commit.Modify -> range
-    }
+    /**
+     * 当前草稿的业务方视图。
+     *
+     * 调用点必须**在 `editSession` 被置空之前**取——置空后草稿就没了。
+     */
+    private fun EditSession.toDraft(): EditDraft = EditDraft(
+        isCreating = origin == null,
+        event = origin?.source,
+        range = startMinute..endMinute,
+        content = pendingContent,
+    )
 
-    private fun EditSession.Commit.isCreate(): Boolean = this is EditSession.Commit.Create
+    /**
+     * 提交结果的业务方视图；[EditResult.range] 是**合法化后**的实际生效值。
+     *
+     * 两个 `when` 都必需：[EditSession.Commit] 是 sealed class，`range` / `content`
+     * 只声明在两个子类上，基类上没有共同属性可取。
+     */
+    private fun EditSession.Commit.toResult(): EditResult = EditResult(
+        range = when (this) {
+            is EditSession.Commit.Create -> startMinute..endMinute
+            is EditSession.Commit.Modify -> range
+        },
+        content = when (this) {
+            is EditSession.Commit.Create -> content
+            is EditSession.Commit.Modify -> content
+        },
+    )
 
     private fun replaceLocally(id: String, range: IntRange) {
         val updated = events.map {
@@ -905,10 +1021,23 @@ class DayTimelineView @JvmOverloads constructor(
         if (hit is HitTester.Hit.Block) {
             selectedId = hit.block.event.id
             editSession = EditSession.beginEdit(hit.block.event)
+            notifyEnterEditing()
             listener?.onEventLongClick(hit.block.event.source)
         }
         // 命中空白：等同普通点击（§8.2）
         requestRefresh()
+    }
+
+    /**
+     * 通知业务方「已进入编辑态」，并记录是否被接管。
+     *
+     * 被接管后组件不再响应 FI-010（见 [editTakenOver] 与 PRD §8.2.1）。
+     */
+    private fun notifyEnterEditing() {
+        val session = editSession ?: return
+        val draft = session.toDraft()
+        editDraft = draft
+        editTakenOver = editController?.onEnterEditing(draft) == true
     }
 
     private fun editIndex(): Int {
@@ -961,9 +1090,13 @@ class DayTimelineView @JvmOverloads constructor(
      *
      * 编辑态下点击外部区域视为取消（FI-010），语义与「取消」完全一致，
      * 因此同样**不会**发出任何数据变更通知（D3）。
+     *
+     * **例外**：业务方已接管编辑层时（[editTakenOver]）不再执行 FI-010，
+     * 否则外部的非模态表单会被点穿，产生「表单开着但草稿已取消」。
      */
     private fun handleTap(x: Float, y: Float, contentLeft: Int, contentRight: Int) {
         if (editSession != null) {
+            if (editTakenOver) return // 退出路径交给业务方（PRD §8.2.1）
             val topInView = editTopPx() - scrollOffset
             val inside = x >= contentLeft - dimens.endMargin &&
                 x <= contentRight + dimens.endMargin &&
@@ -988,6 +1121,7 @@ class DayTimelineView @JvmOverloads constructor(
                     editSession = EditSession.beginCreate(
                         minuteAt(y), dimens.snapMinutes, dimens.defaultNewDurationMinutes,
                     )
+                    notifyEnterEditing()
                 }
             }
             else -> Unit

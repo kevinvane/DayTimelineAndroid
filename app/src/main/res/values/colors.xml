@@ -2,4 +2,16 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!--
+      业务方自定义的日程色（PRD §7.7.1 的第三条颜色通道）。
+
+      这些**不是**组件主题色：组件的 17 项语义色由 library 自己的 colors.xml /
+      values-night 承担，深浅适配靠资源替换。业务色由业务方提供，
+      深浅适配责任也在业务方——这里直接给一套在两种模式下都可读的取值。
+    -->
+    <color name="event_blue">#FF3F6BDC</color>
+    <color name="event_green">#FF2E8B57</color>
+    <color name="event_orange">#FFD97706</color>
+    <color name="event_purple">#FF7C4DBE</color>
 </resources>

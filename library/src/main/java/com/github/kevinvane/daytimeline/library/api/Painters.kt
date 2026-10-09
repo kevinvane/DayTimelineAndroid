@@ -136,6 +136,17 @@ class BlockContext {
     /** 选中态描边粗细（默认绘制方仅在选中态描边，常规态不描边）。 */
     var strokeWidth = 0
     var selected = false
+
+    /**
+     * 业务色（ARGB），来自 [com.github.kevinvane.daytimeline.library.core.TimelineEvent.color]。
+     *
+     * null 表示使用组件默认块配色。**独立于 §7.3 的 17 项主题色项**——
+     * 那 17 项的深浅适配由资源承担，业务方覆盖会破坏该机制（PRD §7.7.1）。
+     *
+     * 自定义绘制方可用它替代默认的强调色；不关心则可忽略。
+     */
+    var accentColor: Int? = null
+
     var timeFormat: TimeFormat = TimeFormat.SYSTEM
 
     /** 已格式化的起止时间文本；副标题与读屏描述可直接使用，无需自行处理 12/24 小时制。 */

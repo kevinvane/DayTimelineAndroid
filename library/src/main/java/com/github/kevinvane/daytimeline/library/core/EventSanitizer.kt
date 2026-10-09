@@ -46,6 +46,9 @@ data class SanitizedEvent(
 
     /** 供绘制层取显示内容。 */
     val content: CharSequence? get() = source.content
+
+    /** 业务色（PRD §7.7.1）；null 表示使用组件默认块配色。 */
+    val color: Int? get() = source.color
 }
 
 /**

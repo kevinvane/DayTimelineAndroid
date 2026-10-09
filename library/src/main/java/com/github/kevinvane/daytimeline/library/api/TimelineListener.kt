@@ -22,18 +22,26 @@ interface TimelineListener {
      * 日程新建完成。组件只通知，不落库——是否持久化由业务方决定（§11.4）。
      *
      * @param range 新建的起止时间（已吸附、已兜底、已钳制到全天范围）。
+     * @param content 新建的显示内容；null 表示未填写（PRD §7.7.1 允许空标题）。
      */
-    fun onEventCreated(range: IntRange) = Unit
+    fun onEventCreated(range: IntRange, content: CharSequence? = null) = Unit
 
     /**
      * 日程修改完成。
      *
      * @param event 修改前的日程对象。
      * @param range 修改后的起止时间。
+     * @param content 修改**后**的显示内容；null 表示原标题为空。
+     *   与 [event.content] 相比即可得知标题是否被改动。
      * @param hasConflict 为 true 表示编辑期间业务方改动过同一条日程（PRD E28），
      *   组件已保留用户编辑态，是否覆盖由业务方决定。
      */
-    fun onEventModified(event: TimelineEvent, range: IntRange, hasConflict: Boolean) = Unit
+    fun onEventModified(
+        event: TimelineEvent,
+        range: IntRange,
+        content: CharSequence? = null,
+        hasConflict: Boolean,
+    ) = Unit
 
     /** 日程删除（用户二次确认之后）。 */
     fun onEventDeleted(event: TimelineEvent) = Unit

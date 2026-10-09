@@ -1,16 +1,21 @@
 package com.github.kevinvane.daytimeline.library
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.view.MotionEvent
 import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.github.kevinvane.daytimeline.library.api.EditDraft
+import com.github.kevinvane.daytimeline.library.api.EditResult
+import com.github.kevinvane.daytimeline.library.api.TimelineConfig
 import com.github.kevinvane.daytimeline.library.api.TimelineListener
-import com.github.kevinvane.daytimeline.library.core.Geometry
 import com.github.kevinvane.daytimeline.library.core.MinuteOfDay
 import com.github.kevinvane.daytimeline.library.core.TimelineEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -41,6 +46,8 @@ class DayTimelineViewEditTest {
     private var lastModifiedId: String? = null
     private var lastDeletedId: String? = null
     private var confirmTitle: String? = null
+    private var lastCreatedContent: CharSequence? = null
+    private var lastModifiedContent: CharSequence? = null
 
     private data class Ev(
         override val id: String,
@@ -59,6 +66,8 @@ class DayTimelineViewEditTest {
         lastModifiedId = null
         lastDeletedId = null
         confirmTitle = null
+        lastCreatedContent = null
+        lastModifiedContent = null
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             view = DayTimelineView(context)
         }
@@ -67,15 +76,22 @@ class DayTimelineViewEditTest {
 
             override fun onEventLongClick(event: TimelineEvent) { fired += "longClick" }
 
-            override fun onEventCreated(range: IntRange) {
+            override fun onEventCreated(range: IntRange, content: CharSequence?) {
                 fired += "created"
                 lastRange = range
+                lastCreatedContent = content
             }
 
-            override fun onEventModified(event: TimelineEvent, range: IntRange, hasConflict: Boolean) {
+            override fun onEventModified(
+                event: TimelineEvent,
+                range: IntRange,
+                content: CharSequence?,
+                hasConflict: Boolean,
+            ) {
                 fired += "modified"
                 lastModifiedId = event.id
                 lastRange = range
+                lastModifiedContent = content
             }
 
             override fun onEventDeleted(event: TimelineEvent) {
@@ -87,8 +103,11 @@ class DayTimelineViewEditTest {
         }
         view.submitEvents(
             listOf(
-                Ev("morning", 9 * 60, 10 * 60, "会议评审"),
-                Ev("afternoon", 14 * 60, 15 * 60, "深度工作"),
+                // 时间**刻意选在一天最前段**：格高随密度放大（56dp × density），
+                // 排在 9:00/14:00 的用例在高密度屏上会落到折叠线以下，
+                // 导致「视口内找不到该日程」——那是测试的脆弱性，不是组件的缺陷。
+                Ev("morning", 60, 120, "会议评审"),
+                Ev("afternoon", 180, 240, "深度工作"),
             ),
             notifyIssues = false,
         )
@@ -127,7 +146,8 @@ class DayTimelineViewEditTest {
 
         assertTrue("应触发 onEventModified，实际回调：$fired", fired.contains("modified"))
         assertEquals("回传的应是修改前的那条日程", "morning", lastModifiedId)
-        assertEquals(9 * 60..10 * 60, lastRange)
+        assertEquals(60..120, lastRange)
+        assertEquals("未改动标题时应回传原标题", "会议评审", lastModifiedContent?.toString())
         assertFalse("确认后必须退出编辑态", view.isEditing())
         assertFalse("确认路径不应触发取消回调", fired.contains("cancelled"))
     }
@@ -191,14 +211,54 @@ class DayTimelineViewEditTest {
         // 断言数据层而非 visibleBlockSnapshot：默认格高下 14:00 的块在 1920px 视口内
         // 位于折叠线以下（scrollOffset=0），视口快照会是空的，与删除是否成功无关。
         assertEquals("被删的日程应从列表移除", listOf("afternoon"), readEventIds())
+        // 接管标志必须一并清零：否则下一次进入编辑态时，若业务方未接管，
+        // FI-010 会被上一轮的残留标志误伤，点外部将不再取消
+        assertEquals("删除后接管标志必须清零", false, readBoolean("editTakenOver"))
     }
 
-    /** 空白处点击 → 新建草稿；完成后走 `onEventCreated`，范围应等于默认值。 */
+    /**
+     * 回归：`editTakenOver` 若在删除路径上漏清，下一轮编辑会失去 FI-010。
+     *
+     * 场景：接管 → 删除 → 摘掉 controller → 再进编辑态 → 点外部本应取消。
+     * 若上一步没清标志，这次点外部会被静默忽略。
+     */
+    @Test
+    fun takeoverFlagIsClearedAfterDelete() {
+        view.editController = object : DayTimelineView.EditController {
+            override fun onEnterEditing(draft: EditDraft): Boolean = true
+        }
+        enterEditByAccessibility("morning")
+        assertEquals("应已接管", true, readBoolean("editTakenOver"))
+
+        // 走默认删除确认：覆写 confirmDelete 直接确认，避开对话框时序
+        view.editController = object : DayTimelineView.EditController {
+            override fun onDelete(): Boolean = false
+            override fun confirmDelete(context: Context, eventTitle: String, onConfirmed: () -> Unit) =
+                onConfirmed()
+        }
+        view.requestDelete()
+        assertFalse("删除后应退出编辑态", view.isEditing())
+        assertFalse("删除后接管标志必须清零", readBoolean("editTakenOver"))
+
+        // 不再接管，重新进入编辑态后 FI-010 必须恢复生效
+        view.editController = null
+        enterEditByAccessibility("afternoon")
+        fired.clear()
+        tapOutsideEditBlock()
+        assertFalse("接管标志残留会让 FI-010 失效，实际：$fired", view.isEditing())
+    }
+
+    /**
+     * 空白处点击 → 新建草稿，落在点击位置，时长取默认（PRD FI-005）。
+     *
+     * **不断言具体分钟数**：点击位置随设备格高变化，写死 03:00 会让高密度屏失败。
+     * 这里只断言可判定的性质——时长等于配置值、范围落在全天之内。
+     */
     @Test
     fun tappingEmptySpaceCreatesDraftAndConfirmEmitsCreated() {
-        view.setConfig(com.github.kevinvane.daytimeline.library.api.TimelineConfig(defaultNewDurationMinutes = 30))
+        view.setConfig(TimelineConfig(defaultNewDurationMinutes = 30))
 
-        tapAt(viewYAtMinute(3 * 60))
+        tapOutsideEditBlock()
 
         assertTrue("点空白应进入新建编辑态", view.isEditing())
         assertTrue("点空白不得触发长按回调，实际回调：$fired", !fired.contains("longClick"))
@@ -207,7 +267,9 @@ class DayTimelineViewEditTest {
         view.confirmEdit()
 
         assertTrue("新建确认应触发 onEventCreated，实际回调：$fired", fired.contains("created"))
-        assertEquals("新建范围应为 03:00 起、默认 30 分钟", 3 * 60..3 * 60 + 30, lastRange)
+        val r = requireNotNull(lastRange) { "onEventCreated 未携带起止时间" }
+        assertEquals("新建时长应等于配置的默认时长", 30, r.last - r.first)
+        assertTrue("新建范围应落在全天之内，实际 $r", r.first >= 0 && r.last <= 1440)
         assertFalse("新建确认后必须退出编辑态", view.isEditing())
     }
 
@@ -221,6 +283,253 @@ class DayTimelineViewEditTest {
 
         assertTrue("非编辑态下三个出口都不应触发任何回调，实际回调：$fired", fired.isEmpty())
     }
+
+    // ===== AD-22：第四层接管 + 表单输入 =====
+
+    /**
+     * `onEnterEditing` 必须拿到可预填的草稿：正在编辑哪条、当前起止、当前标题。
+     *
+     * 这是此前完全缺失的能力——`EditSession` 是 View 私有字段，业务方拿不到，
+     * 只能轮询 `isEditing()` 并自己猜。
+     */
+    @Test
+    fun enterEditingHandsOverAFillableDraft() {
+        var draft: EditDraft? = null
+        view.editController = object : DayTimelineView.EditController {
+            override fun onEnterEditing(d: EditDraft): Boolean {
+                draft = d
+                return true
+            }
+        }
+
+        enterEditByAccessibility("morning")
+        fired.clear()
+
+        val d = draft
+        assertNotNull("应收到草稿", d)
+        assertFalse("修改态 isCreating 应为 false", d!!.isCreating)
+        assertEquals("草稿应带上被编辑的日程", "morning", d.event?.id)
+        assertEquals("草稿应带上当前起止时间", 60..120, d.range)
+        assertEquals("草稿应带上当前标题，供表单预填", "会议评审", d.content?.toString())
+        assertEquals("草稿不应触发任何数据变更回调，实际回调：$fired", emptyList<String>(), fired)
+    }
+
+    /**
+     * 接管后 **FI-010 失效**：点编辑块外部不再视为取消（PRD §8.2.1）。
+     *
+     * 回归场景：业务方弹的非模态表单会被点穿，若组件仍执行 FI-010，
+     * 草稿会被取消而表单还开着，业务方随后提交时操作的是已死的编辑态。
+     */
+    @Test
+    fun tappingOutsideDoesNotCancelWhenControllerHasTakenOver() {
+        view.editController = object : DayTimelineView.EditController {
+            override fun onEnterEditing(draft: EditDraft): Boolean = true
+        }
+        enterEditByAccessibility("morning")
+        assertTrue(view.isEditing())
+        fired.clear()
+
+        // 点一个远离编辑块的空白处
+        tapOutsideEditBlock()
+
+        assertTrue("接管后点外部不得取消编辑态", view.isEditing())
+        assertEquals("接管后点外部不得触发任何回调，实际回调：$fired", emptyList<String>(), fired)
+    }
+
+    /** 对照组：未接管时 FI-010 仍然生效，语义与「取消」完全一致。 */
+    @Test
+    fun tappingOutsideStillCancelsWhenNotTakenOver() {
+        enterEditByAccessibility("morning")
+        assertTrue(view.isEditing())
+        fired.clear()
+
+        tapOutsideEditBlock()
+
+        assertFalse("未接管时点外部应取消编辑态", view.isEditing())
+        assertEquals("FI-010 语义与取消一致，实际回调：$fired", listOf("cancelled"), fired)
+    }
+
+    /**
+     * `applyEdit` 灌入的标题必须随 `confirmEdit` 上抛。
+     *
+     * 回归场景：此前 `onEventModified` 只回传**修改前**的对象，标题在编辑
+     * 路径上根本改不了。
+     */
+    @Test
+    fun applyEditCarriesNewContentThroughConfirm() {
+        enterEditByAccessibility("morning")
+        fired.clear()
+
+        view.applyEdit(EditResult(range = 11 * 60..12 * 60, content = "改过的标题"))
+        view.confirmEdit()
+
+        assertTrue("应触发 onEventModified，实际回调：$fired", fired.contains("modified"))
+        assertEquals("回传的新标题", "改过的标题", lastModifiedContent?.toString())
+        assertEquals("回传的新时间", 11 * 60..12 * 60, lastRange)
+    }
+
+    /**
+     * `EditResult.content = null` 表示**不改标题**，应沿用原值。
+     *
+     * 与「清空标题」区分开：清空传空串（PRD 允许空标题）。
+     */
+    @Test
+    fun applyEditWithNullContentKeepsOriginalTitle() {
+        enterEditByAccessibility("morning")
+        fired.clear()
+
+        view.applyEdit(EditResult(range = 60..120, content = null))
+        view.confirmEdit()
+
+        assertEquals("null 应表示不改标题，沿用原值", "会议评审", lastModifiedContent?.toString())
+    }
+
+    /** 新建态下 `applyEdit` 的标题应随 `onEventCreated` 上抛。 */
+    @Test
+    fun applyEditCarriesContentThroughCreate() {
+        tapOutsideEditBlock()
+        assertTrue(view.isEditing())
+        fired.clear()
+
+        view.applyEdit(EditResult(range = 3 * 60..4 * 60, content = "新的日程"))
+        view.confirmEdit()
+
+        assertTrue("应触发 onEventCreated，实际回调：$fired", fired.contains("created"))
+        assertEquals("回传的新标题", "新的日程", lastCreatedContent?.toString())
+        assertEquals(3 * 60..4 * 60, lastRange)
+    }
+
+    /**
+     * 表单填的非法时间必须被合法化（PRD §8.3.1）。
+     *
+     * 这里填「25:30 → 26:00」——两端都超出全天，应被钳制而不是崩溃或产生非法日程。
+     */
+    @Test
+    fun applyEditClampsOutOfRangeTimes() {
+        enterEditByAccessibility("morning")
+        fired.clear()
+
+        view.applyEdit(EditResult(range = 1530..1560, content = "越界时间"))
+        view.confirmEdit()
+
+        assertNotNull("应仍能正常提交，实际回调：$fired", lastRange)
+        val r = lastRange!!
+        assertTrue("开始不得早于 00:00，实际 $r", r.first >= 0)
+        assertTrue("结束不得晚于 24:00，实际 $r", r.last <= 1440)
+        assertTrue("必须晚于开始，实际 $r", r.last > r.first)
+    }
+
+    /** 表单把两端填反时必须自动交换，不得产出非正时长。 */
+    @Test
+    fun applyEditSwapsReversedRange() {
+        enterEditByAccessibility("morning")
+        fired.clear()
+
+        view.applyEdit(EditResult(range = 120..60, content = "填反了"))
+        view.confirmEdit()
+
+        assertEquals("应自动交换两端", 60..120, lastRange)
+    }
+
+    /** 非编辑态调 `applyEdit` 必须是安全的空操作。 */
+    @Test
+    fun applyEditIsSafeWhenNotEditing() {
+        assertFalse(view.isEditing())
+        view.applyEdit(EditResult(range = 600..660, content = "不该生效"))
+        assertFalse(view.isEditing())
+        assertTrue("不应触发任何回调，实际回调：$fired", fired.isEmpty())
+    }
+
+    /**
+     * D3 铁律在接管路径上同样成立：`applyEdit` 之后取消，不得发出任何数据变更。
+     *
+     * 业务方最典型的误用就是「灌了值又反悔」，这条守住它。
+     */
+    @Test
+    fun cancelAfterApplyEditStillEmitsNoDataChange() {
+        enterEditByAccessibility("morning")
+        fired.clear()
+
+        view.applyEdit(EditResult(range = 11 * 60..12 * 60, content = "灌了值"))
+        view.cancelEdit()
+
+        assertFalse("取消后必须退出编辑态", view.isEditing())
+        assertEquals("取消路径不得发出任何数据变更，实际回调：$fired", listOf("cancelled"), fired)
+    }
+
+    /** 业务色（PRD §7.7.1 第三通道）应能透传到绘制上下文。 */
+    @Test
+    fun businessColorFlowsIntoBlockContext() {
+        view.submitEvents(
+            listOf(ColoredEvent("tinted", 300, 360, 0xFF3F6BDC.toInt())),
+            notifyIssues = false,
+        )
+        relayout()
+
+        val block = view.visibleBlockSnapshot().firstOrNull { it.second.event.id == "tinted" }
+        assertNotNull("测试前置失败：视口内找不到该日程", block)
+        // BlockContext 是**复用**对象（AD-14），只有真正走一遍 onDraw 才会被填充，
+        // 反射读到的是上一次绘制留下的值——不 draw 就断言必然读到默认 null。
+        drawOnce()
+        val ctx = readBlockContext()
+        assertNotNull("未取到绘制上下文", ctx)
+        assertEquals("业务色应透传到 BlockContext.accentColor", 0xFF3F6BDC.toInt(), ctx!!.accentColor)
+    }
+
+    /**
+     * 未提供业务色时保持 null，默认绘制回落到组件主题色。
+     *
+     * 同样必须先 draw——否则读到的是尚未填充的复用对象，断言会变成假通过。
+     */
+    @Test
+    fun businessColorDefaultsToNull() {
+        drawOnce()
+        val ctx = readBlockContext()
+        assertNotNull("未取到绘制上下文", ctx)
+        assertNull("未提供业务色时 accentColor 应为 null", ctx!!.accentColor)
+    }
+
+    /** 带业务色的日程实现，验证 TimelineEvent.color 的默认实现不破坏既有实现者。 */
+    private data class ColoredEvent(
+        override val id: String,
+        private val s: Int,
+        private val e: Int,
+        override val color: Int?,
+    ) : TimelineEvent {
+        override val start get() = MinuteOfDay.ofMinute(s)
+        override val end get() = MinuteOfDay.ofMinute(e)
+    }
+
+    /** 反射读取复用的 BlockContext（组件每帧改写同一份，见 AD-14）。 */
+    private fun readBlockContext(): com.github.kevinvane.daytimeline.library.api.BlockContext? =
+        fieldOf("blockContext").get(view)
+            as? com.github.kevinvane.daytimeline.library.api.BlockContext
+
+    private fun relayout() {
+        view.measure(
+            View.MeasureSpec.makeMeasureSpec(WIDTH, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(HEIGHT, View.MeasureSpec.EXACTLY),
+        )
+        view.layout(0, 0, WIDTH, HEIGHT)
+    }
+
+    /** 真正走一遍 onDraw，让复用的绘制上下文被填充。 */
+    private fun drawOnce() {
+        val bmp = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(bmp))
+    }
+
+    /**
+     * 点一个**确定在编辑块之外**的位置，触发 / 检验 FI-010。
+     *
+     * 用视口底部而不是「最低块下方 N px」：编辑块的命中范围会向外扩
+     * `endMargin`，紧贴块下方点击仍算「在块内」，测不出 FI-010。
+     * 本文件的测试数据都排在一天前段，视口底部必然在编辑块之外。
+     */
+    private fun tapOutsideEditBlock() = tapAt(HEIGHT - 10)
+
+    private fun readBoolean(name: String): Boolean =
+        fieldOf(name).get(view) as Boolean
 
     // ---- 进入编辑态的两种方式 ----
 
@@ -245,12 +554,6 @@ class DayTimelineViewEditTest {
         }
     }
 
-    /** 视口坐标：分钟 → y。 */
-    private fun viewYAtMinute(minute: Int): Int =
-        readDimensInt("topPadding") +
-            Geometry.minuteToOffset(minute.toFloat(), readDimensInt("effectiveHourHeight")).toInt() -
-            view.getScrollOffset()
-
     // ---- 反射工具 ----
 
     private fun fieldOf(name: String) =
@@ -267,16 +570,6 @@ class DayTimelineViewEditTest {
         @Suppress("UNCHECKED_CAST")
         val list = fieldOf("events").get(view) as List<com.github.kevinvane.daytimeline.library.core.SanitizedEvent>
         return list.map { it.id }
-    }
-
-    private fun readDimensInt(name: String): Int {
-        val dimens = fieldOf("dimens").get(view)!!
-        val cls = dimens.javaClass
-        val f = runCatching { cls.getDeclaredField(name) }.getOrNull()
-        if (f != null) return (f.apply { isAccessible = true }.get(dimens) as Number).toInt()
-        val getter = cls.getDeclaredMethod("get" + name.replaceFirstChar { it.uppercase() })
-            .apply { isAccessible = true }
-        return (getter.invoke(dimens) as Number).toInt()
     }
 
     private companion object {
