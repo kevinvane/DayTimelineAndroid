@@ -2,6 +2,7 @@ package com.github.kevinvane.daytimeline.library.api
 
 import com.github.kevinvane.daytimeline.library.core.MinuteOfDay
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -109,6 +110,20 @@ class TimelineConfigTest {
         assertEquals(1440, c.resolvedMaxDuration(1440))
         assertEquals(ScrollMode.SELF, c.resolvedScrollMode())
         assertEquals(TimeFormat.SYSTEM, c.resolvedTimeFormat())
+        // FI-012：默认开启——PRD §8.5 与用户故事 A1「打开即定位当前时间」
+        assertTrue(c.resolvedAutoLocateOnFirstShow())
+    }
+
+    /**
+     * FI-012 的验收标准是「可配置关闭」，所以 `false` 必须真的关得掉。
+     *
+     * 这一条曾经无从验证：`autoLocateOnFirstShow` 当时**声明了却无人消费**，
+     * 无论配什么都不会有任何表现——配置项成了摆设。
+     */
+    @Test
+    fun `首次定位可显式关闭`() {
+        assertFalse(TimelineConfig(autoLocateOnFirstShow = false).resolvedAutoLocateOnFirstShow())
+        assertTrue(TimelineConfig(autoLocateOnFirstShow = true).resolvedAutoLocateOnFirstShow())
     }
 
     @Test

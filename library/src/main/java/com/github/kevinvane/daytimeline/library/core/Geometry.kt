@@ -15,6 +15,17 @@ package com.github.kevinvane.daytimeline.library.core
  */
 object Geometry {
 
+    /**
+     * 「当前时间向上偏移约三分之一屏」的分母（PRD §8.5 / FI-012）。
+     *
+     * 为什么是代码常量而不是 `@dimen`：**它是无量纲比值，不是尺寸**。
+     * `dimens.xml` 里用 `<item format="float" type="dimen">` 声明过同类值，
+     * AAPT2 按 `format` 编译成 `TYPE_FLOAT(0x4)`，而 `Resources.getDimension()`
+     * 只接受 `TYPE_DIMENSION(0x5)`，真机启动即抛 `NotFoundException`
+     * （见该文件内的警示注释 / AD-15）。
+     */
+    const val FIRST_LOCATE_VIEWPORT_DIVISOR = 3
+
     /** 全天内容总高度 = 24 × 每小时格高 + 顶部留白 + 底部留白（§19.2 高度约定）。 */
     fun contentHeight(hourHeightPx: Int, topPaddingPx: Int, bottomPaddingPx: Int): Int =
         MinuteOfDay.MINUTES_PER_DAY / MinuteOfDay.MINUTES_PER_HOUR * hourHeightPx +
@@ -35,6 +46,39 @@ object Geometry {
         if (hourHeightPx <= 0) return 0
         val minute = (offsetPx / hourHeightPx * MinuteOfDay.MINUTES_PER_HOUR).toInt()
         return minute.coerceIn(0, MinuteOfDay.END_OF_DAY_MINUTE)
+    }
+
+    /**
+     * 首次定位（FI-012 / §8.5）：让**当前时间线**落在视口顶部往下约三分之一屏处。
+     *
+     * PRD §8.5 原文：「首次定位 | 默认定位到『当前时间向上偏移约三分之一屏』」。
+     * 即当前时间之上留三分之一屏（看得见已经过去的时段），之下留三分之二屏
+     * ——用户此刻真正关心的是接下来要发生的事，所以「下方多于上方」。
+     * 这也是系统日历打开今天的默认行为。
+     *
+     * ## 为什么这里要显式带上 [topPaddingPx]
+     *
+     * [minuteToOffset] 刻意**不含**顶部留白（见其 KDoc），而内容坐标系里第 [minute] 分钟
+     * 的真实纵向位置是 `topPadding + minuteToOffset(...)`——绘制与命中测试都是这么算的。
+     * 漏掉它会让定位结果整体偏上整整一个顶部留白。
+     *
+     * ## 钳制
+     *
+     * 结果钳制在 `[0, maxScrollPx]`：凌晨（当前时间落在视口顶部之上）与深夜
+     * （当前时间落在底部之下）都必须得到合法偏移，组件绝不越界（§11.4 / D4）。
+     * 格高或视口高度非正（尚未测量完成）时返回 0，即停在顶部。
+     */
+    fun firstLocateOffset(
+        minute: Float,
+        hourHeightPx: Int,
+        topPaddingPx: Int,
+        viewportHeightPx: Int,
+        maxScrollPx: Int,
+    ): Int {
+        if (hourHeightPx <= 0 || viewportHeightPx <= 0) return 0
+        val nowTopPx = topPaddingPx + minuteToOffset(minute, hourHeightPx).toInt()
+        val leadInPx = viewportHeightPx / FIRST_LOCATE_VIEWPORT_DIVISOR
+        return (nowTopPx - leadInPx).coerceIn(0, maxScrollPx.coerceAtLeast(0))
     }
 
     /**

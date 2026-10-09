@@ -93,6 +93,9 @@ internal object ConfigFromAttrs {
                     R.styleable.DayTimelineView_dtNowDotDiameter,
                 ),
                 nowLineWidth = dimOrNull(ta, R.styleable.DayTimelineView_dtNowLineWidth),
+                autoLocateOnFirstShow = boolOrNull(
+                    ta, R.styleable.DayTimelineView_dtAutoLocateOnFirstShow,
+                ),
 
                 timeFormat = enumOrNull(ta, 
                     R.styleable.DayTimelineView_dtTimeFormat,

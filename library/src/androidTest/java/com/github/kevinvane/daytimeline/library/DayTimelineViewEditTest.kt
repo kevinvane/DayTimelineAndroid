@@ -73,6 +73,12 @@ class DayTimelineViewEditTest {
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             view = DayTimelineView(context)
         }
+        // 本文件测的是**编辑闭环**，不是首次定位（FI-012），而下述用例全部依赖
+        // 「从 00:00 起算」——它们用 visibleBlockSnapshot 找 01:00 的日程。
+        // 不关掉自动定位，结论会随运行时刻变化：下午跑时当前时间已被定位到，
+        // 01:00 的块滚出视口，`enterEditByAccessibility` 直接前置失败。
+        // 这也是 FI-012「可配置关闭」的正当用途：需要确定起点的场景显式关掉它。
+        view.setConfig(TimelineConfig(autoLocateOnFirstShow = false))
         view.listener = object : TimelineListener {
             override fun onEventClick(event: TimelineEvent) { fired += "click" }
 
@@ -108,6 +114,10 @@ class DayTimelineViewEditTest {
                 // 时间**刻意选在一天最前段**：格高随密度放大（56dp × density），
                 // 排在 9:00/14:00 的用例在高密度屏上会落到折叠线以下，
                 // 导致「视口内找不到该日程」——那是测试的脆弱性，不是组件的缺陷。
+                //
+                // ⚠️ 与此并列的是：本文件已按 FI-012 关掉首次定位（见 setUp），
+                // 否则同样有「视口内找不到」的问题——那种才是**真机时刻依赖**，
+                // 上午通过、下午失败，且报错完全不指向原因。
                 Ev("morning", 60, 120, "会议评审"),
                 Ev("afternoon", 180, 240, "深度工作"),
             ),

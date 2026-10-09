@@ -3,6 +3,8 @@ package com.github.kevinvane.daytimeline.library
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.os.Parcelable
+import android.util.SparseArray
 import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -45,6 +47,11 @@ class DayTimelineViewBehaviorTest {
         // 否则抛 "Can't create handler inside thread ... that has not called Looper.prepare()"
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             view = DayTimelineView(context)
+            // 本文件的滚动用例（自身模式能否滚出视口、平滑滚动不回弹、外部模式不自滚）
+            // 全部以「初始偏移为 0」为前提。FI-012 实现后会自动定位到当前时间，
+            // 那些断言会随运行时刻变化而失败，因此在此显式关掉首次定位——
+            // 首次定位本身由本文件末尾的 FI-012 专区用专用 view 覆盖。
+            view.setConfig(TimelineConfig(autoLocateOnFirstShow = false))
             view.measure(
                 View.MeasureSpec.makeMeasureSpec(WIDTH, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(HEIGHT, View.MeasureSpec.EXACTLY),
@@ -255,6 +262,206 @@ class DayTimelineViewBehaviorTest {
         return !s.isFinished
     }
 
+    // ================= FI-012 首次显示自动定位 =================
+
+    /**
+     * 造一个**尺寸与时间完全可控**的视图。
+     *
+     * 默认资源的 dp→px 换算依赖设备密度，直接断言像素值会得到「一台设备通过、
+     * 另一台失败」的脆弱测试。这里把每小时格高与上下留白都钉成 px 整数，
+     * 视口高度也由测试指定，于是断言结果与设备无关。
+     *
+     * [configure] 在**首次测量之前**执行——首次定位只发生在第一次布局，
+     * 配置必须赶在那之前（这本身也是接入方应有的顺序）。
+     */
+    private fun createView(
+        viewportHeight: Int = VIEWPORT,
+        configure: DayTimelineView.() -> Unit = {},
+    ): DayTimelineView {
+        var created: DayTimelineView? = null
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val v = DayTimelineView(context)
+            v.setConfig(
+                TimelineConfig(
+                    hourHeight = HOUR_HEIGHT,
+                    topPadding = 0,
+                    bottomPadding = 0,
+                ),
+            )
+            v.setNowMinute(NOW_MINUTE)
+            v.configure()
+            v.measure(
+                View.MeasureSpec.makeMeasureSpec(WIDTH, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(viewportHeight, View.MeasureSpec.EXACTLY),
+            )
+            v.layout(0, 0, WIDTH, viewportHeight)
+            created = v
+        }
+        return checkNotNull(created) { "runOnMainSync 未执行，测试本身失效" }
+    }
+
+    /**
+     * FI-012 / §8.5：首次显示自动定位，当前时间线落在视口顶部往下三分之一屏处。
+     *
+     * 断言写成不变量而不是「照抄公式」：定位后 `当前时间线的内容坐标 - 偏移`
+     * 必须正好等于 `视口高度 / 3`。
+     */
+    @Test
+    fun firstShowAutoLocatesToOneThirdViewport() {
+        val v = createView()
+        val nowContentY = NOW_MINUTE / 60f * HOUR_HEIGHT
+        assertEquals(VIEWPORT / 3, nowContentY.toInt() - v.getScrollOffset())
+    }
+
+    /**
+     * 自动定位与日程数据**无关**（FR-014：空数据时时间轴仍完整显示）。
+     *
+     * 接入方常在 onCreate 里先 setView / measure，数据是异步拉回来的。
+     * 若定位依赖数据，这种「先显示后填数」的顺序会让首屏停在 00:00。
+     */
+    @Test
+    fun firstShowAutoLocatesEvenWithoutEvents() {
+        val v = createView(configure = {})
+        val nowContentY = NOW_MINUTE / 60f * HOUR_HEIGHT
+        assertEquals(VIEWPORT / 3, nowContentY.toInt() - v.getScrollOffset())
+    }
+
+    /** FI-012 验收标准「可配置关闭」：关掉后必须停在 00:00 顶部。 */
+    @Test
+    fun autoLocateCanBeDisabled() {
+        val v = createView {
+            setConfig(
+                TimelineConfig(
+                    hourHeight = HOUR_HEIGHT,
+                    topPadding = 0,
+                    bottomPadding = 0,
+                    autoLocateOnFirstShow = false,
+                ),
+            )
+        }
+        assertEquals("关闭自动定位后应停在顶部", 0, v.getScrollOffset())
+    }
+
+    /**
+     * **业务方显式指定的位置优先于自动定位**（§11.2）。
+     *
+     * 业务方常在 `onCreate` 里自行恢复上次的位置；若自动定位随后覆盖它，
+     * 表现为「刚恢复完就被弹走」，且没有任何报错。
+     */
+    @Test
+    fun explicitScrollPositionWinsOverAutoLocate() {
+        val v = createView { setScrollOffset(1200) }
+        assertEquals(1200, v.getScrollOffset())
+    }
+
+    @Test
+    fun explicitScrollToMinuteWinsOverAutoLocate() {
+        val v = createView { scrollToMinute(300, smooth = false) }
+        // 05:00 的内容坐标是 1000；自动定位的结果（2134）必然大于它
+        assertTrue(
+            "显式跳转的位置被自动定位覆盖了，实际 ${v.getScrollOffset()}",
+            v.getScrollOffset() <= 1000,
+        )
+    }
+
+    /**
+     * §8.5「非今天 | 定位到 00:00（顶部）」。
+     *
+     * 非今天没有「当前时间线」可言，组件不假装有。
+     */
+    @Test
+    fun nonTodayStaysAtTop() {
+        val v = createView {
+            setViewDate(System.currentTimeMillis() - 3 * DAY_MILLIS)
+        }
+        assertEquals("查看非今天时应停在 00:00 顶部", 0, v.getScrollOffset())
+    }
+
+    /**
+     * §8.6：外部滚动模式下组件高度等于全天内容高度，可滚动上限为 0，
+     * 首次定位因此**不产生任何位移**——滚动归外层容器负责（FI-002）。
+     */
+    @Test
+    fun externalScrollModeLeavesScrollingToOuterContainer() {
+        var created: DayTimelineView? = null
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val v = DayTimelineView(context)
+            v.setConfig(
+                TimelineConfig(
+                    hourHeight = HOUR_HEIGHT,
+                    topPadding = 0,
+                    bottomPadding = 0,
+                    scrollMode = ScrollMode.EXTERNAL,
+                ),
+            )
+            v.setNowMinute(NOW_MINUTE)
+            // 高度按 §8.6 约定给 UNSPECIFIED，组件自己按全天内容高度测量
+            v.measure(
+                View.MeasureSpec.makeMeasureSpec(WIDTH, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            )
+            v.layout(0, 0, WIDTH, v.measuredHeight)
+            created = v
+        }
+        val v = checkNotNull(created) { "runOnMainSync 未执行，测试本身失效" }
+        assertEquals("外部滚动模式高度应等于全天内容高度", 24 * HOUR_HEIGHT, v.height)
+        assertEquals("外部滚动模式首次定位不应产生位移", 0, v.getScrollOffset())
+    }
+
+    /**
+     * 「首次显示」一辈子只发生一次：后续重新测量（旋转、容器高度变化）
+     * 不得把用户已经滚到的位置拽回当前时间。
+     */
+    @Test
+    fun autoLocateRunsOnlyOnce() {
+        val v = createView()
+        v.scrollToMinute(300, smooth = false)
+        val afterUserJump = v.getScrollOffset()
+
+        v.measure(
+            View.MeasureSpec.makeMeasureSpec(WIDTH, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(VIEWPORT, View.MeasureSpec.EXACTLY),
+        )
+        v.layout(0, 0, WIDTH, VIEWPORT)
+        assertEquals("重新布局不应重新定位", afterUserJump, v.getScrollOffset())
+    }
+
+    /**
+     * §8.5「状态恢复：旋转屏幕后恢复原滚动位置」（D12）——**恢复优先于首次定位**。
+     *
+     * 旋转后组件是全新实例，首次定位照理会触发；若不把「已有结论」一并恢复，
+     * 用户保存的滚动位置就会被当前时间覆盖。
+     */
+    @Test
+    fun restoredScrollPositionIsNotOverwrittenByAutoLocate() {
+        val before = createView { scrollToMinute(600, smooth = false) }
+        before.id = STATE_VIEW_ID
+        val savedOffset = before.getScrollOffset()
+        assertTrue("前置条件：跳转后的偏移应非 0，实际 $savedOffset", savedOffset > 0)
+
+        val container = SparseArray<Parcelable>()
+        before.saveHierarchyState(container)
+
+        var rotated: DayTimelineView? = null
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val v = DayTimelineView(context)
+            v.id = STATE_VIEW_ID
+            v.setConfig(
+                TimelineConfig(hourHeight = HOUR_HEIGHT, topPadding = 0, bottomPadding = 0),
+            )
+            v.setNowMinute(NOW_MINUTE)
+            v.restoreHierarchyState(container)
+            v.measure(
+                View.MeasureSpec.makeMeasureSpec(WIDTH, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(VIEWPORT, View.MeasureSpec.EXACTLY),
+            )
+            v.layout(0, 0, WIDTH, VIEWPORT)
+            rotated = v
+        }
+        val v = checkNotNull(rotated) { "runOnMainSync 未执行，测试本身失效" }
+        assertEquals("恢复出的位置应保留，不得被自动定位覆盖", savedOffset, v.getScrollOffset())
+    }
+
     // ---- 工具 ----
 
     private fun readScrollOffset(): Int = view.getScrollOffset()
@@ -274,5 +481,15 @@ class DayTimelineViewBehaviorTest {
     private companion object {
         const val WIDTH = 1080
         const val HEIGHT = 1920
+
+        // ---- FI-012 用：把 dp→px 换算排除在断言之外 ----
+        /** 每小时格高（px 整数），24 小时共 4800px。 */
+        const val HOUR_HEIGHT = 200
+        /** 首次定位测试用的视口高度（px 整数）。 */
+        const val VIEWPORT = 800
+        /** 指定「当前时间」为 12:00，使定位结果完全确定（FD-006）。 */
+        const val NOW_MINUTE = 720
+        const val DAY_MILLIS = 24L * 60 * 60 * 1000
+        const val STATE_VIEW_ID = 0x7f01
     }
 }

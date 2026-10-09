@@ -98,6 +98,23 @@ class DayTimelineView @JvmOverloads constructor(
 
     private var scrollOffset = 0
 
+    /**
+     * 「首次显示的滚动位置」是否**已有结论**（FI-012）。
+     *
+     * 四种来源会把它置为 `true`，任一发生即视为「不需要（也不应该）再自动定位」：
+     *
+     * | 来源 | 理由 |
+     * |---|---|
+     * | [autoLocateOnFirstShow] 已经跑过一次 | 「首次显示」一辈子只发生一次；旋转、重新测量都不得把用户拽回当前时间 |
+     * | 业务方调过 [scrollToMinute] / [setScrollOffset] | **显式意图优先**——业务方自己恢复的位置（§11.2）不能被自动定位覆盖 |
+     * | [onRestoreInstanceState] 恢复了滚动位置 | §8.5「状态恢复：旋转屏幕后恢复原滚动位置」（D12） |
+     * | `autoLocateOnFirstShow = false` | FI-012 验收标准「可配置关闭」 |
+     *
+     * 单独设标志而不是靠 `scrollOffset != 0` 判断：业务方显式定位到 0（顶部）
+     * 同样是「有意为之」，不能被自动定位反过来覆盖。
+     */
+    private var initialScrollSettled = false
+
     /** 拖拽滚动的状态（FI-001）。 */
     private var lastScrollTouchY = 0f
     private var parentDisallowRequested = false
@@ -348,9 +365,9 @@ class DayTimelineView @JvmOverloads constructor(
     /** 跳转到指定时刻（PRD §11.2 / FI-013）。 */
     @JvmOverloads
     fun scrollToMinute(minute: Int, smooth: Boolean = true) {
-        val target = (Geometry.minuteToOffset(
-            minute.toFloat(), dimens.effectiveHourHeight,
-        ).toInt() - dimens.firstLocateLeadIn).coerceAtLeast(0)
+        // 业务方显式指定了位置，首次定位不得再覆盖它（见 [initialScrollSettled]）
+        initialScrollSettled = true
+        val target = (minuteToContentY(minute) - dimens.jumpLeadIn).coerceAtLeast(0)
         val maxScroll = maxScroll()
         val clamped = target.coerceAtMost(maxScroll)
         if (smooth) {
@@ -369,6 +386,8 @@ class DayTimelineView @JvmOverloads constructor(
 
     /** 恢复滚动位置。 */
     fun setScrollOffset(offset: Int) {
+        // 同 [scrollToMinute]：业务方显式指定的位置优先于首次定位
+        initialScrollSettled = true
         scrollOffset = offset.coerceIn(0, maxScroll())
         requestRefresh()
     }
@@ -426,8 +445,7 @@ class DayTimelineView @JvmOverloads constructor(
         for (b in blocks) {
             val startMin = b.event.start.minuteOfDay
             val endMin = b.event.end.minuteOfDay
-            val blockTop = dimens.topPadding +
-                Geometry.minuteToOffset(startMin.toFloat(), hourHeight).toInt()
+            val blockTop = minuteToContentY(startMin)
             val blockH = Geometry.blockHeight(startMin, endMin, hourHeight, dimens.blockMinHeight)
             // 视口裁剪：只绘制相交且高度为正的块（D4：绝不为负）
             if (blockH <= 0) continue
@@ -479,8 +497,7 @@ class DayTimelineView @JvmOverloads constructor(
      */
     private fun drawEditLayer(canvas: Canvas, contentLeft: Int, contentRight: Int) {
         val session = editSession ?: return
-        val top = dimens.topPadding +
-            Geometry.minuteToOffset(session.startMinute.toFloat(), dimens.effectiveHourHeight).toInt()
+        val top = minuteToContentY(session.startMinute)
         val height = Geometry.blockHeight(
             session.startMinute, session.endMinute, dimens.effectiveHourHeight, dimens.blockMinHeight,
         )
@@ -583,11 +600,13 @@ private fun renderSignature(): Long {
         }
         val hourHeight = dimens.effectiveHourHeight
         for (i in blocks.indices) {
-            val s = blocks[i].event.start.minuteOfDay
-            val e = blocks[i].event.end.minuteOfDay
-            blockTops[i] = dimens.topPadding +
-                Geometry.minuteToOffset(s.toFloat(), hourHeight).toInt()
-            blockHeights[i] = Geometry.blockHeight(s, e, hourHeight, dimens.blockMinHeight)
+            blockTops[i] = minuteToContentY(blocks[i].event.start.minuteOfDay)
+            blockHeights[i] = Geometry.blockHeight(
+                blocks[i].event.start.minuteOfDay,
+                blocks[i].event.end.minuteOfDay,
+                hourHeight,
+                dimens.blockMinHeight,
+            )
         }
     }
 
@@ -1169,8 +1188,7 @@ private fun renderSignature(): Long {
 
     private fun editTopPx(): Int {
         val s = editSession ?: return 0
-        return dimens.topPadding +
-            Geometry.minuteToOffset(s.startMinute.toFloat(), dimens.effectiveHourHeight).toInt()
+        return minuteToContentY(s.startMinute)
     }
 
     private fun editHeightPx(): Int {
@@ -1369,8 +1387,46 @@ private fun renderSignature(): Long {
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         relayout()
+        // 必须夹在 relayout 与 clampScroll 之间：首次定位要按刚测出的视口高度算
+        autoLocateOnFirstShow()
         clampScroll()
         requestRefresh()
+    }
+
+    /**
+     * 首次显示自动定位到当前时间（FI-012 / PRD §8.5 / 用户故事 A1「打开即定位」）。
+     *
+     * ## 为什么挂在 [onSizeChanged]
+     *
+     * 目标偏移要用到**视口高度**——§8.5 要求「当前时间向上偏移约三分之一屏」，
+     * 而视口高度只有在测量之后才知道。构造期与 [submitEvents] 都拿不到它。
+     *
+     * ## 瞬间定位而非平滑滚动
+     *
+     * FI-013 才提供「平滑 / 瞬间」两种跳转方式；首次显示用户还没看到任何内容，
+     * 此时播一段从 00:00 飞到当前时间的动画只会让人以为页面在抽搐。
+     *
+     * ## 外部滚动模式
+     *
+     * 此时组件高度等于全天内容高度，[maxScroll] 恒为 0（§8.6），
+     * 算出的目标会被钳到 0，即**不产生位移**——滚动归外层容器负责。
+     * 组件无权也无需去驱动外层的滚动位置。
+     */
+    private fun autoLocateOnFirstShow() {
+        if (initialScrollSettled || height <= 0) return
+        initialScrollSettled = true
+        if (!config.resolvedAutoLocateOnFirstShow()) return
+        // §8.5「非今天 | 定位到 00:00（顶部）」：非今天没有「当前时间线」可言，
+        // 停在初始偏移 0 即为顶部。写成显式守卫而不是让它自然落成 0，
+        // 是为了让这条规则在代码里一眼可读、也不会被后续改动悄悄破坏。
+        if (!isToday) return
+        scrollOffset = Geometry.firstLocateOffset(
+            minute = nowMinute.toFloat(),
+            hourHeightPx = dimens.effectiveHourHeight,
+            topPaddingPx = dimens.topPadding,
+            viewportHeightPx = height,
+            maxScrollPx = maxScroll(),
+        )
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -1403,6 +1459,10 @@ private fun renderSignature(): Long {
         }
         super.onRestoreInstanceState(state.superState)
         scrollOffset = state.scrollOffset
+        // 恢复出来的位置优先于首次定位（§8.5「旋转屏幕后恢复原滚动位置」/ D12）。
+        // 正常情况下 restore 先于首次测量，但视图被重新挂载时顺序不保证——
+        // 显式置位让两种顺序都得到同一个结果。
+        initialScrollSettled = true
         viewDate = state.viewDate
         selectedId = state.selectedId
         isToday = isSameDay(viewDate, System.currentTimeMillis())
@@ -1451,6 +1511,18 @@ private fun renderSignature(): Long {
             editStrokeWidth = dimens.editStrokeWidth,
         ),
     )
+
+    /**
+     * 分钟 → **内容坐标系**里的纵向像素（AD-01）。
+     *
+     * 内容坐标系把「顶部留白之后的第一行」（即 00:00）记为 `y = topPadding`，
+     * 绘制时画布再整体平移 `-scrollOffset`（见 [onDraw]），命中测试则反向换算
+     * （见 [minuteAt]）。因此「把某个时刻放到视口某处」一律走这里——
+     * 直接用 [Geometry.minuteToOffset] 会漏掉顶部留白，定位结果随之偏上。
+     */
+    private fun minuteToContentY(minute: Int): Int =
+        dimens.topPadding +
+            Geometry.minuteToOffset(minute.toFloat(), dimens.effectiveHourHeight).toInt()
 
     /** 时间轴区域右边缘。RTL 下时间轴在右侧（AD-10 / E16）。 */
     private fun resolveAxisEnd(totalWidth: Int): Int =

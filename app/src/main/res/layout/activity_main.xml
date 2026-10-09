@@ -12,6 +12,10 @@
       XML 配置示例（PRD §10.1 / FC-005「界面配置」侧）。
       与代码侧 setConfig(TimelineConfig(...)) 一一对应、效果完全一致。
       这里故意改动几项，便于在真机上一眼看出 XML 配置确实生效。
+
+      FI-012 首次定位**默认开启**，因此这里没有显式写 app:dtAutoLocateOnFirstShow——
+      打开页面时会自动定位到当前时间上方三分之一屏（PRD §8.5）。
+      如需停在 00:00 顶部，加 app:dtAutoLocateOnFirstShow="false" 即可。
     -->
     <com.github.kevinvane.daytimeline.library.DayTimelineView
         android:id="@+id/timeline"

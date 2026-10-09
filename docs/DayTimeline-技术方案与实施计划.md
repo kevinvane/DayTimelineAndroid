@@ -2,10 +2,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v0.9（草案） |
+| 文档版本 | v0.10（草案） |
 | 状态 | 待评审 |
 | 编写日期 | 2026-09-30 |
-| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.5 |
+| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.5（v1.6 已发布但 §8.5/FI-012 规则未变，见 AD-24） |
 | 文档读者 | 研发、测试、设计 |
 
 ---
@@ -549,6 +549,56 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 
 **详细方案**：`docs/DayTimeline-日程块表单输入方案.md`（含 API 签名、不变式、测试用例清单与未决问题 QF-1~QF-4）。
 
+### AD-24　FI-012 首次定位：定位到「视口三分之一处」而不是固定像素　【PRD v1.6 决策】
+
+**背景**：PRD 自 v1.1 起就要求 FI-012「首次显示自动定位到当前时间 / 可配置关闭」，M3-8 早已列为完成。但代码里**只有 `dtAutoLocateOnFirstShow` 这个属性被声明，没有任何地方读它**——`Dimens.firstLocateLeadIn`（48dp）只服务于 `scrollToMinute`（FI-013），与「首次定位」无关。用户提问「是否支持自动滑动到当前系统时间」时才发现：**配置项存在，功能不存在**。这是比「漏实现」更糟的形态——它连报错都没有，接入方配了也以为生效了。
+
+**决策**：实现 FI-012，落点与规则全部由 PRD 给出，实现只做三件事：
+
+| PRD 出处 | 规则 | 实现 |
+|---|---|---|
+| §8.5 | 首次定位 = 当前时间向上偏移约**三分之一屏** | `Geometry.firstLocateOffset()`，`viewportHeight / 3` |
+| §8.5 | **非今天**定位到 00:00（顶部） | `autoLocateOnFirstShow()` 里的显式守卫 |
+| FI-012 | 可配置关闭 | `TimelineConfig.resolvedAutoLocateOnFirstShow()`，默认 `true` |
+| §11.2 / D12 | 业务方显式恢复的位置、以及状态恢复的位置，**优先于**自动定位 | `initialScrollSettled` 标志 |
+
+**为什么是三分之一屏而不是固定 48dp**
+
+固定值在小屏上把当前时间推到屏幕顶外、在大屏上几乎没滚动；三分之一屏在任何视口高度下都稳定成立，与因素密度无关。§7.2 没有为「三分之一屏」定值，因为它是比例而不是尺寸——**不能放进 `dimens.xml`**（AD-15：无量纲比值写成 `format="float"` 会被 AAPT2 编译成 `TYPE_FLOAT`，`getDimension()` 直接抛异常）。因此 `FIRST_LOCATE_VIEWPORT_DIVISOR = 3` 是 `Geometry` 里的 `const`，并在 `FirstLocateTest` 里把它钉住。
+
+**为什么把定位挂在 `onSizeChanged` 而不是 `submitEvents` 或构造期**
+
+三分之一屏要用**视口高度**，而 `submitEvents` 可能在测量前就被调用（顺序由业务方决定，见 `MainActivity`：`setConfig` → `submitEvents` 全在 `onCreate`）。构造期根本没有高度。`onSizeChanged` 是第一个「尺寸已知」的点，且天然覆盖旋转/重建后的重新测量。
+
+**显式意图优先：`initialScrollSettled` 的四个来源**
+
+| 来源 | 场景 | 不这样做的后果 |
+|---|---|---|
+| `autoLocateOnFirstShow()` 已跑过 | 旋转后重新测量 | 每次尺寸变化都把用户拽回当前时间 |
+| `scrollToMinute()` | 业务方跳转到指定时刻 | 自己跳的位置被覆盖 |
+| `setScrollOffset()` | 业务方按 §11.2 恢复上次位置 | 保存的位置被覆盖 |
+| `onRestoreInstanceState()` | 状态恢复（D12） | **恢复被覆盖，D12 直接失败** |
+
+判断用独立标志而不是 `scrollOffset != 0`：业务方显式定位到 0（顶部）同样是有意为之。
+
+**为什么瞬间定位而不是用 `scrollToMinute(smooth = true)`**
+
+`scrollToMinute` 带 220ms 动画。首屏播一段从 00:00 飞到当前时间的动画，用户看到的是「页面自己动了 220ms」，而 FI-013 的平滑滚动是「用户知道自己在跳转」。首次定位必须无感，因此走 `Geometry.firstLocateOffset()` 直接赋值。为此顺带去掉了一个隐患：`scrollToMinute` 原本算 `minuteToOffset(minute) - leadIn`，**漏了顶部留白**，在所有非零 `topPadding` 下都偏上 8dp；现已统一到 `minuteToContentY()`，绘制、命中测试、跳转三处对同一分钟的换算从此同源（此前是同一公式抄五遍）。
+
+**外部滚动模式（FI-002 / §8.6）不定位**
+
+该模式下组件高度 = 全天内容高度，`maxScroll()` 恒为 0，`firstLocateOffset` 算出的目标被钳回 0——不产生位移。滚动归外层容器负责，组件无权也无需驱动外层位置。这一条由仪器测试 `externalScrollModeLeavesScrollingToOuterContainer` 钉住。
+
+**连带影响：17 个存量仪器测试因该功能而失败**
+
+`DayTimelineViewEditTest` 的用例把事件放在 01:00 并用 `visibleBlockSnapshot` 定位它——自动定位到当前时间后，01:00 已滚出视口。**这不是组件缺陷，是测试夹具的隐含前提（「初始偏移为 0」）失效。** 两个夹具的 `setUp` 里已显式 `setConfig(autoLocateOnFirstShow = false)` 并注明原因。这正是「可配置关闭」的正当用途：需要确定起点的场景关掉它。**首轮改动只做加法时漏掉了这一步，是本次实施中唯一的返工。**
+
+**验证**（真机 Pixel / Android 9，非推断）
+
+`firstShowAutoLocatesToOneThirdViewport` 断言不变量「当前时间线的内容坐标 − 偏移 == 视口高度 / 3」，而非照抄公式；另覆盖可关闭、显式位置优先、非今天停顶、外部模式不位移、只定位一次、状态恢复不被覆盖、无数据时同样定位。
+
+**详细方案**：PRD §8.5 / FI-012；测试见 `DayTimelineViewBehaviorTest` 的 FI-012 专区与 `FirstLocateTest`。
+
 
 
 
@@ -790,6 +840,8 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | v0.6 | 2026-10-08 | 代码清理 + 进度回写订正。清除 `BlockContext.editing` 死字段（全仓零读取点，恒为 `false`，定制方据此判断只会永远拿到错误结果）与 `handleSelfScroll` 零调用私有函数（AD-20 修复残骸）；修复 `requestDelete` 在 `EditController.onDelete()` 接管分支只清 `editSession`、漏清 `selectedId`/`grabbedHandle` 且不刷新，导致选中描边与编辑层残留。§9.1/§9.2 此前仍把 M4/M5/M6 记为「未开始」，与代码严重脱节，本次按实际实现订正为 M2–M5 已完成、M1/M6 大部分或部分完成。 | — |
 | v0.7 | 2026-10-09 | 对齐 PRD v1.3「日程块表单输入」：新增 **AD-22**——组件零新增 View，只把第四层 `EditController` 载荷补成对称的双向契约（`EditDraft` / `EditResult` / `applyEdit`）；`TimelineEvent` 新增带默认实现的 `color` 作为业务色第三通道；新增 `SnapCalculator.applyRange()` 做双边对称时间合法化（D11）；FI-010 在业务方接管后不再由组件执行（PRD §8.2.1）。详细方案落 `docs/DayTimeline-日程块表单输入方案.md`。文档头「对应 PRD」由 v1.1 订正为 v1.3。 | — |
 | v0.8 | 2026-10-09 | 补齐 §12.4 剩余门禁并订正进度：① 接入 detekt + `verifyNoDeadCode` 死代码自动阻断，首次运行即抓出 4 处存量死代码；② 新增 `:r8test` 混淆消费端验证模块，首次运行即抓出 3 个发布阻断级缺陷（Kotlin 合成构造器、`$default` 桥接、`DefaultImpls` 合成类均被裁）；③ 修订 `verifyAllCoverage` 口径并**接入 CI**（此前从未进过 CI，实测 22% 长期为红），实测 88.79%，口径**已获产品认可**并回写 PRD v1.4 §12.4.1；④ 审查 `TimelineConfig.mergedWith` 时发现 `autoLocateOnFirstShow` 漏合并（XML 配了会被 `setConfig` 静默丢弃），已修复并补结构性断言 `TimelineConfigTest.mergedWith 覆盖全部可配置字段`——该断言不依赖阈值，新增字段忘合并即刻失败；⑤ §9.2/§9.4/§9.5 按实测重写，订正「detekt 未接入」「无 CI」等过期陈述；文档头「对应 PRD」升至 v1.4 | — |
+| v0.9 | 2026-10-09 | 新增 **AD-23 日程详情**（对齐 PRD v1.5 §7.7.2）：组件零新增 View，只加 detailOf / enterEditMode / clearSelection 三个入口与 EventDetail 只读快照。记录 enterEditMode 的必要性——三个出口都以编辑态为前提，而 FI-004 只认长按手势，业务方在详情里点「删除」会静默无效；记录首版把「进入编辑态」与「弹出表单」耦合导致的「点编辑弹出两个表单」及拆分方案（影响面还包含完成/取消/删除）；记录被否决的 editDraftOf() 方案（会给业务方可写句柄，绕过 D3）；记录真机发现的两个问题：showAsDropDown 因 anchor 为整个时间轴而把弹窗推出屏幕，以及 ContextCompat.getColor 误用属性 ID 致真机崩溃（编译/lint/detekt 全部通过）。文档头「对应 PRD」升至 v1.5。**本次（v0.10）另行订正一处记录错位**：本行此前误写在 §9.5「已完成」表格末尾，使变更记录实际止于 v0.8 | — |
+| v0.10 | 2026-10-09 | 新增 **AD-24（FI-012 首次定位）**。前情：`dtAutoLocateOnFirstShow` 属性自 v1.1 起就声明在 `attrs.xml` / `TimelineConfig` 里、M3-8 早已标为完成，**但全仓没有任何代码读取它**——「支持自动定位当前时间」是个只会回答「支持」的功能。本次补齐：定位规则取 PRD §8.5 的「视口三分之一屏」而非固定 48dp（比例无量纲，按 AD-15 走 `Geometry` 代码常量，不进 `dimens.xml`）；`onSizeChanged` 为触发点（视口高度首个已知时刻）；`initialScrollSettled` 令业务方显式位置与 D12 状态恢复均优先于自动定位；外部滚动模式下 `maxScroll()` 恒为 0，天然不位移。顺带统一 `minuteToContentY()`，修掉 `scrollToMinute` 漏加 `topPadding` 导致所有非零留白下偏上 8dp 的既有缺陷（同一公式此前在五处各抄一遍）。**连带返工**：17 个存量仪器测试因该功能生效而失败（夹具把事件放 01:00 并用 `visibleBlockSnapshot` 定位），已在两个夹具 `setUp` 里显式关闭自动定位并注明原因。门禁全部复跑通过，63 个仪器测试真机全绿 | — |
 
 ---
 
@@ -802,7 +854,7 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | M0 设计定稿 | **部分** | 语义色项**结构**与 17 项取值已就位（Material 3 baseline 占位，AD-12）；交互标注、切图、字体资源仍缺，属设计职责 |
 | M1 工程基线 | **已完成** | `:app`→`:library` 接线、res 骨架、`androidx.customview` 依赖、lint 严格配置、CI（`.github/workflows/ci.yml`）、JaCoCo 覆盖率门禁（核心 + 可测逻辑）、detekt 与死代码自动阻断（`verifyNoDeadCode`）、R8 混淆消费端验证模块 `:r8test` 均已建立 |
 | M2 静态呈现 | **已完成** | `core/` 全部算法 + U1–U16 逐条验收（20 个用例）、网格与日程块绘制均已完成 |
-| M3 数据与滚动 | **已完成** | 数据契约、提交/单条更新/单条删除/切日期/指定当前时间、增量 diff + 滚动锚点、刷新收敛、30 秒定时器与生命周期摘除已完成；**两种滚动模式均已实现**——自身模式消费手势并执行惯性滚动，外部模式 `onMeasure` 按全天内容高度测量且 `Intent.Scroll` 分支 `return false` 让给外层（E29） |
+| M3 数据与滚动 | **已完成** | 数据契约、提交/单条更新/单条删除/切日期/指定当前时间、增量 diff + 滚动锚点、刷新收敛、30 秒定时器与生命周期摘除已完成；**两种滚动模式均已实现**——自身模式消费手势并执行惯性滚动，外部模式 `onMeasure` 按全天内容高度测量且 `Intent.Scroll` 分支 `return false` 让给外层（E29）。**FI-012 首次定位已于 v0.10 补齐**（此前 `autoLocateOnFirstShow` 无人消费，详见 AD-24） |
 | M4 交互闭环 | **已完成** | `GestureArbiter` 手势状态机、`EditSession` 编辑态、`SnapCalculator` 上下对称吸附、48dp 热区手柄、`confirmEdit`/`cancelEdit`/`requestDelete` 与 `EditController` 第四层接管均已实现 |
 | M5 打磨 | **已完成** | 字体放大标签降密度、`onSaveInstanceState` 状态保存、运行时资源重载（深色/多语言）、无障碍虚拟视图均已完成 |
 | M6 发布 | **部分** | `consumer-rules.pro`、README 已产出；**开启混淆的消费端验证仍未做**，四份交付文档未齐 |
@@ -851,9 +903,10 @@ PRD §12.4 原文是「全库覆盖率 ≥ 75%」。字面执行的结果是 **2
 ### 9.4 后续优先事项
 
 1. **内置「完成/取消/删除」按钮**——PRD §7.7 要求可配置是否内置，至今组件未内置，按钮全在业务方侧；`attrs.xml` 已有警示注释，实现时一并加回。这是 §12.4 中目前唯一明确未实现的功能项。
-2. **E29 与外部滚动模式的真机复核**——AD-04 的四条手势归属规则只经 `DayTimelineViewBehaviorTest.externalScrollModeDoesNotScrollItself` 单测覆盖，未在真机上验证过「外部容器滚动时组件不抢手势」。
-3. **M0 色值定稿**——解除 AD-12 的占位状态，复查深色对比度（Q7）。
-4. **pre-commit 钩子与依赖漏洞扫描**——§12.4「已知安全漏洞 0 个高危」与「文档无待办标记」目前无任何自动化手段。
+2. **「声明了却无人消费」的专项审计**——AD-24 暴露的那类缺陷（`autoLocateOnFirstShow` 在 `attrs.xml` / `TimelineConfig` / `mergedWith` 里齐备，还有专项测试断言它被合并，唯独没有任何地方读它）在现有门禁下**完全隐形**：`verifyNoDeadCode` 只查私有成员，覆盖率门禁看的是「被测的逻辑」而非「被接到主流程上的逻辑」。建议的做法是把「每个可配置项至少有一个读取点」做成结构性断言（对照 `attrs.xml` 属性名 ↔ `ConfigFromAttrs` 读取处的字段名 ↔ View 层消费处），而不是再加百分比门禁。
+3. **E29 与外部滚动模式的真机复核**——AD-04 的四条手势归属规则只经 `DayTimelineViewBehaviorTest.externalScrollModeDoesNotScrollItself` 单测覆盖，未在真机上验证过「外部容器滚动时组件不抢手势」。
+4. **M0 色值定稿**——解除 AD-12 的占位状态，复查深色对比度（Q7）。
+5. **pre-commit 钩子与依赖漏洞扫描**——§12.4「已知安全漏洞 0 个高危」与「文档无待办标记」目前无任何自动化手段。
 
 ### 9.5 已完成（原列为待办，现已具备证据）
 
@@ -861,7 +914,7 @@ PRD §12.4 原文是「全库覆盖率 ≥ 75%」。字面执行的结果是 **2
 |---|---|
 | AD-22 表单输入落地 | `applyEdit` / `EditDraft` / `EditResult` 已实现；demo 真实弹 BottomSheet 表单，真机手动验证通过 |
 | AD-23 日程详情 | `detailOf` / `enterEditMode` / `enterEditModeAndNotify` / `clearSelection` 已实现；demo 真实弹 PopupWindow 详情，真机手动验证通过 |
+| AD-24 首次定位（FI-012） | 见 AD-24。`firstShowAutoLocatesToOneThirdViewport` 等 9 个真机用例全绿；此前 17 个存量用例因该功能生效而失败并已修夹具（见 AD-24「连带影响」） |
 | R8 混淆消费端验证 | `:r8test:verifyKeptSymbols` + `:r8test:connectedReleaseAndroidTest`（混淆变体 5/5）。首次运行即抓出 3 个发布阻断级缺陷 |
 | detekt 与死代码自动阻断 | `:library:detekt` / `:app:detekt` 0 违规；`:library:verifyNoDeadCode` 专项门禁 0 处 |
 | 可测逻辑覆盖率门禁 | `:library:verifyAllCoverage` 88.79%，已接入 CI（口径见 §9.2.1 / PRD §12.4.1） |
-| v0.9 | 2026-10-09 | 新增 **AD-23 日程详情**（对齐 PRD v1.5 §7.7.2）：组件零新增 View，只加 detailOf / enterEditMode / clearSelection 三个入口与 EventDetail 只读快照。记录 enterEditMode 的必要性——三个出口都以编辑态为前提，而 FI-004 只认长按手势，业务方在详情里点「删除」会静默无效；记录首版把「进入编辑态」与「弹出表单」耦合导致的「点编辑弹出两个表单」及拆分方案（影响面还包含完成/取消/删除）；记录被否决的 editDraftOf() 方案（会给业务方可写句柄，绕过 D3）；记录真机发现的两个问题：showAsDropDown 因 anchor 为整个时间轴而把弹窗推出屏幕，以及 ContextCompat.getColor 误用属性 ID 致真机崩溃（编译/lint/detekt 全部通过）。文档头「对应 PRD」升至 v1.5 | — |

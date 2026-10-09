@@ -68,8 +68,12 @@
     <dimen name="day_timeline_edge_scroll_trigger">48dp</dimen>
     <!-- 边缘自动滚动单次量：8dp 小步长更跟手 -->
     <dimen name="day_timeline_edge_scroll_step">8dp</dimen>
-    <!-- 首次定位时，当前时间向上偏移约三分之一屏的余量 -->
-    <dimen name="day_timeline_first_locate_lead_in">48dp</dimen>
+    <!--
+      scrollToMinute（FI-013）跳转时的顶部留白：让目标时刻不贴在视口顶边上。
+      ⚠️ 与 FI-012「首次定位」无关——首次定位按 PRD §8.5 取「视口高度的三分之一」，
+      是相对量，由 Geometry.firstLocateOffset 计算，不在本文件。
+    -->
+    <dimen name="day_timeline_jump_lead_in">48dp</dimen>
 
     <!-- ============ 非尺寸类默认值（PRD §7.2 尾部） ============ -->
     <!-- 吸附步长：15 分钟。设为 0 表示关闭吸附，但保留最短/最长时长兜底 -->

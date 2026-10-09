@@ -50,7 +50,7 @@ internal class Dimens private constructor(
     val minTouchTarget: Int,
     val edgeScrollTriggerSize: Int,
     val edgeScrollStepSize: Int,
-    val firstLocateLeadIn: Int,
+    val jumpLeadIn: Int,
     val editStrokeWidth: Int,
     val snapMinutes: Int,
     val minDurationMinutes: Int,
@@ -190,7 +190,7 @@ blockAccentBarWidth = pick(
                     config.edgeScrollStepSize,
                     R.dimen.day_timeline_edge_scroll_step,
                 ),
-                firstLocateLeadIn = dim(R.dimen.day_timeline_first_locate_lead_in),
+                jumpLeadIn = dim(R.dimen.day_timeline_jump_lead_in),
                 editStrokeWidth = dim(R.dimen.day_timeline_edit_stroke_width),
                 snapMinutes = config.resolvedSnapMinutes(
                     res.getInteger(R.integer.day_timeline_snap_minutes),

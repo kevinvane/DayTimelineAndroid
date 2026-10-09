@@ -80,6 +80,7 @@ data class TimelineConfig(
     val nowIndicatorSkipOverlappingHourLabel: Boolean? = null,
     val nowDotDiameter: Int? = null,
     val nowLineWidth: Int? = null,
+    /** FI-012：首次显示是否自动定位到当前时间。`null` 表示默认开启。 */
     val autoLocateOnFirstShow: Boolean? = null,
 
     // ---- 时间行为 ----
@@ -137,6 +138,15 @@ data class TimelineConfig(
     fun resolvedScrollMode(): ScrollMode = scrollMode ?: ScrollMode.SELF
 
     fun resolvedTimeFormat(): TimeFormat = timeFormat ?: TimeFormat.SYSTEM
+
+    /**
+     * FI-012：首次显示是否自动定位到当前时间，**默认开启**。
+     *
+     * 默认开启的依据是 PRD §8.5「首次定位 | 默认定位到『当前时间向上偏移约三分之一屏』」
+     * 与用户故事 A1「打开页面 → 时间轴自动滚动到当前时间附近」；业务方要回到
+     * 00:00 顶部才显式关掉它（验收标准「可配置关闭」）。
+     */
+    fun resolvedAutoLocateOnFirstShow(): Boolean = autoLocateOnFirstShow ?: true
 
     /**
      * 与 [other] 合并：**other 的非 null 字段覆盖本对象，其余保留**。

@@ -153,3 +153,91 @@ class GeometryTest {
         assertFalse(Geometry.intersectsViewport(100f, 50, 0, 0))
     }
 }
+
+/**
+ * FI-012 / §8.5「首次定位」。
+ *
+ * 断言写成**不变量**（「定位后当前时间线落在视口顶部往下三分之一屏」）而不是
+ * 「拿公式再算一遍」——后者只是把实现抄到测试里，实现错了测试也会跟着错。
+ */
+class FirstLocateTest {
+
+    private val hourHeight = 200
+    private val topPadding = 8
+    private val viewport = 1800
+    private val contentHeight = 24 * hourHeight + topPadding + 8
+    private val maxScroll = contentHeight - viewport
+
+    private fun locate(minute: Float, lead: Int = topPadding) = Geometry.firstLocateOffset(
+        minute = minute,
+        hourHeightPx = hourHeight,
+        topPaddingPx = lead,
+        viewportHeightPx = viewport,
+        maxScrollPx = maxScroll,
+    )
+
+    @Test
+    fun `当前时间落在视口顶部往下三分之一屏处`() {
+        val offset = locate(720f) // 12:00
+        val nowContentY = topPadding + (720f / 60f * hourHeight).toInt()
+        assertEquals(viewport / 3, nowContentY - offset)
+    }
+
+    /** 顶部留白必须计入：漏掉它定位会整体偏上，留白越大偏得越多。 */
+    @Test
+    fun `顶部留白计入定位`() {
+        assertEquals(40, locate(720f, lead = topPadding + 40) - locate(720f))
+        assertEquals(0, locate(720f, lead = 0) + 600 - 2400) // 12:00 恰好落在三分之一屏
+    }
+
+    /** 凌晨：当前时间在视口顶部之上，钳到 0（顶部），不得为负。 */
+    @Test
+    fun `凌晨钳到顶部`() {
+        assertEquals(0, locate(0f))
+        assertEquals(0, locate(30f)) // 00:30 仍不足三分之一屏
+    }
+
+    /** 深夜：当前时间在视口底部之下，钳到可滚动的最大值，不得越界。 */
+    @Test
+    fun `深夜钳到底部`() {
+        assertEquals(maxScroll, locate(1440f))
+    }
+
+    /**
+     * 外部滚动模式下组件高度等于全天内容高度（§8.6），可滚动上限为 0，
+     * 因此首次定位必须不产生任何位移——滚动归外层容器负责。
+     */
+    @Test
+    fun `无滚动余量时不产生位移`() {
+        val offset = Geometry.firstLocateOffset(
+            minute = 720f,
+            hourHeightPx = hourHeight,
+            topPaddingPx = topPadding,
+            viewportHeightPx = contentHeight,
+            maxScrollPx = 0,
+        )
+        assertEquals(0, offset)
+    }
+
+    /** 脏参数不抛异常且退回顶部（§11.4 绝不崩溃）。 */
+    @Test
+    fun `非法尺寸退回顶部而不抛异常`() {
+        val bad = arrayOf(
+            Triple(0, viewport, maxScroll),      // 格高为 0
+            Triple(hourHeight, 0, maxScroll),   // 视口未测量
+            Triple(hourHeight, viewport, -100), // 上限为负
+        )
+        bad.forEach { (hh, vh, ms) ->
+            assertEquals(
+                0,
+                Geometry.firstLocateOffset(720f, hh, topPadding, vh, ms),
+            )
+        }
+    }
+
+    /** 三分之一屏的分母是 3（PRD §8.5），把它钉住以免被误改成常量 48dp。 */
+    @Test
+    fun `分母为 3`() {
+        assertEquals(3, Geometry.FIRST_LOCATE_VIEWPORT_DIVISOR)
+    }
+}
