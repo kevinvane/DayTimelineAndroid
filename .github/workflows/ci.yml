@@ -33,6 +33,15 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml') }}
           restore-keys: gradle-${{ runner.os }}-
 
+      # 静态代码检查 0 严重 + 代码风格 0 违规（PRD §12.4 / T6）
+      # 在编译之前跑：静态问题应当最先暴露，而不是等编译完才发现
+      - name: detekt
+        run: ./gradlew detekt --stacktrace
+
+      # 死代码 0 处（PRD T5 / D20）。单独一步，便于失败时一眼看出是哪条红线
+      - name: 死代码门禁
+        run: ./gradlew :library:verifyNoDeadCode --stacktrace
+
       - name: 编译组件库与示例应用
         run: ./gradlew :library:assembleDebug :app:assembleDebug --stacktrace
 
@@ -80,4 +89,36 @@ jobs:
         with:
           name: instrumented-report
           path: library/build/reports/androidTests/**
+          retention-days: 7
+
+  # R8 / 混淆消费端验证（PRD §12.5 / T7 / 风险 R8）。
+  # 单独一个 job：它验证的是「发布形态」而非源码，且耗时明显更长。
+  r8-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+
+      # 第一步：R8 能否跑通 + 对外契约类是否按规则保留（不需要设备）
+      - name: 混淆产物构建与符号核对
+        run: ./gradlew :r8test:verifyKeptSymbols --stacktrace
+
+      # 第二步：在**混淆后的** release 变体上跑仪器测试。
+      # 这是「业务方开启混淆后功能正常」的唯一有效证据——
+      # library 自身不开混淆，保留规则写错也不会有任何东西报错。
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          script: ./gradlew :r8test:connectedReleaseAndroidTest
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r8-test-report
+          path: r8test/build/reports/androidTests/**
           retention-days: 7

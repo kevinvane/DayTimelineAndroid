@@ -96,7 +96,6 @@ class DayTimelineView @JvmOverloads constructor(
     private var isToday = true
 
     private var scrollOffset = 0
-    private var hasLocatedFirstTime = false
 
     /** 拖拽滚动的状态（FI-001）。 */
     private var lastScrollTouchY = 0f
@@ -193,7 +192,10 @@ class DayTimelineView @JvmOverloads constructor(
     private val blockContext = BlockContext()
 
     /** 复用的 Paints 包装（§12.1：不在 onDraw 里分配对象）。 */
-    private var gridPaints = GridPainter.Paints(paints.gridLine, paints.axisLabel, paints.nowLabel, nowLine = paints.nowLine, nowDot = paints.nowDot)
+    private var gridPaints = GridPainter.Paints(
+        paints.gridLine, paints.axisLabel, paints.nowLabel,
+        nowLine = paints.nowLine, nowDot = paints.nowDot,
+    )
     private var blockPaints = EventBlockPainter.Paints(
         paints.blockBackground, paints.blockText, paints.blockAccent, paints.blockStroke,
     )
@@ -252,7 +254,10 @@ class DayTimelineView @JvmOverloads constructor(
         dimens = Dimens.resolve(context, config)
         paints = buildPaints()
         colors = dimens.theme.toPublicColors()
-        gridPaints = GridPainter.Paints(paints.gridLine, paints.axisLabel, paints.nowLabel, nowLine = paints.nowLine, nowDot = paints.nowDot)
+        gridPaints = GridPainter.Paints(
+            paints.gridLine, paints.axisLabel, paints.nowLabel,
+            nowLine = paints.nowLine, nowDot = paints.nowDot,
+        )
         blockPaints = EventBlockPainter.Paints(
             paints.blockBackground, paints.blockText, paints.blockAccent, paints.blockStroke,
         )
@@ -530,23 +535,29 @@ class DayTimelineView @JvmOverloads constructor(
         invalidate()
     }
 
-    private fun renderSignature(): Long {
-        var h = 17L
-        h = h * 31 + width
-        h = h * 31 + height
-        h = h * 31 + scrollOffset
-        h = h * 31 + nowMinute
+    /**
+ * 把一组值折叠成一个长整型签名，只有它变化才 `invalidate`（AD-06 / D17）。
+ *
+ * 用的是 djb2 风格的滚动哈希（初值 17、乘子 31）：碰撞概率对本用途足够
+ * （最坏情况只是多一次 `invalidate`，不会漏画），且无需分配。
+ */
+private fun renderSignature(): Long {
+        var h = SIGNATURE_SEED
+        h = h * SIGNATURE_MULTIPLIER + width
+        h = h * SIGNATURE_MULTIPLIER + height
+        h = h * SIGNATURE_MULTIPLIER + scrollOffset
+        h = h * SIGNATURE_MULTIPLIER + nowMinute
         // 内容变化（改标题 / 改时间 / 数量变化）都必须触发重绘，不能只看 size
-        h = h * 31 + events.hashCode()
-        h = h * 31 + (selectedId?.hashCode() ?: 0)
-        h = h * 31 + dimens.effectiveHourHeight
+        h = h * SIGNATURE_MULTIPLIER + events.hashCode()
+        h = h * SIGNATURE_MULTIPLIER + (selectedId?.hashCode() ?: 0)
+        h = h * SIGNATURE_MULTIPLIER + dimens.effectiveHourHeight
         // 状态集合参与签名：跨过「已过」分界时才能重绘（FR-009 要求 30 秒内更新）
-        h = h * 31 + states.hashCode()
+        h = h * SIGNATURE_MULTIPLIER + states.hashCode()
         // 编辑态几何：拖拽 / 缩放必须逐帧重绘（走 requestRefresh 收敛）
-        h = h * 31 + (editSession?.startMinute ?: -1)
-        h = h * 31 + (editSession?.endMinute ?: -1)
+        h = h * SIGNATURE_MULTIPLIER + (editSession?.startMinute ?: -1)
+        h = h * SIGNATURE_MULTIPLIER + (editSession?.endMinute ?: -1)
         // isToday 决定 now 指示线显隐（setViewDate 切日时能重绘）
-        h = h * 31 + if (isToday) 1 else 0
+        h = h * SIGNATURE_MULTIPLIER + if (isToday) 1 else 0
         return h
     }
 
@@ -693,11 +704,11 @@ class DayTimelineView @JvmOverloads constructor(
         if (controller != null) {
             controller.confirmDelete(context, title) { performDelete(event) }
         } else {
-            defaultConfirmDelete(title) { performDelete(event) }
+            defaultConfirmDelete { performDelete(event) }
         }
     }
 
-    private fun defaultConfirmDelete(title: String, onConfirmed: () -> Unit) {
+    private fun defaultConfirmDelete(onConfirmed: () -> Unit) {
         android.app.AlertDialog.Builder(this.context)
             .setTitle(R.string.day_timeline_delete_confirm_title)
             .setMessage(R.string.day_timeline_delete_confirm_message)
@@ -767,6 +778,13 @@ class DayTimelineView @JvmOverloads constructor(
         requestRefresh()
     }
 
+    /**
+     * 读屏时本视图覆盖的时段文案。
+     *
+     * 本视图恒为「单日全天」，故返回值是常量；该方法存在是为了满足
+     * `TimelineAccessibilityHelper` 的只读访问器约定（AD-05 / Q8）。
+     */
+    @Suppress("FunctionOnlyReturningConstant")
     internal fun currentHourRangeText(): String = "00:00 - 24:00"
 
     /**
@@ -845,7 +863,7 @@ class DayTimelineView @JvmOverloads constructor(
         lastVelocityTracker = null
         val max = maxScroll()
         if (velocityTracker != null) {
-            velocityTracker.computeCurrentVelocity(1000) // px/s
+            velocityTracker.computeCurrentVelocity(VELOCITY_UNITS_PER_SECOND) // px/s
             // 手指上滑 → getYVelocity() 为负 → 取反得到向下的正速度
             val velocityY = (-velocityTracker.getYVelocity()).toInt()
             velocityTracker.recycle()
@@ -1353,8 +1371,8 @@ class DayTimelineView @JvmOverloads constructor(
 
     /** 字体放大时标签自动降密度，但刻度线始终完整（PRD E14）。 */
     private fun labelStepFor(fontScale: Float): Int = when {
-        fontScale >= 1.8f -> 3
-        fontScale >= 1.4f -> 2
+        fontScale >= LABEL_DENSITY_HIGH_SCALE -> 3
+        fontScale >= LABEL_DENSITY_MID_SCALE -> 2
         else -> 1
     }
 
@@ -1378,6 +1396,23 @@ private const val EDGE_SCROLL_INTERVAL_MS = 16L
 
 /** 平滑滚动到指定时刻的时长（ms）。§8.5 未规定，取 220ms 的常见手感。 */
 private const val SCROLL_DURATION_MS = 220
+
+/** 绘制签名的哈希初值（djb2 风格滚动哈希）。 */
+private const val SIGNATURE_SEED = 17L
+
+/** 绘制签名的哈希乘子（djb2 风格滚动哈希）。 */
+private const val SIGNATURE_MULTIPLIER = 31L
+
+/** `VelocityTracker.computeCurrentVelocity` 的单位：1 = px/ms，1000 = px/s。 */
+private const val VELOCITY_UNITS_PER_SECOND = 1000
+
+/**
+ * 轴标签降密度的 fontScale 阈值（PRD E14）。
+ *
+ * 1.3 以上开始稀疏、1.8 以上更稀疏；刻度线本身不受影响，始终完整。
+ */
+private const val LABEL_DENSITY_MID_SCALE = 1.4f
+private const val LABEL_DENSITY_HIGH_SCALE = 1.8f
 
 /** 把内部 [Theme] 映射为对外的 [TimelineColors]（供定制方取色）。 */
 private fun Theme.toPublicColors(): TimelineColors = TimelineColors(

@@ -8,7 +8,12 @@ class TimeStateResolverTest {
 
     private fun resolve(start: Int, end: Int, now: Int, override: Boolean? = null) =
         TimeStateResolver.resolve(
-            SanitizedEvent("x", MinuteOfDay.ofMinute(start), MinuteOfDay.ofMinute(end), TestEvent("x", start, end, override)),
+            SanitizedEvent(
+                "x",
+                MinuteOfDay.ofMinute(start),
+                MinuteOfDay.ofMinute(end),
+                TestEvent("x", start, end, override),
+            ),
             now,
         )
 
@@ -44,9 +49,15 @@ class TimeStateResolverTest {
         assertEquals(EventState.UPCOMING, resolve(700, 800, 600, override = false))
     }
 
+    /**
+     * 规则 3 的直接验证：对所有 (start,end,now) 组合，结果必属于三个枚举值之一且语义自洽。
+     *
+     * 三层嵌套是**刻意的**——这本质是个组合穷举测试，把维度拆成三个独立循环
+     * 反而削弱了「穷举」的含义。故豁免嵌套深度检查。
+     */
     @Test
+    @Suppress("NestedBlockDepth")
     fun `不会产生既非已过又非进行中却被当作矛盾状态的组合`() {
-        // 规则 3 的直接验证：对所有 (start,end,now) 组合，结果必属于三个枚举值之一且语义自洽
         for (now in 0..1440 step 7) {
             for (start in 0..1440 step 60) {
                 for (end in (start + 1)..1440 step 60) {

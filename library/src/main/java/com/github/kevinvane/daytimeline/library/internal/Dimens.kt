@@ -18,6 +18,11 @@ import com.github.kevinvane.daytimeline.library.paint.Theme
  *
  * 全部尺寸以 px 存储；dp/sp 在此一次性换算，之后绘制层不再做单位换算。
  */
+// LongParameterList 豁免：字段数由 PRD §7.2「默认尺寸单一来源」逐条决定，
+// 不是随手堆出来的。改用 Builder 只会把同一批字段搬到另一处，
+// 且让「某个字段的缺省值到底从哪来」更难追溯——而这正是本类存在的意义。
+// 豁免登记见 config/detekt/EXEMPTIONS.md
+@Suppress("LongParameterList")
 internal class Dimens private constructor(
     val hourHeight: Int,
     val hourHeightMin: Int,
@@ -85,6 +90,15 @@ internal class Dimens private constructor(
          * 那是 API 1 起就支持的安全路径。
          */
         const val DEFAULT_DRAG_THRESHOLD_RATIO = 0.3f
+
+        /**
+         * 拖拽阈值系数允许的配置范围。
+         *
+         * 下限保证「位移小于阈值」在任何配置下都不会被误判为拖拽；
+         * 上限保证系数不会大到让轻微抖动就被当成拖拽（§8.2 的手感契约）。
+         */
+        const val DRAG_THRESHOLD_RATIO_MIN = 0.05f
+        const val DRAG_THRESHOLD_RATIO_MAX = 1f
 
         fun resolve(context: Context, config: TimelineConfig): Dimens {
             val res = context.resources
@@ -177,7 +191,7 @@ internal class Dimens private constructor(
                         ?: res.getInteger(R.integer.day_timeline_default_new_duration_minutes)
                     ).coerceAtLeast(1),
                 dragThresholdRatio = (config.dragThresholdRatio ?: DEFAULT_DRAG_THRESHOLD_RATIO)
-                    .coerceIn(0.05f, 1f),
+                    .coerceIn(DRAG_THRESHOLD_RATIO_MIN, DRAG_THRESHOLD_RATIO_MAX),
                 nowRefreshMillis = res.getInteger(
                     R.integer.day_timeline_now_refresh_seconds,
                 ) * 1000L,

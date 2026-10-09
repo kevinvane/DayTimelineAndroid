@@ -148,6 +148,12 @@ data class TimelineConfig(
      * 合并语义让「XML 打底 + 代码微调」这种最常见的组合自然成立，
      * 也符合 FC-005「两侧一一对应、效果完全一致」的要求。
      */
+    // CyclomaticComplexMethod 豁免：30 个可空字段的逐条合并，
+    // 分支数与字段数一一对应，没有可简化的控制流——它本来就该是「每字段一条」。
+    // 真正的风险是**漏字段**，那由「字段数 ↔ mergedWith 覆盖数」的相等性
+    // 与 §10.1「界面配置与代码配置一一对应」把守，不是靠圈复杂度。
+    // 豁免登记见 config/detekt/EXEMPTIONS.md
+    @Suppress("CyclomaticComplexMethod")
     fun mergedWith(other: TimelineConfig): TimelineConfig = TimelineConfig(
         hourHeight = other.hourHeight ?: hourHeight,
         axisWidth = other.axisWidth ?: axisWidth,
@@ -170,7 +176,8 @@ data class TimelineConfig(
 
         showNowIndicator = other.showNowIndicator ?: showNowIndicator,
         nowIndicatorTodayOnly = other.nowIndicatorTodayOnly ?: nowIndicatorTodayOnly,
-        nowIndicatorSkipOverlappingHourLabel = other.nowIndicatorSkipOverlappingHourLabel ?: nowIndicatorSkipOverlappingHourLabel,
+        nowIndicatorSkipOverlappingHourLabel = other.nowIndicatorSkipOverlappingHourLabel
+            ?: nowIndicatorSkipOverlappingHourLabel,
         nowDotDiameter = other.nowDotDiameter ?: nowDotDiameter,
         nowLineWidth = other.nowLineWidth ?: nowLineWidth,
 

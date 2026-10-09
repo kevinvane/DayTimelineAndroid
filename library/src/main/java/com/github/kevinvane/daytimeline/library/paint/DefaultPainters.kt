@@ -33,7 +33,6 @@ internal object DefaultGridPainter : GridPainter {
         defaultPaints.nowLabel.color = colors.now
 
         val baselineOffset = context.topPadding
-        val lastMinute = MinuteOfDay.END_OF_DAY_MINUTE
         val step = context.labelStep.coerceAtLeast(1)
 
         for (hour in 0..MinuteOfDay.HOURS_PER_DAY) {
@@ -57,7 +56,7 @@ internal object DefaultGridPainter : GridPainter {
                     y - (defaultPaints.axisLabel.fontMetrics.ascent + defaultPaints.axisLabel.fontMetrics.descent) / 2
                 }
                 // 轴标签文字带与红字/红线文字带重叠时，跳过该轴标签，红字覆盖之（§7.6）
-                if (!(context.skipOverlappingHourLabel && overlapsNowLabel(textY, y, context, defaultPaints))) {
+                if (!(context.skipOverlappingHourLabel && overlapsNowLabel(textY, context, defaultPaints))) {
                     canvas.drawText(
                         formatHour(hour),
                         (context.axisAreaEnd - context.gridLineWidth).toFloat(),
@@ -117,7 +116,6 @@ internal object DefaultGridPainter : GridPainter {
     /** 某轴标签基线 textY 是否与红字文字带重叠。 */
     private fun overlapsNowLabel(
         textY: Float,
-        gridlineY: Int,
         context: GridContext,
         defaultPaints: GridPainter.Paints,
     ): Boolean {
@@ -146,6 +144,9 @@ internal object DefaultGridPainter : GridPainter {
         return "${if (h < 10) "0$h" else h}:${if (m < 10) "0$m" else m}"
     }
 }
+
+/** 时间副标题相对首行基线的行距倍数（首行与副标题之间留 20% 行高）。 */
+private const val SUBTITLE_LINE_SPACING = 1.2f
 
 /**
  * 日程块默认绘制：底色 + 左侧色条 + 内容 + 可选时间副标题，选中态额外加描边。
@@ -217,7 +218,7 @@ internal object DefaultEventBlockPainter : EventBlockPainter {
             canvas.drawText(
                 ellipsize(content?.toString() ?: "", maxTextWidth, defaultPaints.text),
                 textLeft,
-                baseline + defaultPaints.text.textSize * 1.2f,
+                baseline + defaultPaints.text.textSize * SUBTITLE_LINE_SPACING,
                 defaultPaints.text,
             )
         } else {

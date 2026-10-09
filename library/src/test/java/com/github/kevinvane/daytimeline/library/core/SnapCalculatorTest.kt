@@ -22,7 +22,9 @@ class SnapCalculatorTest {
     @Test
     fun `关闭吸附后时长兜底仍然生效`() {
         // §8.3：设为 0 时不做对齐，但保留最短/最长时长兜底
-        val r = SnapCalculator.snapMove(start = 600, end = 601, stepMinutes = 0, minDurationMinutes = 5, maxDurationMinutes = 1440)
+        val r = SnapCalculator.snapMove(
+            start = 600, end = 601, stepMinutes = 0, minDurationMinutes = 5, maxDurationMinutes = 1440,
+        )
         assertEquals(5, r.last - r.first)
     }
 
@@ -165,7 +167,9 @@ class SnapCalculatorTest {
      */
     @Test
     fun `applyRange 起点贴近 24 点时改为把开始往前拉`() {
-        val r = SnapCalculator.applyRange(1439, 1440, stepMinutes = 0, minDurationMinutes = 30, maxDurationMinutes = 1440)
+        val r = SnapCalculator.applyRange(
+            1439, 1440, stepMinutes = 0, minDurationMinutes = 30, maxDurationMinutes = 1440,
+        )
         assertEquals(1410, r.first)
         assertEquals(1440, r.last)
         assertTrue("结束不得越过 24:00", r.last <= 1440)

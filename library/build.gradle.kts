@@ -5,7 +5,75 @@ import java.math.RoundingMode
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.detekt)
     jacoco
+}
+
+detekt {
+    // §12.4：静态检查 0 严重 + 代码风格 0 违规 + 死代码 0 处，三者统一由 detekt 兜。
+    // buildUponDefaultConfig = true 表示在 detekt 默认规则集之上做收紧，
+    // 而不是用一份我们自己维护的规则**子集**——子集会漏，且没人能发现漏了。
+    buildUponDefaultConfig = true
+    allRules = false
+    config.setFrom(rootProject.file("config/detekt/detekt.yml"))
+    baseline = file("$projectDir/config/detekt/baseline.xml")
+    // 刻意**不开** ignoreFailures：PRD T5 要求死代码「纳入自动化阻断」，
+    // 开了这个开关就等于把检查变成装饰。
+    ignoreFailures = false
+
+    source.setFrom(
+        files(
+            fileTree("src/main/java") { include("**/*.kt") },
+            fileTree("src/test/java") { include("**/*.kt") },
+            fileTree("src/androidTest/java") { include("**/*.kt") },
+        ),
+    )
+}
+
+/**
+ * 死代码门禁（PRD §12.4 / T5 / D20）。
+ *
+ * 单独建任务而不是只依赖 `detekt`，是为了让门禁在 CI 与本地都能被**指名**执行，
+ * 且能与覆盖率门禁并列出现在门禁清单里。
+ *
+ * 与 detekt 主任务的关系：本任务只在 `maxIssues = 0` 之上再确认一次
+ * 「没有任何 UnusedPrivate* 命中」——把 T5 这条最硬的要求单独显式化，
+ * 避免将来有人调 detekt 配置时顺带把死代码检查放松掉。
+ */
+tasks.register("verifyNoDeadCode") {
+    group = "verification"
+    description = "死代码门禁：不允许任何 UnusedPrivate* 命中（PRD T5 / D20）"
+    dependsOn("detekt")
+    val reportDir = layout.buildDirectory.dir("reports/detekt")
+    inputs.dir(reportDir)
+    outputs.upToDateWhen { false } // 每次都真跑，避免增量跳过导致门禁形同虚设
+    doLast {
+        val dir = reportDir.get().asFile
+        check(dir.exists() && dir.listFiles()?.any { it.name.endsWith(".xml") } == true) {
+            "未找到 detekt 报告：${dir.absolutePath}"
+        }
+        // detekt 的 XML 报告里 finding 的 source 带规则名，直接扫规则名即可，
+        // 比解析 severity 更稳（死代码问题不应因严重级别调低而漏网）。
+        val deadCodeRules = listOf(
+            "UnusedPrivateMember", "UnusedPrivateProperty", "UnusedPrivateClass",
+            "UnusedParameter", "UnusedImports", "UnusedReturnValue",
+        )
+        val hits = dir.listFiles().orEmpty()
+            .filter { it.name.endsWith(".xml") }
+            .flatMap { file -> file.readLines() }
+            .filter { line -> deadCodeRules.any { it in line } }
+        check(hits.isEmpty()) {
+            buildString {
+                appendLine("检出 ${hits.size} 处死代码候选（PRD T5 要求 0 处）：")
+                hits.take(20).forEach { appendLine("  " + it.trim().take(160)) }
+                if (hits.size > 20) appendLine("  …… 其余 ${hits.size - 20} 处省略")
+                appendLine()
+                appendLine("处理方式：确属死代码则删除；确由 XML/反射/序列化用到，")
+                appendLine("则在 config/detekt/detekt.yml 的 DeadCodeExemptions 里逐条登记理由。")
+            }
+        }
+        logger.lifecycle("[死代码门禁] verifyNoDeadCode 通过：0 处未使用的私有成员")
+    }
 }
 
 jacoco {

@@ -421,10 +421,14 @@ class DayTimelineViewEditTest {
 
     /** 表单把两端填反时必须自动交换，不得产出非正时长。 */
     @Test
+    @Suppress("InvalidRange")
     fun applyEditSwapsReversedRange() {
         enterEditByAccessibility("morning")
         fired.clear()
 
+        // detekt 会报 InvalidRange，这是**故意的**：Kotlin 里 `120..60` 就是空区间，
+        // 而这正是业务方把表单两端填反后最自然会构造出来的东西——
+        // first 仍是 120、last 仍是 60，组件必须兜底交换而不是接受非法草稿。
         view.applyEdit(EditResult(range = 120..60, content = "填反了"))
         view.confirmEdit()
 

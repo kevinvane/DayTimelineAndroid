@@ -12,6 +12,9 @@ material = "1.14.0"
 activity = "1.13.0"
 constraintlayout = "2.2.2"
 customview = "1.1.0"
+# detekt 1.23.8 是支持 Kotlin 2.0.x 的版本；1.23.0 及更早基于 Kotlin 1.9 编译，
+# 对本工程的 Kotlin 2.0.21 产物可能报编译期不兼容。
+detekt = "1.23.8"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -28,4 +31,5 @@ androidx-customview = { group = "androidx.customview", name = "customview", vers
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 android-library = { id = "com.android.library", version.ref = "agp" }
+detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
 

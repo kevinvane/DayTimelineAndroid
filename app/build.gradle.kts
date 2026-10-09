@@ -1,6 +1,15 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.detekt)
+}
+
+detekt {
+    // 与 library 同一份配置，保证「代码风格 0 违规」覆盖整个仓库
+    buildUponDefaultConfig = true
+    config.setFrom(rootProject.file("config/detekt/detekt.yml"))
+    ignoreFailures = false
+    source.setFrom(files(fileTree("src/main/java") { include("**/*.kt") }))
 }
 
 android {

@@ -281,27 +281,43 @@ private data class DemoEvent(
     override val content: CharSequence? get() = title
 }
 
+/**
+ * demo 夹具数据。
+ *
+ * MagicNumber 豁免：这里的「几点几分」**就该**是字面量，否则 `at(9, 30)` 要写成
+ * `at(540, 30)` 之类，反而看不出是几点。这些数字不参与任何计算，只被传给
+ * [DemoEvent] 的构造参数。
+ */
+@Suppress("MagicNumber")
 private object SampleEvents {
 
+    /**
+     * `at(9, 30)` → 当天第 570 分钟。
+     *
+     * 刻意提供这个辅助函数而不是到处写 `9 * 60 + 30`：
+     * demo 数据要一眼看出「几点到几点」，写成分钟数反而更难核对。
+     */
+    private fun at(hour: Int, minute: Int = 0): Int = hour * 60 + minute
+
     fun today(): List<DemoEvent> = listOf(
-        DemoEvent("standup", 9 * 60, 9 * 60 + 30, "站会"),
+        DemoEvent("standup", at(9), at(9, 30), "站会"),
         // 与 standup 重叠
-        DemoEvent("design_review", 9 * 60 + 15, 10 * 60, "设计评审"),
+        DemoEvent("design_review", at(9, 15), at(10), "设计评审"),
         // 完全包含在 design_review 内
-        DemoEvent("quick_sync", 9 * 60 + 20, 9 * 60 + 25, "同步"),
+        DemoEvent("quick_sync", at(9, 20), at(9, 25), "同步"),
         // 复用 design_review 结束后空出的列
-        DemoEvent("hiring", 10 * 60, 11 * 60, "面试"),
+        DemoEvent("hiring", at(10), at(11), "面试"),
         // 首尾相接，判定为不重叠
-        DemoEvent("lunch", 12 * 60, 13 * 60, "午休"),
+        DemoEvent("lunch", at(12), at(13), "午休"),
         // 右侧相邻列在纵向范围内为空 → 向右扩展占满整行（W3）
-        DemoEvent("focus_block", 14 * 60, 16 * 60, "深度工作"),
+        DemoEvent("focus_block", at(14), at(16), "深度工作"),
         // 三条互相重叠
-        DemoEvent("a", 16 * 60, 17 * 60, "并行任务 A"),
-        DemoEvent("b", 16 * 60 + 20, 17 * 60, "并行任务 B"),
-        DemoEvent("c", 16 * 60 + 40, 17 * 60, "并行任务 C"),
+        DemoEvent("a", at(16), at(17), "并行任务 A"),
+        DemoEvent("b", at(16, 20), at(17), "并行任务 B"),
+        DemoEvent("c", at(16, 40), at(17), "并行任务 C"),
         // 极短日程：低于最小显示高度
-        DemoEvent("ping", 19 * 60, 19 * 60 + 2, "提醒"),
+        DemoEvent("ping", at(19), at(19, 2), "提醒"),
         // 跨越全天
-        DemoEvent("oncall", 8 * 60, 20 * 60, "值班"),
+        DemoEvent("oncall", at(8), at(20), "值班"),
     )
 }

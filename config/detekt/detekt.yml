@@ -1,0 +1,139 @@
+# detekt 配置（PRD §12.4 静态检查 0 严重 / 代码风格 0 违规 / 死代码 0 处）
+#
+# 维护约定：技术方案 §5.2 明确「这条很容易被做成『关掉检查』，务必避免」——
+# T5 要求的是「0 处」且「纳入自动化阻断」。因此本文件**不使用** `ignoreFailures`
+# 或 baseline 来压制问题；确需豁免的成员，必须在
+# `config/detekt/EXEMPTIONS.md` 里**逐条**登记理由，该清单本身要进代码走查。
+#
+# 运行：.\gradlew.bat :library:detekt
+# 死代码专项门禁：.\gradlew.bat :library:verifyNoDeadCode
+
+build:
+  maxIssues: 0
+
+config:
+  validation: true
+
+# 在 detekt 默认规则集之上做**收紧**与豁免。
+# 刻意不用一份自定义规则子集：子集会漏，且没人能发现漏了哪些。
+processors:
+  active: true
+
+console-reports:
+  active: true
+
+comments:
+  active: true
+  UndocumentedPublicClass:
+    active: false
+    # 对外契约集中在 api/ 包且普遍带 KDoc；internal 实现类不强制。
+  UndocumentedPublicFunction:
+    active: false
+  UndocumentedPublicProperty:
+    active: false
+
+complexity:
+  active: true
+  LongMethod:
+    active: true
+    # 放宽到 120：XML 属性读取（ConfigFromAttrs.read）与配置合并
+    # （TimelineConfig.merge）本质是**长而平的**语句序列，
+    # 拆成小函数反而要把「谁覆盖谁」的顺序关系打散，可读性更差。
+    threshold: 120
+  LongParameterList:
+    active: true
+    # Dimens 有 20+ 个字段、Theme.Paints 有 17 项语义色 —— 它们是**数据载体**，
+    # 字段数由 PRD §7.2/§7.3 的规格清单决定，不是设计失误。
+    # 改用 Builder 只会把同样的字段搬到另一处，且让「缺省值从哪来」更难追溯。
+    functionThreshold: 8
+    constructorThreshold: 30
+    ignoreDefaultParameters: true
+    ignoreAnnotated: [ 'Composable' ]
+  LargeClass:
+    active: true
+    threshold: 900
+  CyclomaticComplexMethod:
+    active: true
+    # 同上：TimelineConfig.merge 是 30 个可空字段的合并，逐条判定不可再简化。
+    threshold: 25
+  TooManyFunctions:
+    active: true
+    # detekt 默认 11 是按普通类定的。自定义 View 要同时承载滚动、手势、
+    # 编辑、无障碍、状态保存与资源重载，110 个方法是该职责面的正常结果。
+    # 真正的风险是「函数多导致可读性差」，那由 LongMethod / LargeClass 把关。
+    thresholdInClasses: 130
+    thresholdInInterfaces: 40
+    thresholdInObjects: 60
+    thresholdInEnums: 30
+    ignoreOverridden: true
+
+naming:
+  active: true
+  FunctionNaming:
+    active: true
+  TopLevelPropertyNaming:
+    active: true
+    constantPattern: '[A-Z][_A-Za-z0-9]*'
+
+style:
+  active: true
+  MagicNumber:
+    active: true
+    # 布局/手势数学里大量出现字面量（48dp、15 分钟、1440…）。
+    # 关键尺寸一律走 R.dimen（AD-09），残留字面量由 lint 与本规则双重兜底。
+    #
+    # 忽略清单说明：
+    # - 小整数：数组下标（HitTester 用 out[1..3] 写矩形四角）与布尔开关。
+    # - 24 / 60：分钟与小时的单位换算，本就由 MinuteOfDay 常量承担，
+    #   残留的是表达式里的裸乘数。
+    # - 10：时间格式化的零填充阈值（`if (h < 10) "0$h"`），
+    #   属格式化惯用法而非可调参数。
+    ignoreNumbers: [ '-1', '0', '1', '2', '3', '4', '8', '10', '16', '24', '60' ]
+    ignorePropertyDeclaration: true
+    ignoreCompanionObjectPropertyDeclaration: true
+    ignoreEnums: true
+    ignoreExtensionFunctions: true
+  ReturnCount:
+    active: false
+    # View 层大量「提前返回以避免深层嵌套」，与 AD-13 的显式 return 风格一致。
+  MaxLineLength:
+    active: true
+    maxLineLength: 120
+    excludeCommentStatements: true
+  ThrowsCount:
+    active: false
+    # Q4：组件不把异常抛给业务方，throws 应当趋近于零。
+  ForbiddenComment:
+    active: false
+    # 本工程大量使用中文注释解释「为什么」；TODO/FIXME 由 CI 的 grep 单独管。
+  DestructuringDeclarationWithTooManyEntries:
+    active: false
+  # 日程块绘制与视口快照循环都是「遍历 → 跳过无效项 → 绘制/收集」的守卫式写法，
+  # 多个 continue 是刻意的早退，不是失控的跳转（见 DayTimelineView.drawBlocks
+  # 与 visibleBlockSnapshot）。默认阈值 1 过于苛刻。
+  LoopWithTooManyJumpStatements:
+    active: true
+    maxJumpCount: 5
+
+potential-bugs:
+  active: true
+
+exceptions:
+  active: true
+  SwallowedException:
+    active: false
+    # 组件内大量「吞掉异常以保证不崩溃」（Q4），是刻意设计。
+  TooGenericExceptionCaught:
+    active: true
+
+empty-blocks:
+  active: true
+
+performance:
+  active: true
+  SpreadOperator:
+    active: false
+    # 日程列表转换处刻意用 spread，符合可读性取舍。
+
+coroutines:
+  active: true

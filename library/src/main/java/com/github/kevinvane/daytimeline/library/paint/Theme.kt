@@ -102,6 +102,10 @@ internal data class Theme(
     )
 
     companion object {
+        // LongParameterList 豁免：17 项语义色项由 PRD §7.3 逐条列举，
+        // 参数数与规格条数一一对应是**刻意的**——少一个就意味着漏了一条规格。
+        // 豁免登记见 config/detekt/EXEMPTIONS.md
+        @Suppress("LongParameterList")
         fun resolve(
             @ColorInt background: Int,
             @ColorInt gridLine: Int,

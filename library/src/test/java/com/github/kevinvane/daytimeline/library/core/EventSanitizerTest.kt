@@ -7,9 +7,6 @@ import org.junit.Test
 /** PRD §9.3 / E3–E7：脏数据容错与上抛。 */
 class EventSanitizerTest {
 
-    private fun kinds(vararg events: TimelineEvent) =
-        EventSanitizer.sanitize(events.toList()).issues.map { it.kind }
-
     // ---------- E3 ----------
     @Test
     fun `E3 结束时间不晚于开始时间时按最短时长修正并上抛`() {

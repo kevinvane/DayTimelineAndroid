@@ -22,3 +22,5 @@ dependencyResolutionManagement {
 rootProject.name = "DayTimeline"
 include(":app")
 include(":library")
+// R8 / 混淆消费端验证（PRD §12.5 / T7）。见 r8test/build.gradle.kts 的说明。
+include(":r8test")

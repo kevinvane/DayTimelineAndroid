@@ -51,7 +51,7 @@ class DayTimelineViewTest {
     @Test
     fun defaultConfigMeasuresAndDraws() {
         val view = newView()
-        measureAndLayout(view, 320, 480)
+        measureAndLayout(view, 480)
 
         val bitmap = Bitmap.createBitmap(320, 480, Bitmap.Config.ARGB_8888)
         view.draw(Canvas(bitmap))
@@ -117,7 +117,7 @@ class DayTimelineViewTest {
     fun externalScrollModeUsesFullContentHeight() {
         val view = newView()
         view.setConfig(TimelineConfig(scrollMode = ScrollMode.EXTERNAL))
-        measureAndLayout(view, 320, View.MeasureSpec.UNSPECIFIED)
+        measureAndLayout(view, View.MeasureSpec.UNSPECIFIED)
 
         val expected = 24 * readDimensInt(view, "effectiveHourHeight") +
             readDimensInt(view, "topPadding") +
@@ -134,12 +134,12 @@ class DayTimelineViewTest {
             "极小格高应被抬升到可显示的最小值",
             readDimensInt(view, "effectiveHourHeight") >= readDimensInt(view, "hourHeightMin"),
         )
-        measureAndLayout(view, 320, 480)
+        measureAndLayout(view, 480)
     }
 
     // ---- 工具 ----
 
-    private fun measureAndLayout(view: View, widthSpec: Int, heightSpec: Int) {
+    private fun measureAndLayout(view: View, heightSpec: Int) {
         view.measure(
             View.MeasureSpec.makeMeasureSpec(320, View.MeasureSpec.EXACTLY),
             if (heightSpec == View.MeasureSpec.UNSPECIFIED) {

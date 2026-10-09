@@ -32,6 +32,16 @@ import com.github.kevinvane.daytimeline.library.api.TimelineConfig
  */
 internal object ConfigFromAttrs {
 
+    /**
+     * 从 XML 读取配置（FC-005 的界面配置侧）。
+ *
+ * LongMethod 豁免：本方法刻意写成一段**长而平的**读取序列，每行对应
+ * `attrs.xml` 里的一个 `app:dtXxx`。拆成若干小函数会让「XML 属性 ↔
+ * TimelineConfig 字段」的对照关系被打散，那才是真正更难维护的形态。
+ * 字段与属性的对照以 `attrs.xml` 为准，加属性时本方法加一行即可。
+ * 豁免登记见 config/detekt/EXEMPTIONS.md
+ */
+@Suppress("LongMethod")
     fun read(context: Context, attrs: AttributeSet?): TimelineConfig {
         if (attrs == null) return TimelineConfig()
         val ta = context.obtainStyledAttributes(attrs, R.styleable.DayTimelineView)
