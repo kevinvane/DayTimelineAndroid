@@ -694,6 +694,7 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | v0.3 | 2026-10-08 | 真机崩溃排查后补 AD-15~AD-18：format=float 导致 TYPE_FLOAT 与 getDimension 不兼容、单位二次换算致字号放大三倍、XML 配置此前从未被读取且 setConfig 应为合并语义、补真机资源契约测试。 | — |
 | v0.4 | 2026-10-08 | 真机暴露两个新缺陷后补 AD-19/AD-20：块内文字漏设 textSize 用了 Paint 默认的 12 原始像素；以及自身滚动模式**根本没实现拖拽滚动**（判定有、执行无）。同时补窄列文字省略号截断与对应真机回归测试。 | — |
 | v0.5 | 2026-10-08 | 真机复测「滑动后回弹」后补 AD-21：`fling`/`startScroll` 参数填到了 X 轴而 `computeScroll` 读 `currY`，`currY` 恒为 0 导致惯性期间每帧写回 0。统一到 Y 轴并按 Intent 把关是否启动惯性。 | — |
+| v0.6 | 2026-10-08 | 代码清理 + 进度回写订正。清除 `BlockContext.editing` 死字段（全仓零读取点，恒为 `false`，定制方据此判断只会永远拿到错误结果）与 `handleSelfScroll` 零调用私有函数（AD-20 修复残骸）；修复 `requestDelete` 在 `EditController.onDelete()` 接管分支只清 `editSession`、漏清 `selectedId`/`grabbedHandle` 且不刷新，导致选中描边与编辑层残留。§9.1/§9.2 此前仍把 M4/M5/M6 记为「未开始」，与代码严重脱节，本次按实际实现订正为 M2–M5 已完成、M1/M6 大部分或部分完成。 | — |
 
 ---
 
@@ -704,34 +705,35 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | 里程碑 | 状态 | 说明 |
 |---|:--:|---|
 | M0 设计定稿 | **部分** | 语义色项**结构**与 17 项取值已就位（Material 3 baseline 占位，AD-12）；交互标注、切图、字体资源仍缺，属设计职责 |
-| M1 工程基线 | **部分** | `:app`→`:library` 接线、res 骨架、`androidx.customview` 依赖、lint 严格配置已完成；**JaCoCo 覆盖率阈值、detekt/死代码检查、CI 尚未建立** |
-| M2 静态呈现 | **大部分** | `core/` 全部算法 + U1–U16 逐条验收（20 个用例）已完成；网格与日程块绘制已完成 |
-| M3 数据与滚动 | **部分** | 数据契约、提交/单条更新/单条删除/切日期/指定当前时间、增量 diff + 滚动锚点、刷新收敛、30 秒定时器与生命周期摘除已完成；**两种滚动模式仅自身模式有雏形，外部滚动模式待补** |
-| M4 交互闭环 | **未开始** | 手势状态机、编辑态、拖拽吸附、手柄、完成/取消/删除待做 |
-| M5 打磨 | **部分** | 字体放大标签降密度、状态保存（`onSaveInstanceState`）已做；深色/多语言/RTL/无障碍虚拟视图待做 |
-| M6 发布 | **未开始** | ProGuard 规则、混淆验证、四份交付文档待做 |
+| M1 工程基线 | **大部分** | `:app`→`:library` 接线、res 骨架、`androidx.customview` 依赖、lint 严格配置、**CI（`.github/workflows/ci.yml`）、JaCoCo 覆盖率门禁**均已建立；**detekt / 死代码自动检查仍未接入** |
+| M2 静态呈现 | **已完成** | `core/` 全部算法 + U1–U16 逐条验收（20 个用例）、网格与日程块绘制均已完成 |
+| M3 数据与滚动 | **已完成** | 数据契约、提交/单条更新/单条删除/切日期/指定当前时间、增量 diff + 滚动锚点、刷新收敛、30 秒定时器与生命周期摘除已完成；**两种滚动模式均已实现**——自身模式消费手势并执行惯性滚动，外部模式 `onMeasure` 按全天内容高度测量且 `Intent.Scroll` 分支 `return false` 让给外层（E29） |
+| M4 交互闭环 | **已完成** | `GestureArbiter` 手势状态机、`EditSession` 编辑态、`SnapCalculator` 上下对称吸附、48dp 热区手柄、`confirmEdit`/`cancelEdit`/`requestDelete` 与 `EditController` 第四层接管均已实现 |
+| M5 打磨 | **已完成** | 字体放大标签降密度、`onSaveInstanceState` 状态保存、运行时资源重载（深色/多语言）、无障碍虚拟视图均已完成 |
+| M6 发布 | **部分** | `consumer-rules.pro`、README 已产出；**开启混淆的消费端验证仍未做**，四份交付文档未齐 |
 
 ### 9.2 门禁现状
 
 | 门禁（§12.4） | 状态 | 证据 |
 |---|:--:|---|
-| 核心逻辑单元测试覆盖率 ≥ 90% | 未测量 | 尚无 JaCoCo 配置（M1-4 待做） |
-| 平台规范检查 0 错误 | **达成** | `:library:lintDebug` 通过，0 error / 0 warning |
+| 核心逻辑单元测试覆盖率 ≥ 90% | **达成** | `:library:verifyCoreCoverage` 实测 **91.01%**（8864/9740） |
+| 平台规范检查 0 错误 | **达成** | `:library:lintDebug` 通过，0 error / 0 warning（`warningsAsErrors = true`） |
 | 代码风格检查 0 违规 | 部分 | 依赖 `kotlin.code.style=official`；detekt 未接入（M1-3 待做） |
-| 死代码 0 处 | 部分 | 已手工清除确认的死代码；detekt 未接入（M1-5 待做） |
+| 死代码 0 处 | 部分 | 已手工清除（含 `BlockContext.editing` 死字段、`handleSelfScroll` 零调用私有函数）；**detekt 未接入，无法自动阻断**（M1-5 待做） |
 | 静态代码检查 0 严重 | 部分 | 同上 |
 
 ### 9.3 已知豁免清单（§5.2 要求的显式清单，第一条）
 
 | 位置 | 检查项 | 理由 | 复核时机 |
 |---|---|---|---|
-| `DayTimelineView.onTouchEvent` | `ClickableViewAccessibility` | 该检查只在 `onTouchEvent` 函数体内做直接调用扫描，无法穿透 `GestureDetector` 委托；`performClick()` 实际在 `onSingleTapConfirmed` 中调用，无障碍契约已满足。**精确豁免单条，非全局关闭** | M4 接入点击逻辑后随 Q8 一并在真机复核 |
+| `DayTimelineView.onTouchEvent` | `ClickableViewAccessibility` | 该检查只在 `onTouchEvent` 函数体内做直接调用扫描，无法穿透 `GestureDetector` 委托；`performClick()` 实际在 `enterEditByLongPress` 中调用，无障碍契约已满足。**精确豁免单条，非全局关闭** | 已随 M4 在真机复核（`performClick` 由长按进入编辑态的路径触发） |
 
 ### 9.4 后续优先事项
 
-1. **M4 交互闭环**——这是当前最大缺口，且 **D3（取消零事件）** 与 Q1 是发布红线，不可压缩。
-2. **M1 剩余门禁**——JaCoCo 覆盖率阈值是 T4 的唯一凭据，越晚接入越难补。
-3. **AD-05 无障碍虚拟视图**——R7 登记为易被压缩项，且 M5 出口标准锁死 Q8。
-4. **外部滚动模式与 E29 手势归属**——AD-04 的四条规则尚未验证，是 R2 的核心。
+1. **R8 混淆消费端验证**——`consumer-rules.pro` 已写但从未在开启 minify 的消费端跑过，PRD §12.5 的出口标准至今无证据。
+2. **M1 剩余门禁**——detekt 与死代码自动检查是 §12.4「0 处并纳入自动化阻断」的硬要求，目前仍是手工清理。
+3. **View 层编辑 API 的测试缺口**——`confirmEdit` / `cancelEdit` / `requestDelete` / `EditController` 四个出口**零测试覆盖**，D3 的结构性保证目前只由 `EditSession` 的纯 JVM 单测背书。
+4. **E29 与外部滚动模式的真机复核**——AD-04 的四条手势归属规则只经 `externalScrollModeDoesNotScrollItself` 单测覆盖，未在真机上验证过「外部容器滚动时组件不抢手势」。
 5. **M0 色值定稿**——解除 AD-12 的占位状态，复查深色对比度（Q7）。
+6. **编辑态的输入能力**——当前组件只支持拖拽改时间，标题/内容在编辑路径上无写入入口（`onEventModified` 回传的是修改前的对象），需先确认是否属于本产品范围。
 
