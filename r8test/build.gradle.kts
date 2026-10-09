@@ -116,6 +116,8 @@ val verifyKeptSymbols by tasks.registering {
         // AD-22 新增的表单契约，业务方要读它们的字段
         "com.github.kevinvane.daytimeline.library.api.EditDraft",
         "com.github.kevinvane.daytimeline.library.api.EditResult",
+        // AD-23 详情快照；detailOf() 的返回类型
+        "com.github.kevinvane.daytimeline.library.api.EventDetail",
     )
     inputs.dir(apkDir)
     outputs.upToDateWhen { false }

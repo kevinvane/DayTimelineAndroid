@@ -152,6 +152,36 @@ class R8ConsumerTest {
 
     // ---- 工具 ----
 
+    /**
+     * 详情弹窗契约（AD-23）在混淆后仍可用。
+     *
+     * 验证三件事：快照字段可读、`enterEditMode` 让三个出口真正生效
+     * （否则业务方点「删除」会静默无效）、`clearSelection` 不影响编辑态。
+     */
+    @Test
+    fun detailApiSurvivesMinification() {
+        view.submitEvents(listOf(ConsumerApiSmoke.event("e1", "待查看的日程")))
+
+        var seenTitle = ""
+        var seenLast = -1
+        val got = ConsumerApiSmoke.detailApi(view) { title, last ->
+            seenTitle = title
+            seenLast = last
+        }
+        assertTrue("detailOf 应能取到该日程", got)
+        assertEquals("EventDetail.content 字段混淆后可读", "待查看的日程", seenTitle)
+        assertTrue("EventDetail.range 字段混淆后可读", seenLast > 0)
+
+        assertFalse(view.isEditing())
+        // 进入编辑态后三个出口才可用——这是业务方点「删除」的前提
+        assertTrue(view.enterEditMode("e1"))
+        assertTrue(view.isEditing())
+        view.clearSelection()
+        assertTrue("clearSelection 不应退出编辑态", view.isEditing())
+        view.cancelEdit()
+        assertFalse(view.isEditing())
+    }
+
     private fun tapEmptySpace() {
         val x = WIDTH / 2
         // 03:00 附近；本模块只放 09:00 一条日程（540~600 分钟），不会命中它。

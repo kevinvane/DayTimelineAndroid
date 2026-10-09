@@ -18,6 +18,7 @@ import com.github.kevinvane.daytimeline.library.api.BlockContext
 import com.github.kevinvane.daytimeline.library.api.EditDraft
 import com.github.kevinvane.daytimeline.library.api.EditResult
 import com.github.kevinvane.daytimeline.library.api.EventBlockPainter
+import com.github.kevinvane.daytimeline.library.api.EventDetail
 import com.github.kevinvane.daytimeline.library.api.GridContext
 import com.github.kevinvane.daytimeline.library.api.GridPainter
 import com.github.kevinvane.daytimeline.library.api.ScrollMode
@@ -729,6 +730,98 @@ private fun renderSignature(): Long {
 
     /** 是否处于编辑态。 */
     fun isEditing(): Boolean = editSession != null
+
+    // ================= 详情弹窗支持（AD-23） =================
+    //
+    // 组件**零新增 View**：详情界面由业务方实现，组件只提供两样东西——
+    // 一份只读快照供其渲染，一个编程进入编辑态的入口供其发起操作。
+    //
+    // 之所以需要 [enterEditMode]：组件内部只有「编辑态」这一个状态概念，
+    // [confirmEdit] / [cancelEdit] / [requestDelete] 都以处于编辑态为前提。
+    // 而 PRD FI-004 把「长按」定为进入编辑态的唯一手势——业务方在详情弹窗里
+    // 点了「删除」却没有长按，若没有这条路径，三个出口会静默无效。
+
+    /**
+     * 取某条日程的只读详情，供业务方渲染详情界面。
+     *
+     * 数据全部来自组件**已持有**的兜底修正结果，不需要业务方再做合法性判断。
+     * 该 id 不存在（或数据已被业务方移除）时返回 null。
+     *
+     * 本方法是纯读取，不改变任何状态，也不触发任何回调。
+     */
+    fun detailOf(eventId: String): EventDetail? {
+        val event = events.firstOrNull { it.id == eventId } ?: return null
+        return EventDetail(
+            id = event.id,
+            range = event.start.minuteOfDay..event.end.minuteOfDay,
+            content = event.content,
+            color = event.color,
+        )
+    }
+
+    /**
+     * 以编程方式进入编辑态，等价于用户长按该日程块（FI-004）。
+     *
+     * 供业务方的详情弹窗使用：用户在弹窗里点「删除」「完成」时，
+     * 组件必须先处于编辑态，否则三个出口会因 `editSession == null` 直接返回。
+     *
+     * ## 本方法**不**触发 [EditController.onEnterEditing]
+     *
+     * 「进入编辑态」与「弹出编辑表单」是**两件事**，刻意不耦合：
+     *
+     * - 用户点「删除」→ 需要进入编辑态，但**不该**弹出表单；
+     * - 用户点「编辑」→ 需要进入编辑态，随后**由业务方自己**弹表单。
+     *
+     * 若这里照常回调 `onEnterEditing`，接管方的表单会在业务方还没决定展示与否时
+     * 就弹出来——真机上表现为「点编辑弹出两个表单」或「点删除莫名弹出表单」。
+     *
+     * 因此：第四层接管语义（FI-010 是否失效）由 [enterEditModeAndNotify] 触发，
+     * 本方法只建立编辑态。业务方若需要接管语义，用那个方法。
+     *
+     * @return true 表示已进入编辑态；false 表示 id 不存在，或**已在编辑态**。
+     *   已处于编辑态时返回 false 且不改变当前编辑对象，避免误把用户正在编辑的
+     *   草稿换成另一条。
+     */
+    fun enterEditMode(eventId: String): Boolean {
+        if (editSession != null) return false
+        val block = blocks.firstOrNull { it.event.id == eventId } ?: return false
+        selectedId = block.event.id
+        editSession = EditSession.beginEdit(block.event)
+        editDraft = editSession?.toDraft()
+        requestRefresh()
+        return true
+    }
+    /**
+     * 进入编辑态**并**照常回调 [EditController.onEnterEditing]。
+     *
+     * 语义与用户长按完全一致：第四层接管生效，组件不再响应 FI-010，
+     * 退出路径由接管方负责（PRD §8.2.1）。
+     *
+     * 与 [enterEditMode] 的区别**只是会不会回调接管方**——业务方在自己实现
+     * 的详情界面里点「编辑」时，应当用本方法让表单正常弹出；
+     * 点「完成 / 取消 / 删除」时则用 [enterEditMode] 静默进入，
+     * 避免弹出与该操作无关的表单。
+     */
+    fun enterEditModeAndNotify(eventId: String): Boolean {
+        if (!enterEditMode(eventId)) return false
+        notifyEnterEditing()
+        requestRefresh()
+        return true
+    }
+
+    /**
+     * 清除选中态，使日程块不再显示选中描边。
+     *
+     * 业务方打开详情弹窗时通常需要调用：选中描边与弹窗同时存在会显得冗余，
+     * 且描边是对「当前选中」的视觉表达，弹窗已经承担了这个语义。
+     *
+     * 不影响编辑态——若正处于编辑态，编辑层仍会照常绘制。
+     */
+    fun clearSelection() {
+        if (selectedId == null) return
+        selectedId = null
+        requestRefresh()
+    }
 
     // ================= 无障碍（AD-05 / Q8） =================
     // 以下为 [com.github.kevinvane.daytimeline.library.paint.TimelineAccessibilityHelper]

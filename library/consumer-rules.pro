@@ -51,6 +51,12 @@
 -keep class com.github.kevinvane.daytimeline.library.api.EditDraft { *; }
 -keep class com.github.kevinvane.daytimeline.library.api.EditResult { *; }
 
+# ---- 详情快照（AD-23）----
+# EventDetail 同理：业务方要读 .range / .content / .color / .startMinute，
+# 且 DayTimelineView.detailOf() 的返回类型就是它。
+-keep class com.github.kevinvane.daytimeline.library.api.EventDetail { *; }
+-keep class com.github.kevinvane.daytimeline.library.api.EventDetailKt { *; }
+
 # ---- 定制上下文：业务方在 paint() 中读取字段，字段名被混淆会破坏其实现 ----
 #
 # ⚠️ 这里必须用 `-keep class` 而不是 `-keepclassmembers class`：

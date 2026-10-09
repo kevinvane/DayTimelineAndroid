@@ -13,6 +13,14 @@
     <string name="form_confirm">确定</string>
     <string name="form_color_default">默认</string>
 
+    <!-- 业务方实现的只读详情弹窗（AD-23） -->
+    <string name="detail_cancel">取消</string>
+    <string name="detail_delete">删除</string>
+    <string name="detail_done">完成</string>
+    <string name="detail_edit">编辑标题与时间</string>
+    <string name="detail_untitled">（无标题）</string>
+    <string name="detail_time_range">%1$s – %2$s</string>
+
     <!-- 业务色按钮的文案；取值见 colors.xml 的 event_* -->
     <string name="event_blue">蓝</string>
     <string name="event_green">绿</string>

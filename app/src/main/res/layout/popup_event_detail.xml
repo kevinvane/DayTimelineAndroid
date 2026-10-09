@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  业务方实现的日程详情弹窗（PRD §7.7.1 / AD-23）。
+
+  **组件零新增 View** —— 这个布局完全属于 demo（业务方），组件库不包含任何
+  详情界面。它演示组件提供的两个只读/单向入口：
+  - `DayTimelineView.detailOf(id)` → 拿到 [EventDetail]（颜色/标题/时间）
+  - `DayTimelineView.enterEditMode(id)` → 以编程方式进入编辑态，
+    之后才能调用 requestDelete() / confirmEdit()
+
+  布局是**只读展示 + 操作**，不含任何输入控件：改标题 / 时间 / 颜色走
+  AD-22 的表单接管（EditController + applyEdit），见 MainActivity。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:minWidth="260dp"
+    android:elevation="8dp"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <!-- 业务色条：直接用 EventDetail.color，为 null 时不显示 -->
+    <View
+        android:id="@+id/detail_color_bar"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:layout_marginBottom="12dp" />
+
+    <!-- 标题：空标题时显示占位文案（PRD §7.7.1 允许空标题） -->
+    <TextView
+        android:id="@+id/detail_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAppearance="?attr/textAppearanceTitleMedium"
+        android:textStyle="bold" />
+
+    <!-- 起止时间：已由组件兜底修正，可直接展示 -->
+    <TextView
+        android:id="@+id/detail_time"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+    <!--
+      操作区。三个按钮对应组件的三个 public 出口：
+      完成 → confirmEdit()  取消 → cancelEdit()  删除 → requestDelete()
+
+      「编辑」按钮不在此处直接改数据，而是关闭详情弹窗后走 AD-22 的表单接管。
+    -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="end"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/detail_cancel"
+            style="?attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/detail_cancel" />
+
+        <Button
+            android:id="@+id/detail_delete"
+            style="?attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/detail_delete" />
+
+        <Button
+            android:id="@+id/detail_done"
+            style="?attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/detail_done" />
+
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/detail_edit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/detail_edit" />
+
+</LinearLayout>

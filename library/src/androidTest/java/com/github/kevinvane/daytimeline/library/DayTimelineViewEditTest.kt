@@ -7,6 +7,8 @@ import android.view.MotionEvent
 import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.github.kevinvane.daytimeline.library.api.endMinute
+import com.github.kevinvane.daytimeline.library.api.startMinute
 import com.github.kevinvane.daytimeline.library.api.EditDraft
 import com.github.kevinvane.daytimeline.library.api.EditResult
 import com.github.kevinvane.daytimeline.library.api.TimelineConfig
@@ -442,6 +444,184 @@ class DayTimelineViewEditTest {
         view.applyEdit(EditResult(range = 600..660, content = "不该生效"))
         assertFalse(view.isEditing())
         assertTrue("不应触发任何回调，实际回调：$fired", fired.isEmpty())
+    }
+
+    // ===== AD-23：详情弹窗支持（组件零新增 View）=====
+
+    /**
+     * `detailOf` 返回的必须是**组件兜底修正后**的值。
+     *
+     * 业务方拿它直接渲染详情，若组件给的是原始脏数据（结束早于开始、超 24:00），
+     * 弹窗上就会出现「10:00 – 09:00」这种内容。
+     */
+    @Test
+    fun detailOfReturnsSanitizedValues() {
+        // 结束早于开始：sanitize 应按最小时长修正
+        view.submitEvents(
+            listOf(Ev("dirty", 600, 500, "脏数据")),
+            notifyIssues = false,
+        )
+        relayout()
+
+        val detail = view.detailOf("dirty")
+        assertNotNull("应取到详情", detail)
+        assertEquals("dirty", detail!!.id)
+        assertTrue("结束必须晚于开始，实际 ${detail.range}", detail.range.last > detail.range.first)
+        assertEquals("标题应原样带出", "脏数据", detail.content?.toString())
+    }
+
+    @Test
+    fun detailOfReturnsNullForUnknownId() {
+        assertNull("不存在的 id 应返回 null", view.detailOf("nope"))
+    }
+
+    /** 详情快照的分钟值类型形式应与 range 一致（D18/D19：不让业务方碰裸 Int 换算）。 */
+    @Test
+    fun detailExposesValueTypeMinutes() {
+        view.submitEvents(listOf(Ev("morning", 60, 120, "标题")), notifyIssues = false)
+        relayout()
+        val detail = view.detailOf("morning")!!
+        assertEquals(60, detail.startMinute.minuteOfDay)
+        assertEquals(120, detail.endMinute.minuteOfDay)
+    }
+
+    /**
+     * `enterEditMode` 是业务方在详情弹窗里点「完成/取消/删除」的前提。
+     *
+     * 没有它，`confirmEdit()` 等三个出口会因 `editSession == null` 静默返回。
+     */
+    @Test
+    fun enterEditModePutsComponentIntoEditing() {
+        assertFalse(view.isEditing())
+        val entered = view.enterEditMode("morning")
+
+        assertTrue("应进入编辑态", entered)
+        assertTrue(view.isEditing())
+        // 进入后三个出口才可用
+        fired.clear()
+        view.confirmEdit()
+        assertTrue("进入后 confirmEdit 应可用，实际回调：$fired", fired.contains("modified"))
+    }
+
+    /**
+     * 已处于编辑态时再调 `enterEditMode` 必须**拒绝**，
+     * 否则会把用户正在编辑的草稿换成另一条，用户察觉不到。
+     */
+    @Test
+    fun enterEditModeRefusesWhenAlreadyEditing() {
+        assertTrue(view.enterEditMode("morning"))
+        assertFalse("已在编辑态时应拒绝", view.enterEditMode("afternoon"))
+
+        // 仍然编辑的是 morning，不是 afternoon
+        fired.clear()
+        view.confirmEdit()
+        assertEquals("应仍是 morning", "morning", lastModifiedId)
+    }
+
+    @Test
+    fun enterEditModeReturnsFalseForUnknownId() {
+        assertFalse("不存在的 id 不应进入编辑态", view.enterEditMode("nope"))
+        assertFalse(view.isEditing())
+    }
+
+    /**
+     * `clearSelection` 只清选中态，**不影响编辑态**。
+     *
+     * 详情弹窗会调用它清描边；若它把编辑态也清了，用户正在编辑的东西就没了。
+     */
+    @Test
+    fun clearSelectionKeepsEditState() {
+        view.enterEditMode("morning")
+        assertTrue(view.isEditing())
+
+        view.clearSelection()
+
+        assertTrue("清选中不应退出编辑态", view.isEditing())
+        // 编辑态仍可提交
+        fired.clear()
+        view.confirmEdit()
+        assertTrue("编辑态应仍可用，实际回调：$fired", fired.contains("modified"))
+    }
+
+    @Test
+    fun clearSelectionIsSafeWhenNothingSelected() {
+        view.clearSelection() // 非编辑态、无选中：必须是空操作且不崩
+        assertFalse(view.isEditing())
+        assertTrue("不应触发任何回调，实际回调：$fired", fired.isEmpty())
+    }
+
+    /** `enterEditMode` 应照常触发接管回调（PRD §8.2.1 的接管语义不变）。 */
+    @Test
+    fun enterEditModeStillNotifiesController() {
+        var draft: EditDraft? = null
+        view.editController = object : DayTimelineView.EditController {
+            override fun onEnterEditing(d: EditDraft): Boolean {
+                draft = d
+                return true
+            }
+        }
+
+        assertTrue(view.enterEditModeAndNotify("morning"))
+
+        assertNotNull("接管回调应被触发", draft)
+        assertEquals("接管回调应带上被编辑的日程", "morning", draft!!.event?.id)
+    }
+
+    /**
+     * 回归：`enterEditMode`（静默版）**不得**回调接管方。
+     *
+     * 真机上「点编辑弹出两个表单」的成因：静默进入也回调了 `onEnterEditing`，
+     * 接管方弹了一次表单，业务方随后又显式弹了一次。
+     *
+     * 同理，业务方在详情里点「完成 / 取消 / 删除」时也不该弹出表单。
+     */
+    @Test
+    fun enterEditModeDoesNotNotifyController() {
+        var notified = false
+        view.editController = object : DayTimelineView.EditController {
+            override fun onEnterEditing(d: EditDraft): Boolean {
+                notified = true
+                return true
+            }
+        }
+
+        assertTrue(view.enterEditMode("morning"))
+
+        assertFalse("静默进入不得回调接管方，否则会多弹一次表单", notified)
+        assertTrue("但必须真的进入编辑态，三个出口才可用", view.isEditing())
+    }
+
+    /** 两个入口的差别只在「是否回调接管方」，进入编辑态的行为必须一致。 */
+    @Test
+    fun bothEnterEditModePathsReachEditingState() {
+        // 静默版
+        assertTrue(view.enterEditMode("morning"))
+        assertTrue(view.isEditing())
+        fired.clear()
+        view.cancelEdit()
+
+        // 通知版
+        assertTrue(view.enterEditModeAndNotify("morning"))
+        assertTrue(view.isEditing())
+        fired.clear()
+        view.cancelEdit()
+    }
+
+    /** 业务色应能在详情快照里取到（AD-22 第三通道 + AD-23 详情展示）。 */
+    @Test
+    fun detailOfCarriesBusinessColor() {
+        view.submitEvents(
+            listOf(ColoredEvent("tinted", 300, 360, 0xFF3F6BDC.toInt())),
+            notifyIssues = false,
+        )
+        relayout()
+
+        assertEquals(
+            "业务色应随详情快照带出",
+            0xFF3F6BDC.toInt(),
+            view.detailOf("tinted")?.color,
+        )
+        assertNull("无色时为 null", view.detailOf("morning")?.color)
     }
 
     /**

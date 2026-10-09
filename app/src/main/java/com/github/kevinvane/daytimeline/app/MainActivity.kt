@@ -64,6 +64,9 @@ class MainActivity : AppCompatActivity() {
      */
     private var colorTouched = false
 
+    /** 业务方实现的只读详情弹窗（AD-23）；组件不提供任何 View。 */
+    private var detailPopup: EventDetailPopup? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -74,11 +77,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         timeline = findViewById(R.id.timeline)
+        detailPopup = EventDetailPopup(this, timeline)
         // 布局 XML 里已通过 app:dtXxx 配置了尺寸与行为（FC-005 的界面配置侧）。
         // 这里再用代码配置补充一项 XML 没覆盖的字段，验证两条路径可叠加。
         timeline.setConfig(TimelineConfig(defaultNewDurationMinutes = 30))
 
-        // ── 第四层：接管编辑层，弹出本 demo 自己的表单 ──
+        // ── 第四层：接管编辑层，弹出本 demo 自己的表单（AD-22）──
         timeline.editController = object : DayTimelineView.EditController {
             override fun onEnterEditing(draft: EditDraft): Boolean {
                 showForm(draft)
@@ -92,12 +96,19 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_delete).setOnClickListener { timeline.requestDelete() }
 
         timeline.listener = object : TimelineListener {
+            /**
+             * 单击 → 弹**只读详情**（AD-23）。
+             *
+             * 组件行为不变（FI-003 仍然照常触发选中与本回调），弹窗完全由业务方实现。
+             * 长按仍进拖拽编辑态（FI-004 / FI-006 / FI-007 是 P0，不受影响）。
+             */
             override fun onEventClick(event: TimelineEvent) {
-                android.util.Log.i(TAG, "点击 ${event.id}")
+                android.util.Log.i(TAG, "点击 ${event.id} → 弹详情")
+                detailPopup?.show(event.id)
             }
 
             override fun onEventLongClick(event: TimelineEvent) {
-                android.util.Log.i(TAG, "长按 ${event.id} → 进入编辑态")
+                android.util.Log.i(TAG, "长按 ${event.id} → 进入编辑态（拖拽调时间）")
             }
 
             override fun onEventCreated(range: IntRange, content: CharSequence?) {
@@ -156,6 +167,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ---- 业务方自建的表单（组件零参与）----
+
+/**
+ * 「编辑」入口失败时的兜底（[DayTimelineView.enterEditModeAndNotify] 返回 false）。
+ *
+ * 正常路径不会走到这里：表单由 `EditController.onEnterEditing` 在进入编辑态的
+ * 回调里弹出，**不需要**业务方再弹一次——那正是「点编辑弹出两个表单」的成因。
+ */
+fun onDetailEditFailed(eventId: String) {
+    android.util.Log.w(TAG, "进入编辑态失败（id=$eventId）")
+    android.widget.Toast.makeText(this, "日程已不存在，无法编辑", android.widget.Toast.LENGTH_SHORT)
+        .show()
+}
 
     private fun showForm(draft: EditDraft) {
         val dialog = BottomSheetDialog(this)

@@ -4,6 +4,8 @@ import android.content.Context
 import com.github.kevinvane.daytimeline.library.DayTimelineView
 import com.github.kevinvane.daytimeline.library.DayTimelineView.EditController
 import com.github.kevinvane.daytimeline.library.api.EditDraft
+import com.github.kevinvane.daytimeline.library.api.endMinute
+import com.github.kevinvane.daytimeline.library.api.startMinute
 import com.github.kevinvane.daytimeline.library.api.TimelineListener
 import com.github.kevinvane.daytimeline.library.core.TimelineEvent
 
@@ -40,5 +42,26 @@ object ConsumerApiSmoke {
             onEnter(draft)
             return true
         }
+    }
+
+    /**
+     * 详情弹窗契约（AD-23）。
+     *
+     * 这三个方法正是业务方渲染详情 + 发起操作的全部入口：
+     * `detailOf` 读快照、`enterEditMode` 进编辑态（否则三个出口静默无效）、
+     * `clearSelection` 清描边。字段名一旦被混淆，`.range` / `.content` 访问会抛
+     * NoSuchFieldError。
+     */
+    fun detailApi(
+        view: DayTimelineView,
+        onDetail: (String, Int) -> Unit,
+    ): Boolean {
+        val detail = view.detailOf("e1") ?: return false
+        // 读字段：range / content / color / 两个值类型扩展
+        onDetail(detail.content?.toString().orEmpty(), detail.range.last)
+        check(detail.startMinute.minuteOfDay >= 0)
+        check(detail.endMinute.minuteOfDay >= 0)
+        view.clearSelection()
+        return true
     }
 }
