@@ -2,10 +2,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v0.8（草案） |
+| 文档版本 | v0.9（草案） |
 | 状态 | 待评审 |
 | 编写日期 | 2026-09-30 |
-| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.4 |
+| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.5 |
 | 文档读者 | 研发、测试、设计 |
 
 ---
@@ -494,6 +494,45 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 
 **阻塞前提**：§12.4 要求死代码 0 处。demo `MainActivity` 必须真实弹表单走通全链路，否则新增 API 全是死代码；且 `applyEdit`/接管语义都在 View 层，必须补仪器测试。
 
+### AD-23　日程详情：组件只给只读快照与编程入口，UI 由业务方实现
+
+**背景**：AD-22 落地后暴露一个新问题——业务方若要在「点击日程块后弹出详情」，只能自己从 `TimelineEvent` 上拼数据，且**无法发起任何操作**。
+
+**决策：延续 AD-22 的纪律，组件零新增 View。** 只加三样东西：
+
+| API | 作用 |
+|---|---|
+| `detailOf(id): EventDetail?` | 只读快照（id / range / content / color），字段全部取自组件**已持有**的兜底修正数据 |
+| `enterEditMode(id): Boolean` | 以编程方式进入编辑态 |
+| `clearSelection()` | 清除选中描边，不影响编辑态 |
+
+**为什么必须有 `enterEditMode`**
+
+组件内部只有「编辑态」一个状态概念，而 `confirmEdit` / `cancelEdit` / `requestDelete` **都以 `editSession ?: return` 开头**。PRD FI-004 把「长按」定为进入编辑态的唯一手势，于是业务方在详情里点「删除」会**静默无效**——用户看到一个能点、点了没反应的按钮。这不是业务方能自己绕开的缺陷，组件必须提供不经手势的进入路径。
+
+`enterEditMode` 在**已处于编辑态时返回 false 且不改变当前编辑对象**，否则会把用户正在编辑的草稿换成另一条而用户察觉不到。
+
+**为什么不给业务方暴露可写草稿**
+
+实现过程中一度想加 `editDraftOf()` 方便详情弹窗取草稿，**已否决**：那会让业务方拿到可改写编辑态的句柄，绕过 D3 的结构性保证（「取消路径在类型上就无法表达数据变更」）。业务方只能用只读的 `detailOf`。
+
+**交互分工**（PRD §7.7.2）
+
+单击 → 详情（只读，**清除选中描边**）；**长按 → 拖拽编辑态不变**（FI-004/006/007 均 P0）。
+
+**四个必须遵守的约束**
+
+1. **详情只读**，不得在其中直接改标题/时间/颜色——修改一律跳转 AD-22 的表单接管；
+2. **数据取兜底修正后的值**，`detailOf` 已保证，业务方不得自行判断合法性；
+3. **关闭即收尾**：`PopupWindow` 的 dismiss 回调与业务方操作存在竞态——若在 `dismiss()` 之后才调 `confirmEdit()`，前者可能已 `cancelEdit()` 导致后者遇到 `editSession == null` 静默失效。demo 用 `actionTaken` 标志区分「用户主动关掉」与「业务方已发起操作」；
+4. **详情与表单不叠加**，跳转前先关闭详情。
+
+**真机验证（本次实测，非推断）**
+
+首版 `showAsDropDown(timeline)` 把弹窗推到屏幕外（anchor 是整个时间轴视图，底边远在屏下），真机表现是「只露出顶部一丝标题」。改用 `showAtLocation(decorView, Gravity.CENTER)` + 80% 屏宽上限后正常。
+
+**另有一个只有真机能发现的崩溃**：`ContextCompat.getColor(context, android.R.attr.colorSurface)` 把**框架属性 ID** 当**应用资源 ID** 去查，真机抛 `Resources$NotFoundException`，而编译、lint、detekt 全部通过。正确写法是 `MaterialColors.getColor(view, attr)`。这与 AD-15（`format="float"` 致 `TYPE_FLOAT`）是同一类缺陷：**JVM 侧的检查对 Android 资源类型问题完全失明**。
+
 **详细方案**：`docs/DayTimeline-日程块表单输入方案.md`（含 API 签名、不变式、测试用例清单与未决问题 QF-1~QF-4）。
 
 
@@ -763,8 +802,8 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | 代码风格检查 0 违规 | **达成** | `:library:detekt` + `:app:detekt` 均 0 违规（53 → 0），配置见 `config/detekt/detekt.yml` |
 | 死代码 0 处 | **达成** | `:library:verifyNoDeadCode` 专项门禁，实测 0 处；豁免清单见 `config/detekt/EXEMPTIONS.md` |
 | 静态代码检查 0 严重 | **达成** | 同 detekt |
-| R8 混淆后功能正常 | **达成** | `:r8test:verifyKeptSymbols`（9 个契约类全保留）+ `:r8test:connectedReleaseAndroidTest`（混淆变体仪器测试 5/5）。**首次运行即抓出 3 个发布阻断级缺陷** |
-| 仪器测试（L2） | **达成** | `:library:connectedDebugAndroidTest` 40/40（Pixel / Android 9）；demo 表单经真机手动验证 |
+| R8 混淆后功能正常 | **达成** | `:r8test:verifyKeptSymbols`（10 个契约类全保留）+ `:r8test:connectedReleaseAndroidTest`（混淆变体仪器测试 6/6）。**首次运行即抓出 3 个发布阻断级缺陷** |
+| 仪器测试（L2） | **达成** | `:library:connectedDebugAndroidTest` 50/50（Pixel / Android 9）；demo 表单与详情弹窗经真机手动验证 |
 | 全库覆盖率 ≥ 75% | **达成（口径已修订）** | `:library:verifyAllCoverage` 实测 **88.79%**（3159/3558）。**口径与 PRD 原文不同**，见下方说明 |
 
 #### 9.2.1 「全库覆盖率」的口径修订（**已获产品认可**，PRD v1.4 §12.4.1）
@@ -807,7 +846,8 @@ PRD §12.4 原文是「全库覆盖率 ≥ 75%」。字面执行的结果是 **2
 | 项 | 证据 |
 |---|---|
 | AD-22 表单输入落地 | `applyEdit` / `EditDraft` / `EditResult` 已实现；demo 真实弹 BottomSheet 表单，真机手动验证通过 |
+| AD-23 日程详情 | `detailOf` / `enterEditMode` / `clearSelection` 已实现；demo 真实弹 PopupWindow 详情，真机手动验证通过 |
 | R8 混淆消费端验证 | `:r8test:verifyKeptSymbols` + `:r8test:connectedReleaseAndroidTest`（混淆变体 5/5）。首次运行即抓出 3 个发布阻断级缺陷 |
 | detekt 与死代码自动阻断 | `:library:detekt` / `:app:detekt` 0 违规；`:library:verifyNoDeadCode` 专项门禁 0 处 |
 | 可测逻辑覆盖率门禁 | `:library:verifyAllCoverage` 88.79%，已接入 CI（口径见 §9.2.1 / PRD §12.4.1） |
-
+| v0.9 | 2026-10-09 | 新增 **AD-23 日程详情**（对齐 PRD v1.5 §7.7.2）：组件零新增 View，只加 detailOf / enterEditMode / clearSelection 三个入口与 EventDetail 只读快照。记录 enterEditMode 的必要性——三个出口都以编辑态为前提，而 FI-004 只认长按手势，业务方在详情里点「删除」会静默无效；记录被否决的 editDraftOf() 方案（会给业务方可写句柄，绕过 D3）；记录真机发现的两个问题：showAsDropDown 因 anchor 为整个时间轴而把弹窗推出屏幕，以及 ContextCompat.getColor 误用属性 ID 致真机崩溃（编译/lint/detekt 全部通过）。文档头「对应 PRD」升至 v1.5 | — |

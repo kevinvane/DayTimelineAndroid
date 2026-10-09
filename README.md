@@ -202,8 +202,8 @@ JVM 单测直接跑，不需要设备也不需要 Robolectric。
 | 文档 | 内容 |
 |---|---|
 | [产品需求文档](docs/DayTimeline-产品与需求文档.md) | 需求、界面与交互规格、数据契约、质量要求、验收标准。**唯一需求来源** |
-| [技术方案与实施计划](docs/DayTimeline-技术方案与实施计划.md) | 架构决策 AD-01~AD-22、任务拆解、门禁落地方案、开放问题 |
-| [日程块表单输入方案](docs/DayTimeline-日程块表单输入方案.md) | PRD v1.3 新增的表单输入能力设计（AD-22）。**方案已定稿，代码尚未实现** |
+| [技术方案与实施计划](docs/DayTimeline-技术方案与实施计划.md) | 架构决策 AD-01~AD-23、任务拆解、门禁落地方案、开放问题 |
+| [日程块表单输入方案](docs/DayTimeline-日程块表单输入方案.md) | PRD v1.3 新增的表单输入能力设计（AD-22） |
 | [AGENTS.md](Agents.md) | 面向 AI 协作者的仓库指引与硬性约束 |
 
 三份文档均为 UTF-8 中文，用支持 UTF-8 的工具阅读（PowerShell 控制台需先设 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`）。
