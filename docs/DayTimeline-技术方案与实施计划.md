@@ -503,8 +503,22 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | API | 作用 |
 |---|---|
 | `detailOf(id): EventDetail?` | 只读快照（id / range / content / color），字段全部取自组件**已持有**的兜底修正数据 |
-| `enterEditMode(id): Boolean` | 以编程方式进入编辑态 |
+| `enterEditMode(id): Boolean` | 以编程方式进入编辑态，**不**回调接管方 |
+| `enterEditModeAndNotify(id): Boolean` | 同上，但**照常回调**接管方，语义与用户长按完全一致 |
 | `clearSelection()` | 清除选中描边，不影响编辑态 |
+
+**为什么必须是两个入口**
+
+首版只做了 `enterEditMode`，内部直接调 `notifyEnterEditing()` —— 真机上表现为「点编辑弹出两个表单」。
+
+根因是把「进入编辑态」与「弹出表单」耦合在一条路径上，而它们本该是两件事：
+
+| 详情里的按钮 | 需要进入编辑态 | 该弹表单 |
+|---|:--:|:--:|
+| 完成 / 取消 / 删除 | 是（否则三个出口静默无效） | **否** |
+| 编辑 | 是 | **是**，交 AD-22 表单接管 |
+
+`enterEditMode` 用于前三者，`enterEditModeAndNotify` 用于「编辑」。**该缺陷的影响面比最初报告的大**：点「完成」「取消」「删除」同样会误弹表单，只是一直没人点到。
 
 **为什么必须有 `enterEditMode`**
 
@@ -846,8 +860,8 @@ PRD §12.4 原文是「全库覆盖率 ≥ 75%」。字面执行的结果是 **2
 | 项 | 证据 |
 |---|---|
 | AD-22 表单输入落地 | `applyEdit` / `EditDraft` / `EditResult` 已实现；demo 真实弹 BottomSheet 表单，真机手动验证通过 |
-| AD-23 日程详情 | `detailOf` / `enterEditMode` / `clearSelection` 已实现；demo 真实弹 PopupWindow 详情，真机手动验证通过 |
+| AD-23 日程详情 | `detailOf` / `enterEditMode` / `enterEditModeAndNotify` / `clearSelection` 已实现；demo 真实弹 PopupWindow 详情，真机手动验证通过 |
 | R8 混淆消费端验证 | `:r8test:verifyKeptSymbols` + `:r8test:connectedReleaseAndroidTest`（混淆变体 5/5）。首次运行即抓出 3 个发布阻断级缺陷 |
 | detekt 与死代码自动阻断 | `:library:detekt` / `:app:detekt` 0 违规；`:library:verifyNoDeadCode` 专项门禁 0 处 |
 | 可测逻辑覆盖率门禁 | `:library:verifyAllCoverage` 88.79%，已接入 CI（口径见 §9.2.1 / PRD §12.4.1） |
-| v0.9 | 2026-10-09 | 新增 **AD-23 日程详情**（对齐 PRD v1.5 §7.7.2）：组件零新增 View，只加 detailOf / enterEditMode / clearSelection 三个入口与 EventDetail 只读快照。记录 enterEditMode 的必要性——三个出口都以编辑态为前提，而 FI-004 只认长按手势，业务方在详情里点「删除」会静默无效；记录被否决的 editDraftOf() 方案（会给业务方可写句柄，绕过 D3）；记录真机发现的两个问题：showAsDropDown 因 anchor 为整个时间轴而把弹窗推出屏幕，以及 ContextCompat.getColor 误用属性 ID 致真机崩溃（编译/lint/detekt 全部通过）。文档头「对应 PRD」升至 v1.5 | — |
+| v0.9 | 2026-10-09 | 新增 **AD-23 日程详情**（对齐 PRD v1.5 §7.7.2）：组件零新增 View，只加 detailOf / enterEditMode / clearSelection 三个入口与 EventDetail 只读快照。记录 enterEditMode 的必要性——三个出口都以编辑态为前提，而 FI-004 只认长按手势，业务方在详情里点「删除」会静默无效；记录首版把「进入编辑态」与「弹出表单」耦合导致的「点编辑弹出两个表单」及拆分方案（影响面还包含完成/取消/删除）；记录被否决的 editDraftOf() 方案（会给业务方可写句柄，绕过 D3）；记录真机发现的两个问题：showAsDropDown 因 anchor 为整个时间轴而把弹窗推出屏幕，以及 ContextCompat.getColor 误用属性 ID 致真机崩溃（编译/lint/detekt 全部通过）。文档头「对应 PRD」升至 v1.5 | — |
