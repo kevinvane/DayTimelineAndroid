@@ -2,10 +2,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v0.5（草案） |
+| 文档版本 | v0.7（草案） |
 | 状态 | 待评审 |
 | 编写日期 | 2026-09-30 |
-| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.1 |
+| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.3 |
 | 文档读者 | 研发、测试、设计 |
 
 ---
@@ -457,6 +457,43 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
   且最终离开起点
 - `scrollOffsetStaysPutAfterGesture`：不在动画中时反复调 `computeScroll()` 不得改动偏移
 
+### AD-22　表单输入只补载荷、不建 UI　【PRD v1.3 决策】
+
+**背景**：PRD v1.2 的 §7.7 编辑态规格、§10.1 可配置项总览、§11.3 事件表**都不含任何文本输入项**——组件一直只支持手势驱动的就地时间调整。业务接入方要收标题、备注、地点时，唯一合规路径是 §10.2 第四层「接管新建流程，改为自己弹出底部面板」。
+
+但现有 `EditController` 载荷撑不起表单：只有 `onDone(range, isCreating)` 与无参 `onCancel()`。业务方**读不到草稿**（`EditSession` 是 View 私有字段，无法预填表单）、**不知道在改哪条**、**无法回传新标题**。
+
+**决策：组件零新增 View，只把第四层载荷补成对称的双向契约。**
+
+| 层 | 契约 | 载荷 |
+|---|---|---|
+| 组件 → 业务方 | `onEnterEditing(draft): Boolean` | `EditDraft`（是否新建、被编辑的日程、当前起止、当前内容） |
+| 业务方 → 组件 | `view.applyEdit(result)` | `EditResult`（起止、标题；非法值由组件合法化） |
+| 业务方 → 组件 | `view.confirmEdit()` / `view.cancelEdit()` | 退出路径不变，`confirmEdit` 仍是**唯一数据变更出口** |
+
+**为什么不做内置表单**（逐条对应既有硬约束）：
+
+| 约束 | 冲突 |
+|---|---|
+| §12.1 网格区常驻元素 **0** 个 | 内置面板要引入 View 树，指标口径要重新界定 |
+| D7 不允许业务方改源码 | 内置表单把业务字段硬编码进组件 |
+| §9.1 不侵入业务模型 | 组件一旦接收备注/地点，就得定义其校验与生命周期 |
+| AD-09 单一来源 | 内置表单引入第二套主题体系与深色适配负担 |
+
+**三条必须守住的实现约束**：
+
+1. **D3 不削弱**。`applyEdit()` 只改草稿、不发事件；`EditSession.CancelResult` 仍是**无字段对象**，「取消路径在类型上无法表达数据变更」这条保证原封不动。新增的 `EditDraft`/`EditResult` 是普通数据类，不参与该路径。
+2. **FI-010 接管后失效**（PRD §8.2.1）。`onEnterEditing` 返回 `true` 后组件不再执行「点外部区域视为取消」——否则非模态表单会被点穿，产生「表单开着但草稿已取消」的不一致。View 侧加 `editTakenOver` 标志，建会话置位、三个出口清零。
+3. **表单与拖拽走同一套时间合法化**。新增 `SnapCalculator.applyRange()`，**两端对称吸附**（D11）：现有 `snapResizeStart`/`snapResizeEnd` 是单边修正、只服务拖拽，不能复用于同时改两端的表单场景。该函数是纯 Kotlin（AD-02/T2），改 `core/` 必须同步补单测。
+
+**业务色走第三条通道**：新增 `TimelineEvent.color: Int?`（**带默认实现**，既有实现者零改动）→ `SanitizedEvent` 透传 → `BlockContext.accentColor` → `DefaultPainters` 消费。**刻意不并入 §7.3 的 17 项主题色**——那 17 项的深浅适配由资源承担，业务方覆盖会破坏 AD-09 的机制。业务色的深浅适配责任在业务方（PRD §7.7.1）。
+
+**破坏性变更**：`EditController.onDone`/`onCancel` 与 `TimelineListener.onEventCreated`/`onEventModified` 签名变更。库尚未发布（M6 未完成），现在改代价最小。新增参数一律给默认值 `null` 以保既有实现者可编译。
+
+**阻塞前提**：§12.4 要求死代码 0 处。demo `MainActivity` 必须真实弹表单走通全链路，否则新增 API 全是死代码；且 `applyEdit`/接管语义都在 View 层，必须补仪器测试。
+
+**详细方案**：`docs/DayTimeline-日程块表单输入方案.md`（含 API 签名、不变式、测试用例清单与未决问题 QF-1~QF-4）。
+
 
 
 
@@ -546,7 +583,7 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 
 ### 5.3 CI
 
-仓库**当前无 CI**（无 `.github/`），无 pre-commit 钩子。建议 GitHub Actions，PR 触发：`detekt` → `:library:assembleDebug` → `test`（L1）→ 覆盖率阈值 → `lint`。R8 验证（M6）需另加一个 `minifyEnabled = true` 的消费端变体跑仪器测试。
+仓库已有 CI（`.github/workflows/ci.yml`），无 pre-commit 钩子。CI 覆盖 `detekt` 之外的部分：`assembleDebug` → `test`（L1）→ 覆盖率阈值 → `lint`。**仍未接入**：detekt / 死代码自动检查、无 pre-commit 钩子。R8 验证（M6）需另加一个 `minifyEnabled = true` 的消费端变体跑仪器测试。
 
 ---
 
@@ -682,6 +719,7 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | Q6 | PRD §12.2 原文「Android 7.0」已按 `minSdk = 23` 修正为「Android 6.0（API 23）」，但 §18 的 R9 仍以旧前提描述 | R9 结论一旦采纳，R9 整条应重写而非关闭 | 与 Q4 一并处理 | 中 |
 | Q7 | 对外 API 是否需要 Java 调用方友好门面（`value class` 擦除问题） | 影响 `api/` 设计 | 建议提供（`api/` 层加静态工厂），成本低 | 中 |
 | Q8 | L2 仪器测试的 `androidx.test` 版本当前未验证可用 | 影响 M2 起的测试排期 | M1 验证 | 低 |
+| Q9 | **表单输入的四个开放点**（空标题回落、表单打开时是否仍可拖拽、冲突态 E28 下能否提交、业务色深色适配责任） | 影响 AD-22 的实现细节 | 见《日程块表单输入方案》§9 的 QF-1~QF-4，当前均已给出建议默认值 | 中 |
 
 ---
 
@@ -695,6 +733,7 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | v0.4 | 2026-10-08 | 真机暴露两个新缺陷后补 AD-19/AD-20：块内文字漏设 textSize 用了 Paint 默认的 12 原始像素；以及自身滚动模式**根本没实现拖拽滚动**（判定有、执行无）。同时补窄列文字省略号截断与对应真机回归测试。 | — |
 | v0.5 | 2026-10-08 | 真机复测「滑动后回弹」后补 AD-21：`fling`/`startScroll` 参数填到了 X 轴而 `computeScroll` 读 `currY`，`currY` 恒为 0 导致惯性期间每帧写回 0。统一到 Y 轴并按 Intent 把关是否启动惯性。 | — |
 | v0.6 | 2026-10-08 | 代码清理 + 进度回写订正。清除 `BlockContext.editing` 死字段（全仓零读取点，恒为 `false`，定制方据此判断只会永远拿到错误结果）与 `handleSelfScroll` 零调用私有函数（AD-20 修复残骸）；修复 `requestDelete` 在 `EditController.onDelete()` 接管分支只清 `editSession`、漏清 `selectedId`/`grabbedHandle` 且不刷新，导致选中描边与编辑层残留。§9.1/§9.2 此前仍把 M4/M5/M6 记为「未开始」，与代码严重脱节，本次按实际实现订正为 M2–M5 已完成、M1/M6 大部分或部分完成。 | — |
+| v0.7 | 2026-10-09 | 对齐 PRD v1.3「日程块表单输入」：新增 **AD-22**——组件零新增 View，只把第四层 `EditController` 载荷补成对称的双向契约（`EditDraft` / `EditResult` / `applyEdit`）；`TimelineEvent` 新增带默认实现的 `color` 作为业务色第三通道；新增 `SnapCalculator.applyRange()` 做双边对称时间合法化（D11）；FI-010 在业务方接管后不再由组件执行（PRD §8.2.1）。详细方案落 `docs/DayTimeline-日程块表单输入方案.md`。文档头「对应 PRD」由 v1.1 订正为 v1.3。 | — |
 
 ---
 
@@ -730,10 +769,10 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 
 ### 9.4 后续优先事项
 
-1. **R8 混淆消费端验证**——`consumer-rules.pro` 已写但从未在开启 minify 的消费端跑过，PRD §12.5 的出口标准至今无证据。
-2. **M1 剩余门禁**——detekt 与死代码自动检查是 §12.4「0 处并纳入自动化阻断」的硬要求，目前仍是手工清理。
-3. **View 层编辑 API 的测试缺口**——`confirmEdit` / `cancelEdit` / `requestDelete` / `EditController` 四个出口**零测试覆盖**，D3 的结构性保证目前只由 `EditSession` 的纯 JVM 单测背书。
+1. **AD-22 表单输入落地**——PRD v1.3 新增能力，方案已定稿（`docs/DayTimeline-日程块表单输入方案.md`）。**必须与 demo 表单同批交付**，否则新增 API 全是死代码（§12.4）。注意 `EditController`/`TimelineListener` 是破坏性签名变更，库未发布，此刻改代价最小。
+2. **R8 混淆消费端验证**——`consumer-rules.pro` 已写但从未在开启 minify 的消费端跑过，PRD §12.5 的出口标准至今无证据。
+3. **M1 剩余门禁**——detekt 与死代码自动检查是 §12.4「0 处并纳入自动化阻断」的硬要求，目前仍是手工清理。
 4. **E29 与外部滚动模式的真机复核**——AD-04 的四条手势归属规则只经 `externalScrollModeDoesNotScrollItself` 单测覆盖，未在真机上验证过「外部容器滚动时组件不抢手势」。
 5. **M0 色值定稿**——解除 AD-12 的占位状态，复查深色对比度（Q7）。
-6. **编辑态的输入能力**——当前组件只支持拖拽改时间，标题/内容在编辑路径上无写入入口（`onEventModified` 回传的是修改前的对象），需先确认是否属于本产品范围。
+6. **内置「完成/取消/删除」按钮**——PRD §7.7 要求可配置是否内置，至今组件未内置，按钮全在业务方侧；`attrs.xml` 已有警示注释，实现时一并加回。
 

@@ -8,14 +8,15 @@
   `library/src/main/java/` 下的 `core/` 是**纯 Kotlin、零 `android.*` 依赖**的核心算法，
   改它必须同步补单测。
 - Git 已初始化，分支 `master`，remote 为 `git@github.com:kevinvane/DayTimelineAndroid.git`。
-- `docs/` 下只有 PRD 与技术方案两份文档。
+- `docs/` 下有三份文档：PRD、技术方案、表单输入方案。
 
 ## 需求与技术方案来源
 
-- `docs/DayTimeline-产品与需求文档.md`（PRD，v1.1，1225 行，UTF-8 中文，状态：待评审）——**唯一需求来源，动手前先读它。**
-- `docs/DayTimeline-技术方案与实施计划.md`（v0.5 草案）——架构决策 AD-01~AD-21、M0–M6 任务拆解、测试与门禁落地、实施进度、开放问题。**PRD §1.2 把架构与实现方案排除在外，这两份要配套读。**
+- `docs/DayTimeline-产品与需求文档.md`（PRD，v1.3，约 1290 行，UTF-8 中文，状态：待评审）——**唯一需求来源，动手前先读它。**
+- `docs/DayTimeline-技术方案与实施计划.md`（v0.7 草案）——架构决策 AD-01~AD-22、M0–M6 任务拆解、测试与门禁落地、实施进度、开放问题。**PRD §1.2 把架构与实现方案排除在外，这两份要配套读。**
+- `docs/DayTimeline-日程块表单输入方案.md`（v0.1 草案）——PRD v1.3 新增的表单输入能力设计（AD-22）。**方案已定稿但代码尚未实现。**
 
-读取注意：两个文件都是 UTF-8 中文，**PowerShell 控制台会显示成乱码**——用 read 工具读，或先设 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`。
+读取注意：三个文件都是 UTF-8 中文，**PowerShell 控制台会显示成乱码**——用 read 工具读，或先设 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`。
 
 PRD 中最该记住的几条：
 
