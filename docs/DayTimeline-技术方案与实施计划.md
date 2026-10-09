@@ -488,7 +488,9 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 
 **业务色走第三条通道**：新增 `TimelineEvent.color: Int?`（**带默认实现**，既有实现者零改动）→ `SanitizedEvent` 透传 → `BlockContext.accentColor` → `DefaultPainters` 消费。**刻意不并入 §7.3 的 17 项主题色**——那 17 项的深浅适配由资源承担，业务方覆盖会破坏 AD-09 的机制。业务色的深浅适配责任在业务方（PRD §7.7.1）。
 
-**破坏性变更**：`EditController.onDone`/`onCancel` 与 `TimelineListener.onEventCreated`/`onEventModified` 签名变更。库尚未发布（M6 未完成），现在改代价最小。新增参数一律给默认值 `null` 以保既有实现者可编译。
+**破坏性变更**：`EditController.onDone`/`onCancel` 与 `TimelineListener.onEventCreated`/`onEventModified` 签名变更。库尚未发布（M6 未完成），现在改代价最小。
+
+> **⚠️ 给默认值救不了既有实现者。** 一度以为「新增参数一律给默认值 `null`」就能保持源码兼容，**实测不成立**：写一个探针 `override fun onEventCreated(range: IntRange)` 去实现新接口，编译器报 `overrides nothing`。Kotlin 的接口默认参数**不会**被实现者继承——实现签名必须与声明完全一致。默认值只对**调用方**有价值（业务方自己调用这些回调的场景几乎没有）。结论：这是**硬性不兼容变更**，接入方必须改签名。
 
 **阻塞前提**：§12.4 要求死代码 0 处。demo `MainActivity` 必须真实弹表单走通全链路，否则新增 API 全是死代码；且 `applyEdit`/接管语义都在 View 层，必须补仪器测试。
 

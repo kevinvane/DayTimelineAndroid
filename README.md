@@ -76,8 +76,14 @@ data class Meeting(
 timeline.submitEvents(todayMeetings)
 
 timeline.listener = object : TimelineListener {
-    override fun onEventCreated(range: IntRange) { /* 自行落库 */ }
-    override fun onEventModified(event: TimelineEvent, range: IntRange, hasConflict: Boolean) { }
+    // content 是**修改后**的显示内容；null 表示未改标题，"" 表示清空
+    override fun onEventCreated(range: IntRange, content: CharSequence?) { /* 自行落库 */ }
+    override fun onEventModified(
+        event: TimelineEvent,
+        range: IntRange,
+        content: CharSequence?,
+        hasConflict: Boolean,
+    ) { }
     override fun onEventDeleted(event: TimelineEvent) { }
     override fun onDataIssues(issues: List<DataIssue>) { /* 数据质量监控 */ }
 

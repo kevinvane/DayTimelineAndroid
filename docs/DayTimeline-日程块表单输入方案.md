@@ -222,7 +222,7 @@ fun onEventModified(
 ) = Unit
 ```
 
-`content` 给默认值 `null`，既补齐缺口 G5，又保持既有实现者可编译。
+`content` 给默认值 `null`。**注意这救不了既有实现者**——实测写 `override fun onEventCreated(range: IntRange)` 去实现新接口，编译器报 `overrides nothing`。Kotlin 接口的默认参数不向实现者继承，实现签名必须与声明一致。故这是**硬性不兼容变更**，接入方必须改签名；默认值只对调用方有价值。
 
 ---
 
@@ -382,7 +382,7 @@ PRD FI-010 规定「编辑态下点击外部区域视为取消」。但业务方
 | 文件 | 改动 |
 |---|---|
 | `DayTimelineView.EditController` | `onDone` / `onCancel` 签名变更；新增 `onEnterEditing` |
-| `api/TimelineListener.kt` | `onEventCreated` / `onEventModified` 增加 `content` 参数（带默认值） |
+| `api/TimelineListener.kt` | `onEventCreated` / `onEventModified` 增加 `content` 参数 |
 | `core/TimelineEvent.kt` | 新增 `color: Int?`（带默认实现） |
 | `core/EventSanitizer.kt` | `SanitizedEvent` 透传 `color` |
 | `core/EditSession.kt` | 草稿持有待提交 `content`；`Commit` 携带它 |
