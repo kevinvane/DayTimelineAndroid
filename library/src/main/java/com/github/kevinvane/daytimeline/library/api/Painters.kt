@@ -133,6 +133,17 @@ class BlockContext {
     var paddingHorizontal = 0
     var paddingVertical = 0
     var accentBarWidth = 0
+
+    /**
+     * 左侧色条的左内缩（px）：色条相对块左边整体右移（§7.2 色条内缩）。
+     *
+     * 与 [accentBarMarginVertical] 一起构成色条的「margin」，
+     * 两者都只影响**绘制**：块的命中区域仍是整块，触摸热区不会因此变小。
+     */
+    var accentBarMarginStart = 0
+
+    /** 左侧色条的上下内缩（px，上下一致）：色条比块矮；内缩后无高度时不画。 */
+    var accentBarMarginVertical = 0
     /** 选中态描边粗细（默认绘制方仅在选中态描边，常规态不描边）。 */
     var strokeWidth = 0
     var selected = false

@@ -31,6 +31,9 @@
         <attr name="dtBlockPaddingVertical" format="dimension" />
         <attr name="dtBlockMinHeight" format="dimension" />
         <attr name="dtBlockAccentBarWidth" format="dimension" />
+        <!-- 色条内缩：dtBlockAccentBarMarginStart 右移色条，dtBlockAccentBarMarginVertical 压矮色条 -->
+        <attr name="dtBlockAccentBarMarginStart" format="dimension" />
+        <attr name="dtBlockAccentBarMarginVertical" format="dimension" />
         <attr name="dtBlockStrokeWidth" format="dimension" />
         <attr name="dtBlockTextSize" format="dimension" />
         <!-- 是否在块内显示时间副标题 -->

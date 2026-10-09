@@ -64,6 +64,10 @@ data class TimelineConfig(
     val blockPaddingVertical: Int? = null,
     val blockMinHeight: Int? = null,
     val blockAccentBarWidth: Int? = null,
+    /** 左侧色条的左内缩（px）：色条整体右移，`0` 表示紧贴块左边缘。 */
+    val blockAccentBarMarginStart: Int? = null,
+    /** 左侧色条的上下内缩（px，上下一致）：色条比块矮，`0` 表示贴满块高。 */
+    val blockAccentBarMarginVertical: Int? = null,
     /** 选中态描边粗细（常规态不描边），`null` 表示用资源默认值。 */
     val blockStrokeWidth: Int? = null,
     val blockTextSize: Int? = null,
@@ -170,6 +174,8 @@ data class TimelineConfig(
         blockPaddingVertical = other.blockPaddingVertical ?: blockPaddingVertical,
         blockMinHeight = other.blockMinHeight ?: blockMinHeight,
         blockAccentBarWidth = other.blockAccentBarWidth ?: blockAccentBarWidth,
+        blockAccentBarMarginStart = other.blockAccentBarMarginStart ?: blockAccentBarMarginStart,
+        blockAccentBarMarginVertical = other.blockAccentBarMarginVertical ?: blockAccentBarMarginVertical,
         blockStrokeWidth = other.blockStrokeWidth ?: blockStrokeWidth,
         blockTextSize = other.blockTextSize ?: blockTextSize,
         showTimeSubtitle = other.showTimeSubtitle ?: showTimeSubtitle,

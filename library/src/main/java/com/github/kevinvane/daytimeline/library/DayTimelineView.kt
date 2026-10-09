@@ -444,6 +444,8 @@ class DayTimelineView @JvmOverloads constructor(
                 paddingHorizontal = dimens.blockPaddingHorizontal
                 paddingVertical = dimens.blockPaddingVertical
                 accentBarWidth = dimens.blockAccentBarWidth
+                accentBarMarginStart = dimens.blockAccentBarMarginStart
+                accentBarMarginVertical = dimens.blockAccentBarMarginVertical
                 strokeWidth = dimens.blockStrokeWidth
                 selected = selectedId == b.event.id
                 accentColor = b.event.color

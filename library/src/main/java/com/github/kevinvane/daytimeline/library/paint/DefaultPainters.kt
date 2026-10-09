@@ -173,18 +173,26 @@ internal object DefaultEventBlockPainter : EventBlockPainter {
 
         // 左侧色条：已过/进行中/未到三色随状态切换
         if (context.accentBarWidth > 0) {
-            // 业务色优先：PRD §7.7.1 的第三条通道，为 null 时回落到组件主题色
-            defaultPaints.accent.color = context.accentColor
-                ?: colors.blockAccentColor(context.state)
-            canvas.drawRoundRect(
-                left,
-                top,
-                left + context.accentBarWidth,
-                bottom,
-                radius,
-                radius,
-                defaultPaints.accent,
-            )
+            // 色条在块内内缩：左内缩让它整体右移、上下内缩让它变矮，不再贴满块的上下边缘。
+            // 命中区域仍是整块，因此内缩不影响触摸热区（UF-001）。
+            val barTop = top + context.accentBarMarginVertical
+            val barBottom = bottom - context.accentBarMarginVertical
+            // D4：极短日程被上下内缩吃光高度时不画，而不是画出负高度
+            if (barBottom > barTop) {
+                // 业务色优先：PRD §7.7.1 的第三条通道，为 null 时回落到组件主题色
+                defaultPaints.accent.color = context.accentColor
+                    ?: colors.blockAccentColor(context.state)
+                val barLeft = left + context.accentBarMarginStart
+                canvas.drawRoundRect(
+                    barLeft,
+                    barTop,
+                    barLeft + context.accentBarWidth,
+                    barBottom,
+                    radius,
+                    radius,
+                    defaultPaints.accent,
+                )
+            }
         }
 
         // 描边：常规态不描边，仅选中态用「选中态色 + 加粗」（PRD §7.4 选中态）
@@ -201,7 +209,13 @@ internal object DefaultEventBlockPainter : EventBlockPainter {
         // 文字：极短日程放不下时直接跳过，避免文字溢出（D4 / E14）
         if (context.tooShortForText) return
 
-        val textLeft = left + context.accentBarWidth + context.paddingHorizontal
+        // 文字左边界要让开整条色条（含它的左内缩），否则右移后的色条会贴到文字上
+        val barInset = if (context.accentBarWidth > 0) {
+            context.accentBarMarginStart + context.accentBarWidth
+        } else {
+            0
+        }
+        val textLeft = left + barInset + context.paddingHorizontal
         val maxTextWidth = right - textLeft - context.paddingHorizontal
         if (maxTextWidth <= 0) return
 

@@ -9,11 +9,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.kevinvane.daytimeline.library.api.ScrollMode
 import com.github.kevinvane.daytimeline.library.api.TimelineConfig
+import com.github.kevinvane.daytimeline.library.core.MinuteOfDay
+import com.github.kevinvane.daytimeline.library.core.TimelineEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.math.abs
 
 /**
  * 视图构造与配置生效的真机测试。
@@ -24,6 +27,19 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class DayTimelineViewTest {
+
+    private companion object {
+        const val TEST_WIDTH = 320
+        const val TEST_HOUR_HEIGHT = 100
+        const val TEST_AXIS_WIDTH = 40
+        const val TEST_START_MINUTE = 540
+        const val BAR_EVENT_ID = "accent-bar"
+        const val BAR_MARGIN_START = 8
+        const val BAR_MARGIN_VERTICAL = 2
+
+        /** 不透明的正红：色条取业务色时唯一可能被误判的颜色只有抗锯齿过渡像素。 */
+        val ACCENT = 0xFFFF0000.toInt()
+    }
 
     private val context: Context
         get() = InstrumentationRegistry.getInstrumentation().targetContext
@@ -135,6 +151,120 @@ class DayTimelineViewTest {
             readDimensInt(view, "effectiveHourHeight") >= readDimensInt(view, "hourHeightMin"),
         )
         measureAndLayout(view, 480)
+    }
+
+    /**
+     * 左侧色条的内缩配置必须走通「资源默认 → 代码覆盖 → 脏值兜底」整条链路。
+     */
+    @Test
+    fun accentBarMarginConfigIsApplied() {
+        val view = newView()
+
+        assertTrue(
+            "默认应带左内缩（色条不贴块左边缘），实际 ${readDimensInt(view, "blockAccentBarMarginStart")}px",
+            readDimensInt(view, "blockAccentBarMarginStart") > 0,
+        )
+        assertTrue(
+            "默认应带上下内缩（色条不贴满块高），实际 ${readDimensInt(view, "blockAccentBarMarginVertical")}px",
+            readDimensInt(view, "blockAccentBarMarginVertical") > 0,
+        )
+
+        view.setConfig(TimelineConfig(blockAccentBarMarginStart = 13, blockAccentBarMarginVertical = 5))
+        assertEquals(13, readDimensInt(view, "blockAccentBarMarginStart"))
+        assertEquals(5, readDimensInt(view, "blockAccentBarMarginVertical"))
+
+        // 脏值兜底：负内缩会让色条越到块外，必须按 0 处理（与 D4 同类的越界防线）
+        view.setConfig(TimelineConfig(blockAccentBarMarginStart = -9, blockAccentBarMarginVertical = -1))
+        assertEquals(0, readDimensInt(view, "blockAccentBarMarginStart"))
+        assertEquals(0, readDimensInt(view, "blockAccentBarMarginVertical"))
+    }
+
+    /**
+     * 色条的内缩必须真的落到像素上：整体右移、上下压矮。
+     *
+     * 这条**只能**在真机上验证：JVM 单测既加载不了资源也画不了 Canvas，
+     * 「内缩量算错」「色条压到文字上」这类缺陷对单测与 lint 都完全隐形。
+     * 因此这里比对业务色的像素包围盒，而不是断言某个内部字段。
+     */
+    @Test
+    fun accentBarIsInsetFromBlockEdges() {
+        val view = newView()
+        view.setConfig(
+            TimelineConfig(
+                hourHeight = TEST_HOUR_HEIGHT,
+                axisWidth = TEST_AXIS_WIDTH,
+                topPadding = 0,
+                bottomPadding = 0,
+                endMargin = 0,
+                blockPaddingHorizontal = 0,
+                blockAccentBarMarginStart = BAR_MARGIN_START,
+                blockAccentBarMarginVertical = BAR_MARGIN_VERTICAL,
+                showNowIndicator = false,
+                scrollMode = ScrollMode.EXTERNAL,
+            ),
+        )
+        view.submitEvents(
+            listOf(TintedEvent(BAR_EVENT_ID, TEST_START_MINUTE, TEST_START_MINUTE + 60, ACCENT)),
+            notifyIssues = false,
+        )
+        measureAndLayout(view, View.MeasureSpec.UNSPECIFIED)
+
+        val bitmap = Bitmap.createBitmap(TEST_WIDTH, view.height, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(bitmap))
+
+        val box = boundsOfColor(bitmap, ACCENT)
+        assertNotNull("没找到色条像素：日程块根本没画出来", box)
+        val blockTop = TEST_START_MINUTE / 60 * TEST_HOUR_HEIGHT
+        val barLeft = TEST_AXIS_WIDTH + BAR_MARGIN_START
+        assertEdge("色条左边缘应右移到「轴宽 + 左内缩」", barLeft, box!![0])
+        assertEdge("色条宽度不应被内缩改变", barLeft + barWidthOf(view) - 1, box[2])
+        assertEdge("色条顶边应下移「上下内缩」", blockTop + BAR_MARGIN_VERTICAL, box[1])
+        assertEdge(
+            "色条底边应上移「上下内缩」",
+            blockTop + TEST_HOUR_HEIGHT - BAR_MARGIN_VERTICAL - 1,
+            box[3],
+        )
+    }
+
+    /**
+     * 边界断言留 1px 容差。
+     *
+     * 圆角矩形的**最外一圈**像素是抗锯齿过渡色，与「恰好等于强调色」的比较差一档；
+     * 但内缩一旦算错，偏差是 dp 级（8dp ≈ 22px），1px 容差不会掩盖任何真实缺陷。
+     */
+    private fun assertEdge(label: String, expected: Int, actual: Int) {
+        assertTrue("$label：期望 $expected，实际 $actual（容差 1px）", abs(expected - actual) <= 1)
+    }
+
+    private fun barWidthOf(view: DayTimelineView): Int = readDimensInt(view, "blockAccentBarWidth")
+
+    /** 带业务色的日程：色条取业务色，与三态主题色无关，断言才稳定。 */
+    private data class TintedEvent(
+        override val id: String,
+        private val from: Int,
+        private val to: Int,
+        override val color: Int?,
+    ) : TimelineEvent {
+        override val start get() = MinuteOfDay.ofMinute(from)
+        override val end get() = MinuteOfDay.ofMinute(to)
+    }
+
+    /** 精确颜色像素的包围盒 [left, top, right, bottom]；没找到返回 null。 */
+    private fun boundsOfColor(bitmap: Bitmap, color: Int): IntArray? {
+        var left = Int.MAX_VALUE
+        var top = Int.MAX_VALUE
+        var right = Int.MIN_VALUE
+        var bottom = Int.MIN_VALUE
+        for (y in 0 until bitmap.height) {
+            for (x in 0 until bitmap.width) {
+                if (bitmap.getPixel(x, y) != color) continue
+                if (x < left) left = x
+                if (x > right) right = x
+                if (y < top) top = y
+                if (y > bottom) bottom = y
+            }
+        }
+        return if (right < left) null else intArrayOf(left, top, right, bottom)
     }
 
     // ---- 工具 ----

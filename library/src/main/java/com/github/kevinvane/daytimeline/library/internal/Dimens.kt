@@ -39,6 +39,8 @@ internal class Dimens private constructor(
     val blockPaddingVertical: Int,
     val blockMinHeight: Int,
     val blockAccentBarWidth: Int,
+    val blockAccentBarMarginStart: Int,
+    val blockAccentBarMarginVertical: Int,
     val blockStrokeWidth: Int,
     val blockTextSize: Int,
     val nowDotDiameter: Int,
@@ -100,6 +102,10 @@ internal class Dimens private constructor(
         const val DRAG_THRESHOLD_RATIO_MIN = 0.05f
         const val DRAG_THRESHOLD_RATIO_MAX = 1f
 
+        // LongMethod 豁免：与 `ConfigFromAttrs.read` 同形——刻意写成一段**长而平的**
+        // 读取序列，每个尺寸一行「配置值 ?: 资源默认值」。拆成小函数会把
+        // 「每个尺寸到底从哪来」的对照关系打散，那才是真正更难维护的形态。
+        @Suppress("LongMethod")
         fun resolve(context: Context, config: TimelineConfig): Dimens {
             val res = context.resources
 
@@ -143,10 +149,19 @@ internal class Dimens private constructor(
                     R.dimen.day_timeline_block_padding_vertical,
                 ),
                 blockMinHeight = pick(config.blockMinHeight, R.dimen.day_timeline_block_min_height),
-                blockAccentBarWidth = pick(
+blockAccentBarWidth = pick(
                     config.blockAccentBarWidth,
                     R.dimen.day_timeline_block_accent_bar,
                 ),
+                // 内缩量不得为负：负值会让色条越到块外侧，是与 D4 同类的越界绘制
+                blockAccentBarMarginStart = pick(
+                    config.blockAccentBarMarginStart,
+                    R.dimen.day_timeline_block_accent_bar_margin_start,
+                ).coerceAtLeast(0),
+                blockAccentBarMarginVertical = pick(
+                    config.blockAccentBarMarginVertical,
+                    R.dimen.day_timeline_block_accent_bar_margin_vertical,
+                ).coerceAtLeast(0),
                 blockStrokeWidth = pick(
                     config.blockStrokeWidth,
                     R.dimen.day_timeline_block_stroke_width,

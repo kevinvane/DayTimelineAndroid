@@ -38,6 +38,13 @@
     <dimen name="day_timeline_block_min_height">20dp</dimen>
     <!-- 日程块左侧色条宽度 -->
     <dimen name="day_timeline_block_accent_bar">4dp</dimen>
+    <!--
+      色条在块内的内缩（UI 优化）：左内缩让色条整体右移、上下内缩让色条变矮，
+      不再贴满块的上下边缘。设为 0dp 即回到「紧贴左边缘、贴满块高」的旧观感。
+      仅影响绘制：命中区域仍是整块，触摸热区不因此变小（UF-001）。
+    -->
+    <dimen name="day_timeline_block_accent_bar_margin_start">6dp</dimen>
+    <dimen name="day_timeline_block_accent_bar_margin_vertical">6dp</dimen>
     <!-- 选中态描边粗细（常规态不描边）。PRD §7.4：选中态 = 选中态色 + 轻微加粗 -->
     <dimen name="day_timeline_block_stroke_width">2dp</dimen>
     <!-- 日程块内容文字字号 -->
