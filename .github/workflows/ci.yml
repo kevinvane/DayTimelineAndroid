@@ -52,6 +52,10 @@ jobs:
       - name: 核心逻辑覆盖率门禁
         run: ./gradlew :library:verifyCoreCoverage --stacktrace
 
+      # 可测逻辑覆盖率门禁（PRD T4：≥ 75%，口径见 PRD §12.4.1）
+      - name: 可测逻辑覆盖率门禁
+        run: ./gradlew :library:verifyAllCoverage --stacktrace
+
       # 平台规范检查（PRD T6：0 错误 0 警告）
       - name: lint
         run: ./gradlew :library:lintDebug --stacktrace

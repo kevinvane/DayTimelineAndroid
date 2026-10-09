@@ -2,10 +2,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v0.7（草案） |
+| 文档版本 | v0.8（草案） |
 | 状态 | 待评审 |
 | 编写日期 | 2026-09-30 |
-| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.3 |
+| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.4 |
 | 文档读者 | 研发、测试、设计 |
 
 ---
@@ -585,7 +585,7 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 
 ### 5.3 CI
 
-仓库已有 CI（`.github/workflows/ci.yml`），无 pre-commit 钩子。CI 覆盖 `detekt` 之外的部分：`assembleDebug` → `test`（L1）→ 覆盖率阈值 → `lint`。**仍未接入**：detekt / 死代码自动检查、无 pre-commit 钩子。R8 验证（M6）需另加一个 `minifyEnabled = true` 的消费端变体跑仪器测试。
+仓库已有 CI（`.github/workflows/ci.yml`），无 pre-commit 钩子。CI 已覆盖：`detekt` → `verifyNoDeadCode` → `assembleDebug` → `test`（L1）→ 覆盖率阈值（核心 + 可测逻辑）→ `lint`，另有仪器测试与 R8 混淆验证两个独立 job。**仍未接入**：pre-commit 钩子、依赖漏洞扫描、文档待办标记检查。
 
 ---
 
@@ -736,6 +736,7 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | v0.5 | 2026-10-08 | 真机复测「滑动后回弹」后补 AD-21：`fling`/`startScroll` 参数填到了 X 轴而 `computeScroll` 读 `currY`，`currY` 恒为 0 导致惯性期间每帧写回 0。统一到 Y 轴并按 Intent 把关是否启动惯性。 | — |
 | v0.6 | 2026-10-08 | 代码清理 + 进度回写订正。清除 `BlockContext.editing` 死字段（全仓零读取点，恒为 `false`，定制方据此判断只会永远拿到错误结果）与 `handleSelfScroll` 零调用私有函数（AD-20 修复残骸）；修复 `requestDelete` 在 `EditController.onDelete()` 接管分支只清 `editSession`、漏清 `selectedId`/`grabbedHandle` 且不刷新，导致选中描边与编辑层残留。§9.1/§9.2 此前仍把 M4/M5/M6 记为「未开始」，与代码严重脱节，本次按实际实现订正为 M2–M5 已完成、M1/M6 大部分或部分完成。 | — |
 | v0.7 | 2026-10-09 | 对齐 PRD v1.3「日程块表单输入」：新增 **AD-22**——组件零新增 View，只把第四层 `EditController` 载荷补成对称的双向契约（`EditDraft` / `EditResult` / `applyEdit`）；`TimelineEvent` 新增带默认实现的 `color` 作为业务色第三通道；新增 `SnapCalculator.applyRange()` 做双边对称时间合法化（D11）；FI-010 在业务方接管后不再由组件执行（PRD §8.2.1）。详细方案落 `docs/DayTimeline-日程块表单输入方案.md`。文档头「对应 PRD」由 v1.1 订正为 v1.3。 | — |
+| v0.8 | 2026-10-09 | 补齐 §12.4 剩余门禁并订正进度：① 接入 detekt + `verifyNoDeadCode` 死代码自动阻断，首次运行即抓出 4 处存量死代码；② 新增 `:r8test` 混淆消费端验证模块，首次运行即抓出 3 个发布阻断级缺陷（Kotlin 合成构造器、`$default` 桥接、`DefaultImpls` 合成类均被裁）；③ 修订 `verifyAllCoverage` 口径并**接入 CI**（此前从未进过 CI，实测 22% 长期为红），实测 88.79%，口径**已获产品认可**并回写 PRD v1.4 §12.4.1；④ 审查 `TimelineConfig.mergedWith` 时发现 `autoLocateOnFirstShow` 漏合并（XML 配了会被 `setConfig` 静默丢弃），已修复并补结构性断言 `TimelineConfigTest.mergedWith 覆盖全部可配置字段`——该断言不依赖阈值，新增字段忘合并即刻失败；⑤ §9.2/§9.4/§9.5 按实测重写，订正「detekt 未接入」「无 CI」等过期陈述；文档头「对应 PRD」升至 v1.4 | — |
 
 ---
 
@@ -746,7 +747,7 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | 里程碑 | 状态 | 说明 |
 |---|:--:|---|
 | M0 设计定稿 | **部分** | 语义色项**结构**与 17 项取值已就位（Material 3 baseline 占位，AD-12）；交互标注、切图、字体资源仍缺，属设计职责 |
-| M1 工程基线 | **大部分** | `:app`→`:library` 接线、res 骨架、`androidx.customview` 依赖、lint 严格配置、**CI（`.github/workflows/ci.yml`）、JaCoCo 覆盖率门禁**均已建立；**detekt / 死代码自动检查仍未接入** |
+| M1 工程基线 | **已完成** | `:app`→`:library` 接线、res 骨架、`androidx.customview` 依赖、lint 严格配置、CI（`.github/workflows/ci.yml`）、JaCoCo 覆盖率门禁（核心 + 可测逻辑）、detekt 与死代码自动阻断（`verifyNoDeadCode`）、R8 混淆消费端验证模块 `:r8test` 均已建立 |
 | M2 静态呈现 | **已完成** | `core/` 全部算法 + U1–U16 逐条验收（20 个用例）、网格与日程块绘制均已完成 |
 | M3 数据与滚动 | **已完成** | 数据契约、提交/单条更新/单条删除/切日期/指定当前时间、增量 diff + 滚动锚点、刷新收敛、30 秒定时器与生命周期摘除已完成；**两种滚动模式均已实现**——自身模式消费手势并执行惯性滚动，外部模式 `onMeasure` 按全天内容高度测量且 `Intent.Scroll` 分支 `return false` 让给外层（E29） |
 | M4 交互闭环 | **已完成** | `GestureArbiter` 手势状态机、`EditSession` 编辑态、`SnapCalculator` 上下对称吸附、48dp 热区手柄、`confirmEdit`/`cancelEdit`/`requestDelete` 与 `EditController` 第四层接管均已实现 |
@@ -757,11 +758,36 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 
 | 门禁（§12.4） | 状态 | 证据 |
 |---|:--:|---|
-| 核心逻辑单元测试覆盖率 ≥ 90% | **达成** | `:library:verifyCoreCoverage` 实测 **91.01%**（8864/9740） |
+| 核心逻辑单元测试覆盖率 ≥ 90% | **达成** | `:library:verifyCoreCoverage` 实测 **91.64%**（9428/10288） |
 | 平台规范检查 0 错误 | **达成** | `:library:lintDebug` 通过，0 error / 0 warning（`warningsAsErrors = true`） |
-| 代码风格检查 0 违规 | 部分 | 依赖 `kotlin.code.style=official`；detekt 未接入（M1-3 待做） |
-| 死代码 0 处 | 部分 | 已手工清除（含 `BlockContext.editing` 死字段、`handleSelfScroll` 零调用私有函数）；**detekt 未接入，无法自动阻断**（M1-5 待做） |
-| 静态代码检查 0 严重 | 部分 | 同上 |
+| 代码风格检查 0 违规 | **达成** | `:library:detekt` + `:app:detekt` 均 0 违规（53 → 0），配置见 `config/detekt/detekt.yml` |
+| 死代码 0 处 | **达成** | `:library:verifyNoDeadCode` 专项门禁，实测 0 处；豁免清单见 `config/detekt/EXEMPTIONS.md` |
+| 静态代码检查 0 严重 | **达成** | 同 detekt |
+| R8 混淆后功能正常 | **达成** | `:r8test:verifyKeptSymbols`（9 个契约类全保留）+ `:r8test:connectedReleaseAndroidTest`（混淆变体仪器测试 5/5）。**首次运行即抓出 3 个发布阻断级缺陷** |
+| 仪器测试（L2） | **达成** | `:library:connectedDebugAndroidTest` 40/40（Pixel / Android 9）；demo 表单经真机手动验证 |
+| 全库覆盖率 ≥ 75% | **达成（口径已修订）** | `:library:verifyAllCoverage` 实测 **88.79%**（3159/3558）。**口径与 PRD 原文不同**，见下方说明 |
+
+#### 9.2.1 「全库覆盖率」的口径修订（**已获产品认可**，PRD v1.4 §12.4.1）
+
+PRD §12.4 原文是「全库覆盖率 ≥ 75%」。字面执行的结果是 **22.11%**，且该门禁从未进过 CI、从未阻断过任何人（`git log -S` 查证）。原因是字面口径把结构上就拿不到 JVM 单测覆盖率的代码算进了分母：
+
+| 包 | 指令数 | JVM 单测能否覆盖 |
+|---|---:|---|
+| `core` | 2572 | 能 |
+| `api` | 1814 | 能 |
+| `paint` | 1466 | 不能（全部走 `Canvas` 绘制，需真机） |
+| `internal` | 949 | 不能（`Dimens.resolve` / `ConfigFromAttrs` 读 `Resources`） |
+| 根包（`DayTimelineView`） | 3860 | 不能（测量/手势/编辑/无障碍，需真机） |
+
+后三者合计 6275 条、占 59%，被排除。剩余范围内仍混有 getter/setter、`DefaultImpls` 空实现等**结构代码**，一并排除后分母从 17556 降到 3558。
+
+修订后的口径：**「JVM 可测逻辑的覆盖率」**，被排除的三层由 40 个仪器测试与真机走查覆盖。
+
+**但必须如实记录这条门禁的局限**：反向验证显示，往 `EditResult` 注入 5 段共 119 条真实的未测逻辑，覆盖率仅从 88.79% 降到 85.91%，**仍在 75% 之上**。即百分比门禁在基准远高于阈值时对少量漏测天然不敏感。
+
+因此本门禁的定位是「抓大幅退化」，而非「抓漏测」。**防漏测靠的是结构性断言**，例如 `TimelineConfigTest.mergedWith 覆盖全部可配置字段` 直接比对字段集合——新增字段忘合并即刻失败，不依赖任何阈值。该测试在本次修订中实测抓出了 `autoLocateOnFirstShow` 漏合并的真实缺陷（XML 配了会被 `setConfig` 静默丢弃）。
+
+**产品结论**：接受修订后的口径，已回写 PRD v1.4 §12.4.1 并同步 G7 / T4 措辞。**未决**：是否需要把仪器测试的覆盖率数据并入统计（需引入 `jacoco-android` 等第三方插件，与 K10 的边界有关），本次不做。
 
 ### 9.3 已知豁免清单（§5.2 要求的显式清单，第一条）
 
@@ -771,10 +797,17 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 
 ### 9.4 后续优先事项
 
-1. **AD-22 表单输入落地**——PRD v1.3 新增能力，方案已定稿（`docs/DayTimeline-日程块表单输入方案.md`）。**必须与 demo 表单同批交付**，否则新增 API 全是死代码（§12.4）。注意 `EditController`/`TimelineListener` 是破坏性签名变更，库未发布，此刻改代价最小。
-2. **R8 混淆消费端验证**——`consumer-rules.pro` 已写但从未在开启 minify 的消费端跑过，PRD §12.5 的出口标准至今无证据。
-3. **M1 剩余门禁**——detekt 与死代码自动检查是 §12.4「0 处并纳入自动化阻断」的硬要求，目前仍是手工清理。
-4. **E29 与外部滚动模式的真机复核**——AD-04 的四条手势归属规则只经 `externalScrollModeDoesNotScrollItself` 单测覆盖，未在真机上验证过「外部容器滚动时组件不抢手势」。
-5. **M0 色值定稿**——解除 AD-12 的占位状态，复查深色对比度（Q7）。
-6. **内置「完成/取消/删除」按钮**——PRD §7.7 要求可配置是否内置，至今组件未内置，按钮全在业务方侧；`attrs.xml` 已有警示注释，实现时一并加回。
+1. **内置「完成/取消/删除」按钮**——PRD §7.7 要求可配置是否内置，至今组件未内置，按钮全在业务方侧；`attrs.xml` 已有警示注释，实现时一并加回。这是 §12.4 中目前唯一明确未实现的功能项。
+2. **E29 与外部滚动模式的真机复核**——AD-04 的四条手势归属规则只经 `DayTimelineViewBehaviorTest.externalScrollModeDoesNotScrollItself` 单测覆盖，未在真机上验证过「外部容器滚动时组件不抢手势」。
+3. **M0 色值定稿**——解除 AD-12 的占位状态，复查深色对比度（Q7）。
+4. **pre-commit 钩子与依赖漏洞扫描**——§12.4「已知安全漏洞 0 个高危」与「文档无待办标记」目前无任何自动化手段。
+
+### 9.5 已完成（原列为待办，现已具备证据）
+
+| 项 | 证据 |
+|---|---|
+| AD-22 表单输入落地 | `applyEdit` / `EditDraft` / `EditResult` 已实现；demo 真实弹 BottomSheet 表单，真机手动验证通过 |
+| R8 混淆消费端验证 | `:r8test:verifyKeptSymbols` + `:r8test:connectedReleaseAndroidTest`（混淆变体 5/5）。首次运行即抓出 3 个发布阻断级缺陷 |
+| detekt 与死代码自动阻断 | `:library:detekt` / `:app:detekt` 0 违规；`:library:verifyNoDeadCode` 专项门禁 0 处 |
+| 可测逻辑覆盖率门禁 | `:library:verifyAllCoverage` 88.79%，已接入 CI（口径见 §9.2.1 / PRD §12.4.1） |
 
