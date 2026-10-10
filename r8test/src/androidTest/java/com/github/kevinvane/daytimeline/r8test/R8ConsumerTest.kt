@@ -36,8 +36,17 @@ class R8ConsumerTest {
         get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     private lateinit var view: DayTimelineView
-    private var createdRange: IntRange? = null
-    private var createdContent: CharSequence? = null
+
+    /**
+     * 记录全部回调的监听器。
+     *
+     * 此前本类只覆写 `onEventCreated`（存进 `createdRange`），
+     * 于是取消路径的断言只能是 `assertNull(createdRange)`——
+     * **`onEventModified` / `onEventDeleted` 根本没被记录**，
+     * 它们若在混淆产物上被误触发，本测试不会红。
+     * 这与 library 侧 `DayTimelineViewEditTest` 的白名单断言是同一个道理。
+     */
+    private lateinit var recorder: ConsumerApiSmoke.RecordingListener
     private var draftOnEnter: com.github.kevinvane.daytimeline.library.api.EditDraft? = null
 
     @Before
@@ -51,16 +60,10 @@ class R8ConsumerTest {
             )
             view.layout(0, 0, WIDTH, HEIGHT)
         }
-        createdRange = null
-        createdContent = null
         draftOnEnter = null
 
-        view.listener = object : com.github.kevinvane.daytimeline.library.api.TimelineListener {
-            override fun onEventCreated(range: IntRange, content: CharSequence?) {
-                createdRange = range
-                createdContent = content
-            }
-        }
+        recorder = ConsumerApiSmoke.RecordingListener()
+        view.listener = recorder
     }
 
     /** 构造、测量、绘制全链路在混淆后仍可走通。 */
@@ -153,14 +156,24 @@ class R8ConsumerTest {
         view.confirmEdit()
 
         assertFalse("提交后应退出编辑态", view.isEditing())
-        assertEquals("回传的起止时间应与提交值一致", 600..660, createdRange)
+        assertEquals("回传的起止时间应与提交值一致", 600..660, recorder.createdRange)
         assertEquals(
             "EditResult.content 字段在混淆后可读且值正确",
-            "混淆后写入的标题", createdContent?.toString(),
+            "混淆后写入的标题", recorder.createdContent?.toString(),
         )
     }
 
-    /** 取消路径在混淆后仍不得触发任何数据变更（D3）。 */
+    /**
+     * 取消路径在混淆后仍不得触发任何数据变更（PRD Q1 / D3）。
+     *
+     * 断言用**「回调集合精确等于白名单」**而不是逐个字段判空：
+     * 逐个判空只能证明「已知的那几个没被调用」，而新增一个数据变更回调时
+     * 它压根不会被检查到。集合相等则会在它第一次触发时立刻失败。
+     *
+     * 这条是 library 侧 `DayTimelineViewEditTest.cancelEmitsNoDataChangeAtAll`
+     * 的混淆产物版本——**混淆会改变回调的调用链**（经 R8 重写、可能内联、
+     * 经 DefaultImpls 桥接），debug 下的结论不能直接搬过来。
+     */
     @Test
     fun cancelStillEmitsNoDataChangeAfterMinification() {
         tapEmptySpace()
@@ -169,10 +182,39 @@ class R8ConsumerTest {
         view.applyEdit(
             com.github.kevinvane.daytimeline.library.api.EditResult(range = 600..660, content = "不该生效"),
         )
+        recorder.reset() // 滤掉进入编辑态时的回调
         view.cancelEdit()
 
         assertFalse(view.isEditing())
-        assertNull("取消路径不得发出任何数据变更", createdRange)
+        assertEquals(
+            "取消路径只允许触发 onEditCancelled，实际回调：${recorder.fired}",
+            listOf("cancelled"), recorder.fired,
+        )
+        assertNull("取消路径不得发出任何新建通知", recorder.createdRange)
+        assertNull("取消路径不得发出任何修改通知", recorder.modifiedId)
+        assertNull("取消路径不得发出任何删除通知", recorder.deletedId)
+    }
+
+    /**
+     * 对照组：**确认**路径在混淆后确实会发数据变更。
+     *
+     * 没有这一条，上一条的「取消后集合等于 {cancelled}」可能是假通过——
+     * 万一混淆产物上回调根本没被触发过，两条断言都会通过。
+     */
+    @Test
+    fun confirmStillEmitsDataChangeAfterMinification() {
+        tapEmptySpace()
+        view.applyEdit(
+            com.github.kevinvane.daytimeline.library.api.EditResult(range = 600..660, content = "该生效"),
+        )
+        recorder.reset()
+        view.confirmEdit()
+
+        assertEquals(
+            "确认路径应发出新建通知，证明回调链在混淆后仍通",
+            listOf("created"), recorder.fired,
+        )
+        assertEquals("回传范围应与提交值一致", 600..660, recorder.createdRange)
     }
 
     // ---- 工具 ----

@@ -533,6 +533,70 @@ class DayTimelineViewEditTest {
         )
     }
 
+    /**
+     * 接管态下「完成」只走 `EditController.onDone`，**不发** `TimelineListener` 的数据变更事件。
+     *
+     * 这条对应 PRD §15.1 的一条警示：业务方若只监听 `TimelineListener` 来统计
+     * 「编辑完成次数」，接管态下会恒为 0，完成率的分母永远是 0。
+     *
+     * 同时它是 `tappingOutsideDoesNotCancelWhenControllerHasTakenOver` 的补充——
+     * 那条只验「接管后点外部不取消」，这里验「接管后完成不双发」。
+     */
+    @Test
+    fun confirmUnderTakeoverDoesNotAlsoEmitListenerEvents() {
+        var doneCount = 0
+        view.editController = object : DayTimelineView.EditController {
+            override fun onEnterEditing(draft: EditDraft): Boolean = true
+
+            override fun onDone(draft: EditDraft, result: EditResult): Boolean {
+                doneCount++
+                return true // 接管完成，组件不应再走 listener 路径
+            }
+        }
+        enterEditByAccessibility("morning")
+        fired.clear()
+
+        view.confirmEdit()
+
+        assertEquals("接管方应收到一次 onDone", 1, doneCount)
+        assertEquals(
+            "接管态下组件不得再发 TimelineListener 的数据变更事件（PRD §15.1 警示），实际回调：$fired",
+            emptyList<String>(), fired,
+        )
+    }
+
+    /**
+     * 对照组：未接管时完成走 `TimelineListener`，`onDone` 被调用但返回 false。
+     *
+     * 与上一条配对：两条一起才能证明「两条路径互斥」而非「某一侧失效」。
+     *
+     * 注意 `confirmEdit` **无条件**调用 `onDone`（`DayTimelineView.kt:673`），
+     * 是否继续发 listener 事件取决于它的返回值——不是「接管了才调」。
+     * 业务方实现 `onDone` 时若误返回 true，会把完成事件整个吞掉。
+     */
+    @Test
+    fun confirmWithoutTakeoverEmitsListenerEventOnly() {
+        var doneCount = 0
+        view.editController = object : DayTimelineView.EditController {
+            override fun onEnterEditing(draft: EditDraft): Boolean = false // 不接管
+
+            override fun onDone(draft: EditDraft, result: EditResult): Boolean {
+                doneCount++
+                return false // 不接管完成 → 组件继续走 listener
+            }
+        }
+        enterEditByAccessibility("morning")
+        fired.clear()
+
+        view.confirmEdit()
+
+        assertEquals(
+            "未接管时完成应发出 onEventModified，实际回调：$fired",
+            listOf("modified"), fired,
+        )
+        assertEquals("onDone 会被无条件调用，但返回 false 时不吞掉事件", 1, doneCount)
+    }
+
     // ===== AD-22：第四层接管 + 表单输入 =====
 
     /**

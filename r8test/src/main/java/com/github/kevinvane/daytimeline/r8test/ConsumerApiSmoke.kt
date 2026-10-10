@@ -31,9 +31,96 @@ object ConsumerApiSmoke {
         override val content: CharSequence? = content
     }
 
-    /** 实现监听契约：覆盖所有回调，确认签名未被裁剪。 */
-    fun listener(onCreated: (IntRange) -> Unit): TimelineListener = object : TimelineListener {
-        override fun onEventCreated(range: IntRange, content: CharSequence?) = onCreated(range)
+    /**
+     * 实现监听契约：**覆盖全部回调**，并按名字记录到 [RecordingListener.fired]。
+     *
+     * ## 为什么必须覆盖全部 8 个
+     *
+     * 此前这里只覆写 `onEventCreated`，于是「取消路径不得发出数据变更」
+     * （PRD Q1 / D3）在混淆产物上**只验了三分之一的边界**——
+     * `onEventModified` 与 `onEventDeleted` 若在取消路径被误触发，
+     * 没有任何测试会红。而这正是本模块存在的意义：library 自身不开混淆，
+     * 保留规则写错也不会有任何东西报错，只有在这里能抓住。
+     *
+     * 全部覆写同时验证 `-keep public interface ... TimelineListener { *; }`
+     * 规则：`TimelineEvent` 漏一个回调，本文件就会编译不过。
+     */
+    fun listener(onCreated: (IntRange) -> Unit): TimelineListener = RecordingListener().also {
+        it.onCreatedHook = onCreated
+    }
+
+    /** 记录全部回调的监听器：断言「集合精确等于白名单」而非逐个计数。 */
+    class RecordingListener : TimelineListener {
+        /**
+         * 收到过的全部回调，按名字记录。
+         *
+         * 新增一个数据变更回调时，「取消不得产生数据变更」的断言会立刻失败，
+         * 而不是悄悄漏检——这与 library 侧 `DayTimelineViewEditTest` 的做法一致。
+         */
+        val fired: MutableList<String> = mutableListOf()
+
+        var createdRange: IntRange? = null
+        var createdContent: CharSequence? = null
+        var modifiedId: String? = null
+        var deletedId: String? = null
+        var issues: Int = 0
+
+        /** 兼容既有调用点：只关心新建范围时走这个钩子。 */
+        var onCreatedHook: ((IntRange) -> Unit)? = null
+
+        override fun onEventClick(event: TimelineEvent) {
+            fired += "click"
+        }
+
+        override fun onEventLongClick(event: TimelineEvent) {
+            fired += "longClick"
+        }
+
+        override fun onEventCreated(range: IntRange, content: CharSequence?) {
+            fired += "created"
+            createdRange = range
+            createdContent = content
+            onCreatedHook?.invoke(range)
+        }
+
+        override fun onEventModified(
+            event: TimelineEvent,
+            range: IntRange,
+            content: CharSequence?,
+            hasConflict: Boolean,
+        ) {
+            fired += "modified"
+            modifiedId = event.id
+            createdRange = range
+            createdContent = content
+        }
+
+        override fun onEventDeleted(event: TimelineEvent) {
+            fired += "deleted"
+            deletedId = event.id
+        }
+
+        override fun onEditCancelled() {
+            fired += "cancelled"
+        }
+
+        override fun onDataIssues(issues: List<com.github.kevinvane.daytimeline.library.core.DataIssue>) {
+            fired += "dataIssues"
+            this.issues += issues.size
+        }
+
+        override fun onNowRefreshed(minute: Int) {
+            fired += "nowRefreshed"
+        }
+
+        fun reset() {
+            fired.clear()
+            createdRange = null
+            createdContent = null
+            modifiedId = null
+            deletedId = null
+            issues = 0
+        }
     }
 
     /**
