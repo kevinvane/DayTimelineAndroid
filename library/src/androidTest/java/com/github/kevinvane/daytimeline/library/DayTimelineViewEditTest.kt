@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.view.MotionEvent
 import android.view.View
+import android.widget.FrameLayout
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.kevinvane.daytimeline.library.api.endMinute
@@ -595,6 +596,180 @@ class DayTimelineViewEditTest {
             listOf("modified"), fired,
         )
         assertEquals("onDone 会被无条件调用，但返回 false 时不吞掉事件", 1, doneCount)
+    }
+
+    // ===== E32：编辑态中 detach-reattach（PRD §11.4.1 / v1.11）=====
+
+    /**
+     * E32 前半：移出窗口再挂回，业务方**数据未变** → 草稿原样保留。
+     *
+     * 与 E27（锁屏解锁）同向。用户只是暂时看不见组件，不该因此丢掉已输入的内容。
+     */
+    @Test
+    fun detachAndReattachKeepsEditingWhenDataUnchanged() {
+        enterEditByAccessibility("morning")
+        view.applyEdit(EditResult(660..720, "改过的标题"))
+        fired.clear()
+
+        detachAndReattach()
+
+        assertTrue("数据未变时编辑态必须保留（E32 / §11.4.1）", view.isEditing())
+        assertTrue(
+            "重新挂回不得凭空产生任何回调，实际回调：$fired",
+            fired.isEmpty(),
+        )
+
+        // 草稿确实还在：确认时回传的是 reattach 前的值
+        view.confirmEdit()
+        assertTrue("保留的草稿应被提交，实际回调：$fired", fired.contains("modified"))
+        assertEquals("保留的草稿应是 reattach 前灌入的标题", "改过的标题", lastModifiedContent?.toString())
+    }
+
+    /**
+ * E32 后半：编辑态中 detach，业务方在此期间**提交了不含该日程的新数据** → 自动取消。
+ *
+ * 这里刻意**不**在 reattach 时补一次重验：`events` 只可能由 `submitEvents` 改变，
+ * 而那里已经做过 E20 校验。实测确认在 `onAttachedToWindow` 加一次重验是**冗余的**——
+ * 把那行删掉，本文件 82 条仍全绿。数据变更的时点是 `submitEvents`，与 detach 无关。
+ *
+ * 因此本条锁住的是**既有契约**而非新实现：detach 不影响编辑态存续，
+ * 而数据变更一律在提交那一刻生效。
+     */
+    @Test
+    fun detachThenSubmittingChangedDataAutoCancels() {
+        // 先建立容器：detach 需要它，且必须在进入编辑态前完成
+        ensureHolder()
+        enterEditByAccessibility("morning")
+        fired.clear()
+
+        // 模拟「组件不在窗口期间，业务方提交了不含 morning 的新数据」
+        detachView()
+        view.submitEvents(listOf(Ev("afternoon", 180, 240, "深度工作")), notifyIssues = false)
+        reattachView()
+
+        assertFalse("引用失效时提交新数据即应取消（E20）", view.isEditing())
+        assertEquals(
+            "E20 自动取消只允许触发 onEditCancelled，实际回调：$fired",
+            listOf("cancelled"), fired,
+        )
+    }
+
+/**
+     * 把 View 从父容器移除再挂回，模拟**同一实例**的 detach / reattach。
+     *
+     * 测试夹具里 `view` 是裸创建的、没有父容器，所以先塞进一个 `FrameLayout`——
+     * 有父容器才能走真实的 `removeView` / `addView`，进而触发
+     * `onDetachedFromWindow` / `onAttachedToWindow`。
+     */
+    private fun detachAndReattach() {
+        detachView()
+        reattachView()
+    }
+
+    private fun detachView() {
+        ensureHolder()
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { holder!!.removeView(view) }
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+    }
+
+    private fun reattachView() {
+        ensureHolder()
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { holder!!.addView(view) }
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+    }
+
+    /**
+     * 承载 view 的容器，**必须在进入编辑态之前**建立。
+     *
+     * 用 lazy 是陷阱：首次访问才 addView，而那次 addView 本身会触发
+     * `onAttachedToWindow` 并重新 layout，届时已进入编辑态的用例会看到
+     * 意料之外的状态。改为显式在 detach 前确保容器就位。
+     */
+    private fun ensureHolder(): FrameLayout {
+        holder?.let { return it }
+        lateinit var frame: FrameLayout
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            frame = FrameLayout(context)
+            frame.addView(view)
+            frame.layout(0, 0, WIDTH, HEIGHT)
+        }
+        holder = frame
+        return frame
+    }
+
+    private var holder: FrameLayout? = null
+
+    /**
+     * 退出编辑态必须停掉边缘自动滚动——**正向**断言。
+     *
+     * 此前 `cancelEdit` 不调 `stopEdgeScroll`，靠 `edgeScrollRunnable` 的
+     * `editSession == null` 守卫兜住，实测无害。但那是「靠下游自守卫」：
+     * 守卫一旦被去掉，退出编辑态后边缘滚动会继续跑且不报错。
+     */
+    @Test
+    fun cancellingStopsEdgeAutoScroll() {
+        enterEditByAccessibility("morning")
+        // 反射把边缘滚动标记为「已排期」，模拟拖到视口边缘后的状态
+        fieldOf("edgeScrollScheduled").set(view, true)
+        fieldOf("edgeScrollDelta").set(view, 8)
+
+        view.cancelEdit()
+
+        assertFalse("退出编辑态必须停掉边缘自动滚动", readBoolean("edgeScrollScheduled"))
+        assertEquals("退出编辑态必须把边缘滚动增量清零", 0, readInt("edgeScrollDelta"))
+    }
+
+    /** 对照组：确认与删除两条出口同样必须停掉边缘滚动（三个出口共用同一清理）。 */
+    @Test
+    fun confirmingStopsEdgeAutoScroll() {
+        enterEditByAccessibility("morning")
+        fieldOf("edgeScrollScheduled").set(view, true)
+        fieldOf("edgeScrollDelta").set(view, 8)
+
+        view.confirmEdit()
+
+        assertFalse("确认出口同样必须停掉边缘自动滚动", readBoolean("edgeScrollScheduled"))
+        assertEquals("确认出口同样必须把边缘滚动增量清零", 0, readInt("edgeScrollDelta"))
+    }
+
+    // ===== 幂等约定（PRD §14.3.1 / v1.11）=====
+
+    /**
+     * 同一会话重复取消：**只有第一次**发 `onEditCancelled`，第二次是空操作。
+     *
+     * 业务方很容易写出多窗口收尾代码——demo 的 `MainActivity:227` 与
+     * `EventDetailPopup:196` 就是两条。组件保证幂等是正确的，但不写进规格，
+     * 业务方无从知道自己能不能依赖它。
+     */
+    @Test
+    fun repeatedCancelOnlyFiresOnce() {
+        enterEditByAccessibility("morning")
+        fired.clear()
+
+        view.cancelEdit()
+        view.cancelEdit()
+        view.cancelEdit()
+
+        assertEquals(
+            "同一会话重复取消只有第一次产生回调，实际回调：$fired",
+            listOf("cancelled"), fired,
+        )
+    }
+
+    /** 取消之后再调完成 / 删除，全部是无回响的空操作。 */
+    @Test
+    fun completingAfterCancelIsSilentNoOp() {
+        enterEditByAccessibility("morning")
+        view.cancelEdit()
+        fired.clear()
+
+        view.confirmEdit()
+        view.requestDelete()
+        view.cancelEdit()
+
+        assertEquals("取消后所有出口都必须静默无操作，实际回调：$fired", emptyList<String>(), fired)
+        assertEquals("取消后确认不得回传修改", null, lastModifiedId)
+        assertEquals("取消后删除不得回传删除", null, lastDeletedId)
     }
 
     // ===== AD-22：第四层接管 + 表单输入 =====

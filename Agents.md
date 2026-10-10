@@ -114,8 +114,8 @@ Windows 下用 `gradlew.bat`：
   保留，再在**混淆后的 release 变体**上跑仪器测试——这是「业务方开启混淆后功能正常」
   的唯一有效证据（library 自身不开混淆，保留规则写错也不会有任何东西报错）。
 - **CI**（`.github/workflows/ci.yml`）：三个 job——静态门禁 / 仪器测试 / R8 验证。
-- **仪器测试** 74 个（`:library:connectedDebugAndroidTest`）+ 7 个
-  （`:app:connectedDebugAndroidTest`），R8 混淆变体 6 个。
+- **仪器测试** 82 个（`:library:connectedDebugAndroidTest`）+ 7 个
+  （`:app:connectedDebugAndroidTest`），R8 混淆变体 8 个。
 
 尚未建立：
 
@@ -178,3 +178,16 @@ PRD 场景 E 的 E4）**只能靠 FI-010「点组件外部区域视为取消」�
 关掉 A、弹 B 之前的那一瞬间，屏幕上什么都没有而状态仍停在 X。
 纯读代码容易把这条路径当成「不可能到达」。**判断某个 UI 元素是否死代码，
 先写条测试把状态驱动出来，比读一百行调用链可靠。**
+
+## 第四条：看起来合理的补丁，也可能什么都没做
+
+给「编辑态 detach 后重验数据引用」补了一行 `revalidateEditingAgainst(events)`——
+方向对、理由充分、KDoc 也写得挺好。**把它删掉，82 条测试仍然全绿。**
+
+原因是 `events` 只可能由 `submitEvents` 改变，而那里已经做过 E20 校验，
+reattach 时再验一次是对同一份数据的第二次比对。已回退，并把「不要在这里补重验」
+的理由写进 KDoc 与测试注释。
+
+**比第一课更值得警惕**：新测试全绿只证明「没有测到变化」，不证明「改动有用」。
+判据是**回滚后测试是否变红**——那条对 `stopEdgeScroll` 有效（2 条转红），
+对这一行无效（一条都没变）。**回滚验证顺带告诉你改动到底有没有被覆盖到。**

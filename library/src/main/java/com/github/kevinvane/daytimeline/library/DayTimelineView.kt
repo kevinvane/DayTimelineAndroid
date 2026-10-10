@@ -311,7 +311,10 @@ class DayTimelineView @JvmOverloads constructor(
         )
         events = newEvents
         states = TimeStateResolver.resolveAll(events, nowMinute)
-        // E20 / E21 / E28：业务方回传新数据后，编辑态要么自动取消，要么打冲突标记
+        // E20 / E21 / E28：业务方回传新数据后，编辑态要么自动取消，要么打冲突标记。
+        //
+        // E32（组件被移出窗口后重新挂回）**不需要**在此之外补一次重验：
+        // `events` 只可能由本方法改变，而这里的校验已经覆盖了它。
         val sessionBefore = editSession
         editSession = sessionBefore?.onDataChanged(newEvents.associateBy { it.id })
         if (sessionBefore != null && editSession == null) {
@@ -692,11 +695,17 @@ private fun renderSignature(): Long {
     }
 
     /**
-     * 清空全部编辑态状态。
+     * 清空全部编辑态状态**及其副作用**。
      *
-     * 确认、取消、删除（接管 / 未接管）、E20 自动取消共用同一个出口，
-     * 「取消即清干净」不靠逐处记忆：漏清 [selectedId] 会让选中描边残留到下次刷新，
-     * 漏清 [editTakenOver] 会让 FI-010「点外部取消」被静默禁用（PRD §14.3.1）。
+     * 确认、取消、删除（接管 / 未接管）、E20 / E32 自动取消共用同一个出口，
+     * 「退出编辑态即清干净」不靠逐处记忆：
+     * - 漏清 [selectedId] 会让选中描边残留到下次刷新；
+     * - 漏清 [editTakenOver] 会让 FI-010「点外部取消」被静默禁用（PRD §14.3.1）；
+     * - 漏清 [stopEdgeScroll] 的边界滚动任务会让 handler 上留一个空转的 Runnable。
+     *
+     * 最后一条现在**并无实际危害**——[edgeScrollRunnable] 自带 `editSession == null`
+     * 守卫。收在这里是为了不依赖「下游会自己兜住」：那个守卫一旦被去掉，
+     * 边缘自动滚动就会在退出编辑态后继续跑，且不报错。
      */
     private fun clearEditState() {
         editSession = null
@@ -704,6 +713,7 @@ private fun renderSignature(): Long {
         selectedId = null
         grabbedHandle = 0
         editTakenOver = false
+        stopEdgeScroll()
     }
 
     /**

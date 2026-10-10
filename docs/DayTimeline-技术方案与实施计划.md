@@ -2,10 +2,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v0.15（草案） |
+| 文档版本 | v0.16（草案） |
 | 状态 | 待评审 |
 | 编写日期 | 2026-09-30 |
-| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.10（v1.7 为 Q1 取消路径口径澄清，见 AD-25；v1.8 关闭 R9 并新增 R12；v1.9 按 OQ-7 方案 A 支持 Java 接入，见 AD-02；v1.10 补「编辑完成率」统计口径 §15.1；FR / FI 编号未变） |
+| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.10（v1.7 为 Q1 取消路径口径澄清，见 AD-25；v1.8 关闭 R9 并新增 R12；v1.9 按 OQ-7 方案 A 支持 Java 接入，见 AD-02；v1.10 补「编辑完成率」统计口径 §15.1；v1.11 定编辑态存续边界 §11.4.1 + 幂等约定，见 AD-27；FR / FI 编号未变） |
 | 文档读者 | 研发、测试、设计 |
 
 ---
@@ -274,9 +274,17 @@ interface TimelineEvent {
 
 ### AD-11　状态保存（D12 / E9 / Q9）
 
-`onSaveInstanceState` 存：查看日期、自身滚动模式下的 `scrollOffset`、选中/编辑态标识。**不存业务数据**（L8 组件不做持久化）。
+`onSaveInstanceState` 存：**查看日期** + 自身滚动模式下的 `scrollOffset`。**不存业务数据**
+（L8 组件不做持久化）。外部滚动模式下只存查看日期，滚动位置交外层容器（§8.6 明确要求）。
 
-外部滚动模式下只存查看日期，滚动位置交外层容器（§8.6 明确要求）。
+**订正（v0.15）**：本条此前写的是「选中 / 编辑态标识」——**那是没实现的行为**。
+实际代码（`DayTimelineView.kt:1462-1465`）只存了 `scrollOffset` 与 `viewDate`。
+一个从未被实现、也从无测试覆盖的描述留在架构决策里，比不写更糟：后来者会以为
+编辑态跨实例存活是承诺，查不到实现也查不到测试。
+
+**为什么不实现它**：草稿含业务方数据，序列化它就突破了 PRD §11.4「组件不做持久化」的
+承诺；且 D12 / E9 / Q9 的验收范围本就是「滚动位置与查看日期」，不含草稿。
+PRD §11.4.1（v1.11）已把编辑态的存续边界写成规格，见 AD-27。
 
 ### AD-12　语义色项取值：Material 3 baseline 作工程占位　【执行期决策】
 
@@ -731,6 +739,87 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
   `cancellingTheFormChangesNothing` 与 `dismissingTheFormWithoutSubmittingChangesNothing`
   同时转红。
 
+### AD-27　编辑态的存续边界：定规格而非改行为　【PRD v1.11 决策】
+
+**背景**：自检 Q1 时列出的第 2 / 3 / 4 项。查下来发现它们不是三个独立缺陷，
+而是**同一个问题**：「编辑态这个对象应该活多久、由谁负责收尾」从来没被写下来。
+
+**证据：三份文档互相矛盾**
+
+| 出处 | 说法 |
+|---|---|
+| PRD §11.4 | 「关闭页面后**不保留任何状态**（旋转恢复除外）」 |
+| 技术方案 AD-11 | 「`onSaveInstanceState` 存：查看日期、滚动偏移、**选中 / 编辑态标识**」 |
+| 代码 `:1462-1465` | **只存 `scrollOffset` 与 `viewDate`** |
+
+AD-11 描述的是一个从未实现的行为（已在上方订正）。至于「detach 算不算关闭页面」，
+PRD 没有任何边界——`View` 被 `removeView`、滑出视口时页面还在、实例还在，
+正好落进两句话之间的缝隙。
+
+#### 决策 1（E32）：detach 保留编辑态，**不补 reattach 重验**
+
+定下四种情形的边界（PRD §11.4.1）：
+
+| 情形 | 编辑态与草稿 |
+|---|---|
+| 页面销毁 / 实例回收 | 不保留 |
+| 旋转 / 折叠致实例重建 | 不保留草稿，只恢复查看日期与滚动位置 |
+| **移出窗口后重新挂回（同一实例）** | **保留** |
+| 移出窗口且不再挂回 | 随实例回收 |
+
+选「保留」而非「清除」的理由是**代价不对称**：清除会让用户输入的内容静默丢失，
+而 §11.4 那句「不保留任何状态」会让人以为这是预期行为。
+
+**但「保留」需要一个前提**：草稿引用的数据可能已被业务方改掉。最初的方案是在
+`onAttachedToWindow` 补一次 `revalidateEditingAgainst(events)`。
+
+**实测证明这个补丁是多余的**：把它删掉，82 条仪器测试仍全绿。原因是
+`events` 只可能由 `submitEvents` 改变，而那里已经做过 E20 校验——
+**数据变更的时点是提交那一刻，与 detach 无关**。于是回退，改为把这条**既有契约**
+用测试钉住（`detachThenSubmittingChangedDataAutoCancels`），并在 KDoc 里写明
+「不要在这里补重验」的理由，防止下一个人再犯。
+
+> 这条值得单列：**一个看起来合理、方向正确的补丁，实测证明它什么都没做。**
+> 如果只跑「新测试是否全绿」，就会把这个无效改动合进去。
+
+#### 决策 2：`clearEditState` 收编 `stopEdgeScroll`
+
+`stopEdgeScroll()` 原先只有 `onTouchEvent:1112` 一个调用点，五处退出编辑态的出口
+都不调。实测确认无害——`edgeScrollRunnable` 自带 `editSession == null` 守卫。
+
+但那是**靠下游自守卫**：守卫一旦被去掉，退出编辑态后边缘滚动会继续跑且不报错。
+AD-25 已把「退出编辑态的状态」收敛成单一出口，这次把**副作用**也收进来——
+`clearEditState()` 增加 `stopEdgeScroll()`，KDoc 写明「现在并无实际危害，
+收在这里是为了不依赖下游兜住」。
+
+**反向验证**：回滚这一行后 `cancellingStopsEdgeAutoScroll` 与
+`confirmingStopsEdgeAutoScroll` 两条同时转红。
+
+#### 决策 3（§14.3.1）：幂等约定写进 Q1 判定方式
+
+`cancelEdit()` 开头 `editSession ?: return`，同一会话上重复调用只有第一次
+产生 `onEditCancelled`。组件保证幂等是正确设计，但 Q1 的判定方式原先只写
+「回调集合精确等于白名单」，没说第 N 次调用该断言成什么。
+
+业务方很容易写出多窗口收尾代码——demo 的 `MainActivity:227` 与
+`EventDetailPopup:196` 就是两条。PRD §14.3.1 补上三档断言表：
+
+| 断言对象 | 期望回调集合 |
+|---|---|
+| 首次取消 | `{编辑取消}` |
+| 同一会话上再次取消 | `{}` |
+| 取消后再调完成 / 删除 | `{}` |
+
+#### 测试
+
+| 用例 | 锁住什么 |
+|---|---|
+| `detachAndReattachKeepsEditingWhenDataUnchanged` | E32 前半：数据未变则草稿原样保留（同 E27） |
+| `detachThenSubmittingChangedDataAutoCancels` | E32 后半：数据变更一律在 `submitEvents` 那一刻生效，与 detach 无关 |
+| `cancellingStopsEdgeAutoScroll` / `confirmingStopsEdgeAutoScroll` | 退出编辑态必须停掉边缘滚动（**正向**断言，非「靠自守卫」） |
+| `repeatedCancelOnlyFiresOnce` | 幂等：重复取消只发一次 |
+| `completingAfterCancelIsSilentNoOp` | 取消后所有出口静默无操作 |
+
 ---
 
 ## 4. 需求覆盖对照
@@ -949,6 +1038,7 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | v0.13 | 2026-10-10 | **完成 M1-8、关闭风险 R9**（对齐 PRD v1.8）：① AD-02 的「关键结论」从推理升级为**三条实测证据**——`javap -p` 反编译 `MinuteOfDay.class` 显示唯一字段 `private final int minuteOfDay`、方法签名全部收 `int` 吐 `int`（`getHour-impl(int)` 等），无任何运行时 API 引用；`:library:assembleDebug` 在 `minSdk 23` + Kotlin 2.0.21 下通过，`build.gradle.kts` 未启用 `isCoreLibraryDesugaring`、无 `desugar_jdk_libs`，即不存在为值类型引入的兼容层；74 个仪器测试真机全绿，擦除后的 `int` 在 API 23 运行时行为有真机证据。AD-02 原「待验证（M1）」三条中前两条证实、第三条被推翻（见 ②）。② **连带发现并实证：Java 调用方无法实现 `TimelineEvent` 契约**——`javap` 显示接口抽象方法为 `int getStart-ZruiD9E()` / `int getEnd-ZruiD9E()`，Kotlin 对值类型返回值的方法名做了编译期混淆，`-ZruiD9E` 非合法 Java 标识符；用 `javac` 实测按 `int getStart()` 实现，`@Override` 直接报「不是抽象类或接口中方法的覆盖」。AD-02 原判断「对象类型是 interface，问题不大」**对 Kotlin 调用方成立、对 Java 调用方不成立**。该限制已登记为 PRD §18 **R12**，OQ-7 按实测重写（原「建议提供静态工厂」的表述未反映「契约根本无法实现」这一事实），是否承诺 Java 接入待产品拍板。③ OQ-4 / OQ-6 关闭；§9.1 M1 行回写 M1-8 完成；§9.5 补两条（R9 关闭、Java 限制）。④ 顺带订正 §9.5 可测逻辑覆盖率为 88.49%（原 88.79%，v0.11 只改了 §9.2 门禁表，漏改此处） | — |
 | v0.14 | 2026-10-10 | **实施 OQ-7 方案 A：`MinuteOfDay` 改普通类，Java 调用方可以接入**（对齐 PRD v1.9，产品已拍板）。背景：v0.13 发现 value class 的方法名混淆（`getStart-ZruiD9E()`）使 Java 无法实现 `TimelineEvent`，OQ-7 决议「改普通类」而非「另做 int 契约」——后者会让 Java 侧重新丢失 D18 的单位保护。改动与验证：① `MinuteOfDay` 由 `@JvmInline value class` 改为 `class … private constructor`，公有 API 一字未减（`of`/`ofMinute`/`parse`/`START_OF_DAY`/`END_OF_DAY`/`minuteOfDay`/`hour`/`minute`），新增手写 `equals`/`hashCode`（value class 时代由编译器按底层 Int 免费生成）与 `@JvmStatic`/`@JvmField`，全库约 115 处引用零改动编译通过。② **D18 未削弱**：私有构造函数仍在，裸 `Int` 依旧赋不进 `start`/`end`（Spike 与 TimeTest 对照均验证）；`TimeTest` 新增三条钉住 equals/hashCode（同时刻相等且哈希一致、不认裸 `Int`/文本/null、可作 Set/Map 键）——普通类转换最典型的连带风险就是相等性行为变化。③ **新增 Java 守护用例**：`:r8test` 增加 `JavaBusinessEvent.java`（Java 实现 `TimelineEvent`）与 `javaCallerCanImplementContractAfterMinification`（断言读回 title/起止时间而非只查没崩）。**反向验证：把 `MinuteOfDay` 换回 git 原版 value class，该 Java 文件立刻编译失败并直指 `getEnd-ZruiD9E()`**——回退会被构建当场拦住。④ **连带修掉一个 R8 规则缺口**：`consumer-rules.pro` 里 `MinuteOfDay` 原是 `-keepnames class`（只保类名）。普通类的公开成员是对外 API，只保类名时**跨 R8 边界即失效**——新用例首次运行即 `NoSuchMethodError: getMinuteOfDay()I`（androidTest APK 是独立的一次 R8，按原名调用已在 app APK 里改名的成员）。改为 `-keep class …MinuteOfDay { *; }` 与 `EditDraft`/`EventDetail` 同规格后转绿。**这条印证 §5 的判断：规则写错在单遍 R8 下完全隐形，只有真跑消费端才暴露。** ⑤ 代价记录进 AD-02：热路径恢复分配（构造点约 43 处，`OverlapLayoutEngine` 与绘制层零构造，U12 门槛不变）；Java 侧仍有 KDoc 已说明的「接口默认方法需自写缺省值」小摩擦（未开 `-Xjvm-default=all`，另行评估）。⑥ 全量门禁复跑通过：detekt 0 违规、死代码 0、核心覆盖率 **91.81%**、可测逻辑 **88.60%**、lint 0 警告、R8 符号核对 10/10；仪器测试真机全绿——`:library` **74/74**、`:app` **7/7**、`:r8test` 混淆变体 **7/7**（含本次新增的 Java 用例）。JVM 单测 141 → **144** | — |
 | v0.15 | 2026-10-10 | **Q1 残留问题的自检与修补**（评审 Q1 时列出 5 项，自检后修 1 与 5）：① **R8 侧 D3 只验了三分之一的边界**——`R8ConsumerTest` 的 listener 只覆写 `onEventCreated`，断言是 `assertNull(createdRange)`，`onEventModified` / `onEventDeleted` **根本没被记录**，它们若在混淆产物上被误触发不会红。新增 `ConsumerApiSmoke.RecordingListener`，覆盖 `TimelineListener` 全部 **8 个**回调并按名字记录（同时验证 `consumer-rules.pro` 里 `-keep public interface TimelineListener { *; }`），取消断言改为「集合精确等于白名单」。**反向验证**：往 `cancelEdit` 注入一个多余的 `onEventCreated` 后该用例转红，报错逐条列出实际回调 `[created, cancelled]`；**旧版断言在同一注入下会通过**。另加对照组 `confirmStillEmitsDataChangeAfterMinification`，证明混淆产物上回调链确实通、取消断言不是假通过。② **PRD 补 §15.1「完成次数 / 取消次数」口径**（PRD v1.10）——§14.3.1 新增四条取消路径后分项从未定义。写明 E20 必须计入取消（否则组件静默丢弃该事件时分母变小、完成率虚高，AD-25 修的正是这个）、**确认删除两者都不计**（走 `onEventDeleted`，是第三条独立结果）、关闭详情未点任何按钮计入取消、业务方不得自行排除 FI-010（该行为 P1 且可被接管语义关闭，跨业务方不可比）。③ 新增警示：**接管态下完成事件不同**——`confirmEdit` 无条件调用 `EditController.onDone`，返回 true 时组件直接返回、不再发 listener 事件，业务方只监听 `TimelineListener` 会把完成次数统计成 0。补 2 条仪器测试钉住该互斥关系。**未修**：② `onDetachedFromWindow` 不重置编辑态（编辑态中 detach 后草稿残留并会复活）、③ `cancelEdit` 不调 `stopEdgeScroll`（靠 `edgeScrollRunnable` 的 `editSession == null` 自守卫兜住，实测无害）、④ PRD §14.3.1 缺「同一状态多次取消」口径——三项均属「编辑态存活边界」的规格空洞，需先定规格再动手 | — |
+| v0.16 | 2026-10-10 | **定规格而非改行为：编辑态的存续边界（AD-27 / PRD v1.11）**。自检 Q1 时列出的第 2 / 3 / 4 项，查下来是同一个问题——「编辑态该活多久、由谁负责收尾」从来没被写下来。证据：三份文档互相矛盾（PRD §11.4「关闭页面后不保留任何状态」／AD-11「onSaveInstanceState 存选中 / 编辑态标识」／代码只存了 `scrollOffset` 与 `viewDate`）。**① 订正 AD-11**：删掉那句从未实现、也从无测试覆盖的「选中 / 编辑态标识」——留在架构决策里的不实描述比不写更糟；并说明为什么不实现（草稿含业务方数据，序列化它就突破了 §11.4 的承诺）。**② PRD 新增 §11.4.1 + E32**：逐情形定边界，detach-reattach 保留编辑态；选「保留」而非「清除」的理由是代价不对称——清除会让用户输入静默丢失，而 §11.4 那句话会让人以为那是预期行为。**③ §14.3.1 补幂等约定**，Q1 白名单断言细化为三档。**④ `clearEditState()` 收编 `stopEdgeScroll()`**——原先只靠 `edgeScrollRunnable` 的 `editSession == null` 守卫兜住，实测无害，但那是「靠下游自守卫」；收进来后回滚该行会让 2 条测试转红。**一次无效改动被实测拦下**：最初在 `onAttachedToWindow` 补了 `revalidateEditingAgainst(events)`，方向看起来对，但删掉后 82 条仍全绿——`events` 只可能由 `submitEvents` 改变，那里已经做过 E20 校验。已回退，并把「不要在这里补重验」的理由写进 KDoc 与测试注释，防止下一个人再犯。**本条不改变任何现有行为**：detach 保留编辑态本就是既有行为，本次是把契约写下来并补测试钉住 | — |
 
 ---
 
@@ -976,7 +1066,7 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | 死代码 0 处 | **达成** | `:library:verifyNoDeadCode` 专项门禁，实测 0 处；豁免清单见 `config/detekt/EXEMPTIONS.md` |
 | 静态代码检查 0 严重 | **达成** | 同 detekt |
 | R8 混淆后功能正常 | **达成** | `:r8test:verifyKeptSymbols`（10 个契约类全保留）+ `:r8test:connectedReleaseAndroidTest`（混淆变体仪器测试 **8/8**，Pixel / Android 9，2026-10-10，含 OQ-7 方案 A 的 Java 调用方用例 `javaCallerCanImplementContractAfterMinification`）。**该用例首次运行即抓出 `consumer-rules.pro` 里 `MinuteOfDay` 只保类名不保成员的缺口**（`NoSuchMethodError: getMinuteOfDay()I`），已修复。**v0.15 起 D3 断言改为白名单式**（`RecordingListener` 记录全部 8 个回调，`assertEquals(listOf("cancelled"), fired)`），并新增对照组 `confirmStillEmitsDataChangeAfterMinification`——反向验证：往取消路径注入一个多余的 `onEventCreated` 后该用例转红，旧版 `assertNull(createdRange)` 断言在同一注入下**会通过** |
-| 仪器测试（L2） | **达成** | `:library:connectedDebugAndroidTest` **76/76 全绿**（Pixel / Android 9，2026-10-10）。含 AD-25 的 5 条 E20 用例、AD-26 的 3 条 `ACTION_CANCEL` 用例、3 条外部滚动模式取消用例，以及 v0.15 新增的 2 条「接管态下完成事件互斥」用例（钉住 PRD §15.1 的接管态警示） |
+| 仪器测试（L2） | **达成** | `:library:connectedDebugAndroidTest` **82/82 全绿**（Pixel / Android 9，2026-10-10）。含 AD-25 的 5 条 E20 用例、AD-26 的 3 条 `ACTION_CANCEL` 用例、3 条外部滚动模式取消用例、2 条「接管态下完成事件互斥」用例，以及 AD-27 的 5 条（E32 detach 存续 ×2、边缘滚动收尾 ×2、幂等约定 ×2 覆盖三档断言） |
 | 示例应用仪器测试 | **达成** | `:app:connectedDebugAndroidTest` **7/7 全绿**（`MainActivityCancelPathTest`）。**2026-10-10 新建，此前 `app/src/` 只有 `main`**——demo 侧两条取消收尾只靠注释自证；已接入 CI |
 | 全库覆盖率 ≥ 75% | **达成（口径已修订）** | `:library:verifyAllCoverage` 实测 **88.60%**（3310/3736）。**口径与 PRD 原文不同**，见下方说明 |
 
@@ -1039,6 +1129,7 @@ PRD §12.4 原文是「全库覆盖率 ≥ 75%」。字面执行的结果是 **2
 | 外部滚动模式下的取消路径 | `cancelBehavesIdenticallyInExternalScrollMode` / `tappingOutsideStillCancelsInExternalScrollMode` / `e20AutoCancelAlsoWorksInExternalScrollMode`（此前该模式下取消路径零覆盖，D6 无证据） |
 | `:app` demo 的仪器测试 | `MainActivityCancelPathTest` 7 条，接入 CI。**实测把 `onDismiss` 里的 `cancelEdit()` 删掉后 2 条转红**，确认不是空跑 |
 | demo 编辑态入口收敛到弹窗 | 删除 `activity_main.xml` 的 `edit_actions` 三个常驻按钮，「完成 / 取消 / 删除」改由表单与详情弹窗提供。**代价与验证见 §9.6** |
+| AD-27 编辑态存续边界 | 见 AD-27。PRD §11.4.1 + E32 + 幂等约定三档断言；`clearEditState` 收编 `stopEdgeScroll`（回滚后 2 条转红）。**本条不改变任何现有行为**，是定规格 + 补测试 |
 
 ### 9.6 demo 编辑态入口收敛（2026-10-10）
 
