@@ -296,6 +296,138 @@ class DayTimelineViewEditTest {
         assertTrue("非编辑态下三个出口都不应触发任何回调，实际回调：$fired", fired.isEmpty())
     }
 
+    // ===== E20：自动取消也是取消（PRD §14.3.1）=====
+
+    /**
+     * E20 与用户取消**完全等价**：零数据变更通知 + 状态全清 + 计入「编辑取消」。
+     *
+     * 这条此前只有 `EditSessionTest` 在纯 JVM 层验证过「`onDataChanged` 返回 null」，
+     * View 层拿到 null 之后做了什么**零覆盖**——修复前只清了 `editSession`，
+     * `selectedId` / `editDraft` / `editTakenOver` / `grabbedHandle` 全部残留，
+     * 选中描边留在屏幕上，且「编辑取消」事件不发 → §15「编辑完成率」分母漏计、完成率虚高。
+     */
+    @Test
+    fun e20AutoCancelEmitsNoDataChangeAndClearsAllEditState() {
+        enterEditByAccessibility("morning")
+        assertTrue("前置条件：应已进入编辑态", view.isEditing())
+        fired.clear()
+        val signatureBefore = readLong("lastRenderSignature")
+
+        // 回传一份**不含 morning** 的数据 → 引用失效，触发 E20 自动取消
+        view.submitEvents(listOf(Ev("afternoon", 180, 240, "深度工作")), notifyIssues = false)
+
+        assertFalse("E20 后必须退出编辑态", view.isEditing())
+        assertEquals("E20 自动取消只允许触发 onEditCancelled，实际回调：$fired", listOf("cancelled"), fired)
+        assertNull("E20 后不得残留选中态，否则选中描边会留在屏幕上", readString("selectedId"))
+        assertEquals("E20 后不得残留手柄抓取状态", 0, readInt("grabbedHandle"))
+        assertEquals("E20 后接管标志必须清零", false, readBoolean("editTakenOver"))
+        assertTrue(
+            "E20 后必须触发刷新，否则界面不重绘；签名未变说明 requestRefresh 没跑：before=$signatureBefore",
+            readLong("lastRenderSignature") != signatureBefore,
+        )
+    }
+
+    /**
+     * 回归：`editTakenOver` 若在 E20 路径上漏清，**下一轮编辑会静默失去 FI-010**。
+     *
+     * 链路：接管进入编辑 → 业务方提交的数据不含该条（E20 自动取消，标志残留 true）
+     * → 业务方改用静默的 `enterEditMode` 进入另一条 → 此时 `handleTap` 看到残留的 true
+     * 会直接 return，点外部**不再取消**，用户按 PRD §8.2.1 应有的行为消失。
+     */
+    @Test
+    fun e20AutoCancelRestoresTapOutsideCancelForTheNextSession() {
+        view.editController = object : DayTimelineView.EditController {
+            override fun onEnterEditing(draft: EditDraft): Boolean = true
+        }
+        enterEditByAccessibility("morning")
+        assertEquals("应已接管", true, readBoolean("editTakenOver"))
+
+        view.submitEvents(listOf(Ev("afternoon", 180, 240, "深度工作")), notifyIssues = false)
+        assertEquals("E20 后接管标志必须清零", false, readBoolean("editTakenOver"))
+
+        // 摘掉 controller，改走静默的编程入口（业务方在详情里点「编辑」用的就是这条）
+        view.editController = null
+        assertTrue("前置条件：应能静默进入下一条的编辑态", view.enterEditMode("afternoon"))
+        fired.clear()
+
+        tapOutsideEditBlock()
+
+        assertFalse("接管标志残留会让 FI-010 失效，实际回调：$fired", view.isEditing())
+        assertEquals(listOf("cancelled"), fired)
+    }
+
+    /**
+     * E20 在**接管态**下同样要回调 `onCancel(draft)`。
+     *
+     * 业务方的表单是组件外部的窗口，数据把日程抽走时组件自动取消了编辑态，
+     * 若不通知接管方，表单会一直开着而草稿已死——正是 §8.2.1 要防的那种不一致状态。
+     */
+    @Test
+    fun e20AutoCancelHandsDraftToControllerSoItsFormCanClose() {
+        var cancelledDraft: EditDraft? = null
+        view.editController = object : DayTimelineView.EditController {
+            override fun onEnterEditing(draft: EditDraft): Boolean = true
+
+            override fun onCancel(draft: EditDraft) {
+                cancelledDraft = draft
+            }
+        }
+        enterEditByAccessibility("morning")
+        fired.clear()
+
+        view.submitEvents(listOf(Ev("afternoon", 180, 240, "深度工作")), notifyIssues = false)
+
+        val d = cancelledDraft
+        assertNotNull("E20 自动取消必须通知接管方，否则业务方表单关不掉", d)
+        assertEquals("草稿应带上被抽走的那条日程", "morning", d!!.event?.id)
+        assertEquals("草稿应带上进入编辑态时的起止时间", 60..120, d.range)
+        assertEquals("E20 自动取消同样只允许一个零数据回调，实际回调：$fired", listOf("cancelled"), fired)
+    }
+
+    /**
+     * 对照组：被编辑的日程仍在列表中时**不得**取消编辑态（E21 / E28）。
+     *
+     * 「只有引用失效才取消」——否则业务方每次常规刷新都会打断用户正在做的编辑。
+     */
+    @Test
+    fun submittingDataThatKeepsTheEditedEventDoesNotCancel() {
+        enterEditByAccessibility("morning")
+        fired.clear()
+
+        // E21：morning 时间未变，只是列表少了另一条 → 保持编辑态
+        view.submitEvents(listOf(Ev("morning", 60, 120, "会议评审")), notifyIssues = false)
+        assertTrue("被编辑的日程仍在列表中时必须保持编辑态", view.isEditing())
+        assertTrue("保持编辑态不应触发任何回调，实际回调：$fired", fired.isEmpty())
+
+        // E28：morning 时间变了 → 仍保持编辑态并置冲突标记，完成时才由业务方决定是否覆盖
+        view.submitEvents(listOf(Ev("morning", 300, 360, "会议评审")), notifyIssues = false)
+        assertTrue("被编辑的日程时间变化时必须保持编辑态", view.isEditing())
+        assertTrue("置冲突标记不应触发任何回调，实际回调：$fired", fired.isEmpty())
+
+        view.confirmEdit()
+        assertTrue("冲突态完成应触发 onEventModified，实际回调：$fired", fired.contains("modified"))
+    }
+
+    /**
+     * 五个清零出口（确认 / 取消 / 删除接管 / 删除确认 / E20）必须清**同一批**状态。
+     *
+     * 此前 `confirmEdit` 独独漏了 `grabbedHandle`——今天不成缺陷，是因为
+     * `ACTION_DOWN` 会无条件重算它；但那是「靠下游兜住」，不是「这里清干净了」。
+     * 本测试锁住的是清零集合的一致性，任何一个出口新增/漏清字段都会失败。
+     */
+    @Test
+    fun confirmEditAlsoClearsGrabbedHandleLikeEveryOtherExit() {
+        enterEditByAccessibility("morning")
+        fieldOf("grabbedHandle").set(view, 2) // 模拟拖拽中的手柄抓取状态残留
+        fired.clear()
+
+        view.confirmEdit()
+
+        assertEquals("确认后手柄抓取状态必须与其他出口一样清零", 0, readInt("grabbedHandle"))
+        assertNull("确认后不得残留选中态", readString("selectedId"))
+        assertEquals("确认后接管标志必须清零", false, readBoolean("editTakenOver"))
+    }
+
     // ===== AD-22：第四层接管 + 表单输入 =====
 
     /**

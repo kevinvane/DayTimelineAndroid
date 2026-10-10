@@ -312,7 +312,17 @@ class DayTimelineView @JvmOverloads constructor(
         events = newEvents
         states = TimeStateResolver.resolveAll(events, nowMinute)
         // E20 / E21 / E28：业务方回传新数据后，编辑态要么自动取消，要么打冲突标记
-        editSession = editSession?.onDataChanged(newEvents.associateBy { it.id })
+        val sessionBefore = editSession
+        editSession = sessionBefore?.onDataChanged(newEvents.associateBy { it.id })
+        if (sessionBefore != null && editSession == null) {
+            // E20：被编辑的日程已不在新数据中，引用失效 → 自动取消。
+            // 与用户取消完全等价（PRD E20 / §14.3.1）：状态全清、计入「编辑取消」事件，
+            // 否则 §15「编辑完成率」的分母会漏掉这部分、完成率虚高。
+            val draft = editDraft ?: sessionBefore.toDraft()
+            clearEditState()
+            editController?.onCancel(draft)
+            listener?.onEditCancelled()
+        }
         relayout()
         scrollOffset = EventDiff.restoreOffset(
             anchor, blocks, dimens.effectiveHourHeight, dimens.topPadding, scrollOffset,
@@ -659,10 +669,7 @@ private fun renderSignature(): Long {
         // 回调拿到的 draft 是**进入编辑态时**的快照，业务方据此能算出改了什么；
         // result 则是合法化后**即将生效**的值。
         val draft = editDraft ?: session.toDraft()
-        editSession = null
-        editDraft = null
-        selectedId = null
-        editTakenOver = false
+        clearEditState()
         val handled = editController?.onDone(draft, commit.toResult()) == true
         if (handled) {
             requestRefresh()
@@ -685,6 +692,21 @@ private fun renderSignature(): Long {
     }
 
     /**
+     * 清空全部编辑态状态。
+     *
+     * 确认、取消、删除（接管 / 未接管）、E20 自动取消共用同一个出口，
+     * 「取消即清干净」不靠逐处记忆：漏清 [selectedId] 会让选中描边残留到下次刷新，
+     * 漏清 [editTakenOver] 会让 FI-010「点外部取消」被静默禁用（PRD §14.3.1）。
+     */
+    private fun clearEditState() {
+        editSession = null
+        editDraft = null
+        selectedId = null
+        grabbedHandle = 0
+        editTakenOver = false
+    }
+
+    /**
      * 取消编辑（PRD FI-009 / FI-010）。
      *
      * **D3 硬性要求：绝不在此发出任何数据变更通知。**
@@ -695,11 +717,7 @@ private fun renderSignature(): Long {
         val session = editSession ?: return
         val draft = editDraft ?: session.toDraft()
         session.cancel() // 返回无字段对象，确保没有任何数据被带出
-        editSession = null
-        editDraft = null
-        selectedId = null
-        grabbedHandle = 0
-        editTakenOver = false
+        clearEditState()
         editController?.onCancel(draft)
         listener?.onEditCancelled()
         requestRefresh()
@@ -712,11 +730,7 @@ private fun renderSignature(): Long {
         if (editController?.onDelete() == true) {
             // 业务方已接管：与 [confirmEdit] 的 handled 分支同样收干净全部编辑状态，
             // 否则选中描边与编辑层会残留到下一次刷新为止
-            editSession = null
-            editDraft = null
-            selectedId = null
-            grabbedHandle = 0
-            editTakenOver = false
+            clearEditState()
             requestRefresh()
             return
         }
@@ -740,11 +754,7 @@ private fun renderSignature(): Long {
     }
 
     private fun performDelete(event: SanitizedEvent) {
-        editSession = null
-        editDraft = null
-        selectedId = null
-        grabbedHandle = 0
-        editTakenOver = false
+        clearEditState()
         removeEvent(event.id)
         listener?.onEventDeleted(event.source)
     }
