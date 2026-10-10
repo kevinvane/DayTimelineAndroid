@@ -262,14 +262,29 @@ fun registerCoverageGate(
                     }
                 }
             } else {
-                val counters = doc.getElementsByTagName("counter")
-                for (i in 0 until counters.length) {
-                    val node = counters.item(i)
-                    if (node.attributes.getNamedItem("type").nodeValue != "INSTRUCTION") continue
-                    if (!inScope(packageNameOf(node))) continue
-                    covered += node.attributes.getNamedItem("covered").nodeValue.toLong()
-                    total += node.attributes.getNamedItem("missed").nodeValue.toLong() +
-                        node.attributes.getNamedItem("covered").nodeValue.toLong()
+                // 只累加 **class 级** 的 counter。
+                //
+                // 这里刻意不用 `getElementsByTagName("counter")`：那会把同一份指令
+                // 数四遍——class、method、sourcefile、package 各级都带一个
+                // INSTRUCTION counter，同一个类的指令会被重复累加。实测后果是
+                // 核心门禁打印出 9864/10744，而报告里 class 级真实值是 2466/2686。
+                // 百分比同时缩放所以看**不**出来，但任何人照着打印值去核对报告都会
+                // 对不上，进而怀疑门禁本身有问题。
+                //
+                // 修法：先取 class 元素，再只取它的直接 counter 子节点。
+                val classes = doc.getElementsByTagName("class")
+                for (i in 0 until classes.length) {
+                    val cls = classes.item(i)
+                    if (!inScope(packageNameOf(cls))) continue
+                    val children = cls.childNodes
+                    for (j in 0 until children.length) {
+                        val c = children.item(j)
+                        if (c.nodeName != "counter") continue
+                        if (c.attributes.getNamedItem("type").nodeValue != "INSTRUCTION") continue
+                        covered += c.attributes.getNamedItem("covered").nodeValue.toLong()
+                        total += c.attributes.getNamedItem("missed").nodeValue.toLong() +
+                            c.attributes.getNamedItem("covered").nodeValue.toLong()
+                    }
                 }
             }
 
@@ -341,9 +356,19 @@ registerCoverageGate(
  *
  * 排除后分母从 17556 降到 3558，基准从 76.30% 升到 88.79%。
  *
+ * ## 上面的数字是 v0.8 期（2026-10-09）的快照，现行值见下
+ *
+ * 截至 2026-10-10 的最后一次 `jacocoTestDebugReport`（生成于 15:27，晚于全部源文件）：
+ * `core` 2466/2686、`api` 1035/1929，合计 **3310/3736 = 88.60%**。
+ * 结构上拿不到 JVM 覆盖率的三层维持不变：`paint` 0/1498、`internal` 0/985、
+ * 根包 `DayTimelineView` 0/4036，三者合计 6519 条，占总量 11134 条的 58.6%。
+ *
+ * 因此本任务打印的「实际 xx%」以**当前的**报告为准，本 KDoc 只解释口径的形成过程。
+ * 写入现值时请重新生成报告后读取，不要凭记忆填数字。
+ *
  * ## 排除结构代码后，这条门禁的敏感度有限（实测结论，勿误读）
  *
- * 排除结构代码后基准为 88.79%（3159/3558）。反向验证：往 `EditResult` 注入
+ * 排除结构代码后基准为 88.79%（3159/3558，v0.8 期值）。反向验证：往 `EditResult` 注入
  * 5 段共 119 条**真实的未测逻辑**（含 for 循环、when、算术分支），
  * 覆盖率仅降到 85.91%，**仍在 75% 阈值之上**。
  *
