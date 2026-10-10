@@ -2,6 +2,7 @@ package com.github.kevinvane.daytimeline.app
 
 import android.os.ParcelFileDescriptor
 import android.view.KeyEvent
+import android.view.MotionEvent
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.Espresso.onView
@@ -226,6 +227,43 @@ class MainActivityCancelPathTest {
         assertEquals("只是看了详情就关掉，不得改动业务数据", before, dataSnapshot())
     }
 
+    /**
+     * **删除二次确认被放弃**后，用户仍能退出编辑态，且不改动任何数据。
+     *
+     * 路径：详情 → 删除 → `enterEditMode`（静默）→ `requestDelete` → 默认 `AlertDialog`。
+     * 按返回键取消对话框时，两个按钮的 listener 都不触发，`performDelete` 不执行，
+     * **编辑态原样保留**（PRD 场景 E 的 E4「放弃 → 回到编辑态，数据不变」）。
+     *
+     * 这是页面上唯一会「有编辑态却没有任何对话框」的状态：详情已关、表单没弹。
+     * `edit_actions` 删除后，唯一的出口是 FI-010「点组件外部区域视为取消」——
+     * 本条钉住的就是这个事实。若将来连 FI-010 也被改掉，用户会彻底困在编辑态。
+     */
+    @Test
+    fun abandoningDeleteConfirmationCanStillEscapeByTappingOutside() {
+        val before = dataSnapshot()
+
+        openDetail("standup")
+        onView(withId(R.id.detail_delete)).perform(click())
+        waitUntilIdle()
+
+        // 按返回放弃二次确认：两个按钮都不触发，数据与编辑态都不应变
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        waitUntilIdle()
+        assertEquals("放弃二次确认不得删除任何日程", before, dataSnapshot())
+        assertTrue(
+            "放弃二次确认后应仍在编辑态（场景 E4）",
+            timeline.isEditing(),
+        )
+
+        tapTimelineNearBottom()
+
+        assertFalse(
+            "删除 edit_actions 后，点组件外部（FI-010）必须仍能退出编辑态",
+            timeline.isEditing(),
+        )
+        assertEquals("经 FI-010 退出不得改动任何业务数据", before, dataSnapshot())
+    }
+
     // ---- 进入编辑态与窗口操作 ----
 
     /**
@@ -326,6 +364,19 @@ private fun invokeInternal(name: String, block: PlacedBlock) {
             waitUntilIdle()
             if (!timeline.isEditing()) return
         }
+    }
+
+    /** 在时间轴靠近底部的位置模拟一次点击（必定在编辑块之外，触发 FI-010）。 */
+    private fun tapTimelineNearBottom() {
+        val x = (timeline.width * 0.7f).toInt()
+        val y = (timeline.height * 0.97f).toInt()
+        val down = System.currentTimeMillis()
+        listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP).forEach { action ->
+            val e = MotionEvent.obtain(down, down, action, x.toFloat(), y.toFloat(), 0)
+            onMainSync { timeline.dispatchTouchEvent(e) }
+            e.recycle()
+        }
+        waitUntilIdle()
     }
 
     // ---- 业务方数据源快照 ----

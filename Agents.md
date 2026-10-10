@@ -94,7 +94,7 @@ Windows 下用 `gradlew.bat`：
 .\gradlew.bat detekt                          # 静态检查 + 代码风格 0 违规
 .\gradlew.bat :library:verifyNoDeadCode       # 死代码 0 处（依赖 detekt）
 .\gradlew.bat :r8test:verifyKeptSymbols       # 混淆产物构建 + 对外契约类符号核对（不需要设备）
-.\gradlew.bat connectedAndroidTest           # 需要设备/模拟器（含 :app 的 6 条 demo 用例）
+.\gradlew.bat connectedAndroidTest           # 需要设备/模拟器（含 :app 的 7 条 demo 用例）
 ```
 
 `lint` 用的是 AGP 默认规则 + `lint { warningsAsErrors = true }`——**没有配置任何 lint baseline**，
@@ -114,19 +114,32 @@ Windows 下用 `gradlew.bat`：
   保留，再在**混淆后的 release 变体**上跑仪器测试——这是「业务方开启混淆后功能正常」
   的唯一有效证据（library 自身不开混淆，保留规则写错也不会有任何东西报错）。
 - **CI**（`.github/workflows/ci.yml`）：三个 job——静态门禁 / 仪器测试 / R8 验证。
-- **仪器测试** 74 个（`:library:connectedDebugAndroidTest`）+ 6 个
+- **仪器测试** 74 个（`:library:connectedDebugAndroidTest`）+ 7 个
   （`:app:connectedDebugAndroidTest`），R8 混淆变体 6 个。
 
 尚未建立：
 
 - 无 pre-commit 钩子（当前只在 CI 里阻断）。
 - 无死代码检查工具之外的「删除前确认」类防护。
-- **`:app` demo 只覆盖了取消链路**（`MainActivityCancelPathTest` 6 条）。表单提交、
-  删除二次确认、日期切换、配置面板等业务方侧路径仍无自动化——这类缺陷的特点是
-  **组件测试全绿也照样发生**，因为收尾代码写在业务方而不在组件里。
+- **`:app` demo 只覆盖了取消链路、表单提交与删除二次确认的「放弃」分支**
+  （`MainActivityCancelPathTest` 7 条）。删除成功、日期切换、配置面板等业务方侧路径
+  仍无自动化——这类缺陷的特点是**组件测试全绿也照样发生**，
+  因为收尾代码写在业务方而不在组件里。
 - 仪器测试的执行数据**不并入** JaCoCo JVM 报告，因此覆盖率门禁看不到
   View / 绘制 / 资源读取层的执行情况。补上需要 `jacoco-android` 等第三方插件，
   与 K10「零第三方依赖」冲突，待单独评估。
+
+## demo 的一处已知依赖
+
+`MainActivity` 的 `EditController.onEnterEditing` 恒返回 `true`（接管必然生效，FI-010 随即失效），
+而底部常驻的「完成 / 取消 / 删除」按钮已删除（见技术方案 §9.6）——
+编辑态入口全部走表单与详情弹窗。
+
+**后果**：唯一「有编辑态却没有任何对话框」的状态（详情 → 删除 → 二次确认按返回放弃，
+PRD 场景 E 的 E4）**只能靠 FI-010「点组件外部区域视为取消」退出**。
+改 FI-010 语义、或让 `editTakenOver` 在该路径上残留时，demo 会静默失去出口。
+`MainActivityCancelPathTest.abandoningDeleteConfirmationCanStillEscapeByTappingOutside`
+就是守住这条依赖的用例，动 FI-010 前先看它。
 
 ## 一条自省的教训
 
@@ -149,3 +162,19 @@ Windows 下用 `gradlew.bat`：
 反过来，写断言时也常踩这个坑：先断言「数据变了」还是先断言「数据没变」，
 决定了用例是有效还是空跑——`cancellingTheFormChangesNothing` 先在表单里改了标题再取消，
 否则「什么都没丢」也能通过。**要让对照组先证明这条链路本来是能生效的。**
+
+## 第三条：「看着像死代码」的东西，先跑一遍再说
+
+评估 `activity_main.xml` 的 `edit_actions`（底部常驻的「完成/取消/删除」）时，
+按代码推理的结论是「死 UI 可删」：`EditController.onEnterEditing` 恒接管，
+四个进入编辑态的入口里三个立刻弹模态表单盖住按钮，第四个紧跟终态调用——
+**没有任何状态能点到底部按钮**。原注释「未接管时用页面底部的按钮走传统路径」
+还写着一个 demo 里永远走不到的分支，进一步佐证。
+
+实测推翻了它：详情 → 删除 → 二次确认按返回放弃（场景 E 的 E4）时，
+编辑态保留而三个窗口全关，底部「取消」是当时唯一显眼的出口。
+
+**这类推理的盲区是「跨窗口的状态残留」**：对话框 A 打开时状态是 X，
+关掉 A、弹 B 之前的那一瞬间，屏幕上什么都没有而状态仍停在 X。
+纯读代码容易把这条路径当成「不可能到达」。**判断某个 UI 元素是否死代码，
+先写条测试把状态驱动出来，比读一百行调用链可靠。**

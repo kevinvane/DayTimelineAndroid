@@ -90,10 +90,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 未接管时用页面底部的按钮走传统路径（FI-008 / FI-009 / FI-011）
-        findViewById<Button>(R.id.btn_done).setOnClickListener { timeline.confirmEdit() }
-        findViewById<Button>(R.id.btn_cancel).setOnClickListener { timeline.cancelEdit() }
-        findViewById<Button>(R.id.btn_delete).setOnClickListener { timeline.requestDelete() }
+        // 「完成 / 取消 / 删除」三个出口由业务方自己的界面提供：表单（`sheet_event_form.xml`）
+        // 与详情弹窗（`popup_event_detail.xml`）里各有一套。组件不内置按钮（PRD §7.7 的
+        // 「可配置是否内置」尚未实现，见技术方案 §9.4 第 1 条）。
 
         timeline.listener = object : TimelineListener {
             /**

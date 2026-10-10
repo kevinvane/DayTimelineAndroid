@@ -933,7 +933,7 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | v0.9 | 2026-10-09 | 新增 **AD-23 日程详情**（对齐 PRD v1.5 §7.7.2）：组件零新增 View，只加 detailOf / enterEditMode / clearSelection 三个入口与 EventDetail 只读快照。记录 enterEditMode 的必要性——三个出口都以编辑态为前提，而 FI-004 只认长按手势，业务方在详情里点「删除」会静默无效；记录首版把「进入编辑态」与「弹出表单」耦合导致的「点编辑弹出两个表单」及拆分方案（影响面还包含完成/取消/删除）；记录被否决的 editDraftOf() 方案（会给业务方可写句柄，绕过 D3）；记录真机发现的两个问题：showAsDropDown 因 anchor 为整个时间轴而把弹窗推出屏幕，以及 ContextCompat.getColor 误用属性 ID 致真机崩溃（编译/lint/detekt 全部通过）。文档头「对应 PRD」升至 v1.5。**本次（v0.10）另行订正一处记录错位**：本行此前误写在 §9.5「已完成」表格末尾，使变更记录实际止于 v0.8 | — |
 | v0.10 | 2026-10-09 | 新增 **AD-24（FI-012 首次定位）**。前情：`dtAutoLocateOnFirstShow` 属性自 v1.1 起就声明在 `attrs.xml` / `TimelineConfig` 里、M3-8 早已标为完成，**但全仓没有任何代码读取它**——「支持自动定位当前时间」是个只会回答「支持」的功能。本次补齐：定位规则取 PRD §8.5 的「视口三分之一屏」而非固定 48dp（比例无量纲，按 AD-15 走 `Geometry` 代码常量，不进 `dimens.xml`）；`onSizeChanged` 为触发点（视口高度首个已知时刻）；`initialScrollSettled` 令业务方显式位置与 D12 状态恢复均优先于自动定位；外部滚动模式下 `maxScroll()` 恒为 0，天然不位移。顺带统一 `minuteToContentY()`，修掉 `scrollToMinute` 漏加 `topPadding` 导致所有非零留白下偏上 8dp 的既有缺陷（同一公式此前在五处各抄一遍）。**连带返工**：17 个存量仪器测试因该功能生效而失败（夹具把事件放 01:00 并用 `visibleBlockSnapshot` 定位），已在两个夹具 `setUp` 里显式关闭自动定位并注明原因。门禁全部复跑通过，63 个仪器测试真机全绿 | — |
 | v0.11 | 2026-10-10 | **评审 PRD Q1 的连带修订**（对齐 PRD v1.7）：① 新增 **AD-25**——评审 §14.3 Q1 时发现它字面只写「编辑态『取消』」，而 D3 与 §8.2 要求的是「**任何**取消路径」；实际有四条（FI-009 / FI-010 / **E20 自动取消** / 接管后退出），其中 E20 在 View 层只清了 `editSession`，遗留四项状态，导致选中描边残留、「编辑取消」事件不发（§15 完成率分母失真）、**接管标志残留会让下一轮 FI-010 被静默禁用**。修复方式是把清零收敛为私有 `clearEditState()` 单一出口（确认 / 取消 / 删除接管 / 删除确认 / E20 五处共用），顺带修掉 `confirmEdit` 漏清 `grabbedHandle`；E20 现与用户取消完全等价。新增 5 条仪器测试。② §7 开放问题编号由 `Q1`–`Q9` 改为 **`OQ-1`–`OQ-9`**——此前与 PRD §14.3 的产品底线 `Q1`–`Q11` 同号不同义，正文「Q1 专项」等引用两处含义。改后本节不再占用 `Qn`，正文中余下的 `Q1`–`Q11` 即为 PRD 底线；取消路径专项相关处（M4-7、M4-9、M4 出口、§4 对照表）另加「PRD」二字强调。③ **OQ-1 改写**：原文称色项「无取值、阻塞性=阻塞」，与本文 §9.1「17 项取值已就位（AD-12 占位）」自相矛盾，且配色实现早已开工——改为「已占位待设计定稿」，阻塞性降为「中」。④ OQ-5 标记已关闭（PRD §16.2 重复段落本次已删）。⑤ AD-09 与 §6.1 中「色项没有取值 / M0 是硬阻塞，无法开工」的过期表述同步订正为「阻塞的是视觉终稿验收，不是开发」。⑥ 覆盖率实测回写：核心 **91.73%**（原 91.64%）、可测逻辑 **88.49%**（原 88.79%）。⑦ **补回 AD-14**（绘制上下文必须复用）——该条内容此前在 AD-24 之后以无标题的孤儿段落存在，导致编号从 AD-13 直接跳到 AD-15，而 §8 变更记录与 AD-15/AD-18 都在引用它；已归位到 AD-13 与 AD-15 之间并补标题，内容与代码现状核对一致（`BlockContext` 为字段可变的普通类，KDoc 已写明不得长期持有）。⑧ **删除 AD-18 的两份残留重复副本**（位于 AD-25 之后、无标题、且比 §3 内的正文版本少一行表格与一句话），属早期编辑残留。**仪器测试已在真机复跑：`:library:connectedDebugAndroidTest` 68/68 全绿**（Pixel / Android 9），含本次新增的 5 条 E20 用例——本次修复的三个后果（选中描边残留、完成率分母漏计、FI-010 被静默禁用）现已全部有真机证据，不再是「编译通过即认为正常」。 | — |
-| v0.12 | 2026-10-10 | **修复 `ACTION_CANCEL` 并补两处覆盖缺口**（AD-26）：① 新增 **AD-26**——评审时发现 `onTouchEvent` 的 `ACTION_UP` 与 `ACTION_CANCEL` 共用一个分支，取消时只做清理、随后**仍按 `intent` 分派**：判为 Click 会凭空触发点击（编辑态下还会顺带 FI-010 取消），判为 LongPress 会凭空进入编辑态。用户被父容器打断却收到一次完整操作的副作用。该路径此前**测试侧零命中**。修复为 `ACTION_CANCEL` 提前 return、只做清理，并补喂 `gestureDetector`（此前只喂 DOWN，其 pending 的长按消息不会被撤掉）；编辑态保持不变——手势被中断不等于用户做了选择。**反向验证：回滚修复后 3 条测试同时转红**，失败信息与缺陷症状逐条对应。② 补**外部滚动模式下的取消路径**（3 条）——此前 `DayTimelineViewEditTest` 从不设 `scrollMode`，§8.6 / D6「外部容器滚动时取消行为一致」零证据。③ **为 `:app` 建仪器测试**（`MainActivityCancelPathTest` 6 条）并接入 CI——`app/src/` 此前只有 `main`，而 demo 侧两条最贴近真实用户的取消收尾（`BottomSheetDialog.onDismiss`、`PopupWindow.onDismiss` + `actionTaken`）都写在业务方侧，组件测试再绿也证明不了它们。断言改为**比对业务方数据源快照**而非数回调。**反向验证：删掉 `onDismiss` 里的 `cancelEdit()` 后 2 条转红。** ④ §9.4 第 6 条结项，新增第 7 条记录 demo 其余路径（表单提交、删除二次确认、日期切换、配置面板）仍无自动化 | — |
+| v0.12 | 2026-10-10 | **修复 `ACTION_CANCEL` 并补两处覆盖缺口**（AD-26）：① 新增 **AD-26**——评审时发现 `onTouchEvent` 的 `ACTION_UP` 与 `ACTION_CANCEL` 共用一个分支，取消时只做清理、随后**仍按 `intent` 分派**：判为 Click 会凭空触发点击（编辑态下还会顺带 FI-010 取消），判为 LongPress 会凭空进入编辑态。用户被父容器打断却收到一次完整操作的副作用。该路径此前**测试侧零命中**。修复为 `ACTION_CANCEL` 提前 return、只做清理，并补喂 `gestureDetector`（此前只喂 DOWN，其 pending 的长按消息不会被撤掉）；编辑态保持不变——手势被中断不等于用户做了选择。**反向验证：回滚修复后 3 条测试同时转红**，失败信息与缺陷症状逐条对应。② 补**外部滚动模式下的取消路径**（3 条）——此前 `DayTimelineViewEditTest` 从不设 `scrollMode`，§8.6 / D6「外部容器滚动时取消行为一致」零证据。③ **为 `:app` 建仪器测试**（`MainActivityCancelPathTest` 6 条）并接入 CI——`app/src/` 此前只有 `main`，而 demo 侧两条最贴近真实用户的取消收尾（`BottomSheetDialog.onDismiss`、`PopupWindow.onDismiss` + `actionTaken`）都写在业务方侧，组件测试再绿也证明不了它们。断言改为**比对业务方数据源快照**而非数回调。**反向验证：删掉 `onDismiss` 里的 `cancelEdit()` 后 2 条转红。** ④ §9.4 第 6 条结项，新增第 7 条记录 demo 其余路径仍无自动化（日期切换、配置面板、删除成功路径）。**顺带删除 ctivity_main.xml 的 edit_actions 三个常驻按钮**——编辑态入口收敛到表单与详情弹窗，理由、代价与验证见 §9.6。**本次该用例数从 6 增至 7**：新增 bandoningDeleteConfirmationCanStillEscapeByTappingOutside 钉住「删除二次确认放弃后 FI-010 是唯一出口」这条依赖 | — |
 
 ---
 
@@ -962,7 +962,7 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | 静态代码检查 0 严重 | **达成** | 同 detekt |
 | R8 混淆后功能正常 | **达成** | `:r8test:verifyKeptSymbols`（10 个契约类全保留）+ `:r8test:connectedReleaseAndroidTest`（混淆变体仪器测试 **6/6**，Pixel / Android 9，2026-10-10 复跑）。**首次运行即抓出 3 个发布阻断级缺陷** |
 | 仪器测试（L2） | **达成** | `:library:connectedDebugAndroidTest` **74/74 全绿**（Pixel / Android 9，2026-10-10）。含 AD-25 的 5 条 E20 用例与 AD-26 的 3 条 `ACTION_CANCEL` 用例、3 条外部滚动模式取消用例 |
-| 示例应用仪器测试 | **达成** | `:app:connectedDebugAndroidTest` **6/6 全绿**（`MainActivityCancelPathTest`）。**2026-10-10 新建，此前 `app/src/` 只有 `main`**——demo 侧两条取消收尾只靠注释自证；已接入 CI |
+| 示例应用仪器测试 | **达成** | `:app:connectedDebugAndroidTest` **7/7 全绿**（`MainActivityCancelPathTest`）。**2026-10-10 新建，此前 `app/src/` 只有 `main`**——demo 侧两条取消收尾只靠注释自证；已接入 CI |
 | 全库覆盖率 ≥ 75% | **达成（口径已修订）** | `:library:verifyAllCoverage` 实测 **88.49%**（3229/3649）。**口径与 PRD 原文不同**，见下方说明 |
 
 #### 9.2.1 「全库覆盖率」的口径修订（**已获产品认可**，PRD v1.4 §12.4.1）
@@ -1019,4 +1019,67 @@ PRD §12.4 原文是「全库覆盖率 ≥ 75%」。字面执行的结果是 **2
 | 可测逻辑覆盖率门禁 | `:library:verifyAllCoverage` 88.79%，已接入 CI（口径见 §9.2.1 / PRD §12.4.1） |
 | AD-26 `ACTION_CANCEL` 不再触发点击 / 长按 | 见 AD-26。3 条仪器测试；**回滚修复后实测 3 条同时转红**，确认断言真的咬得住 |
 | 外部滚动模式下的取消路径 | `cancelBehavesIdenticallyInExternalScrollMode` / `tappingOutsideStillCancelsInExternalScrollMode` / `e20AutoCancelAlsoWorksInExternalScrollMode`（此前该模式下取消路径零覆盖，D6 无证据） |
-| `:app` demo 的仪器测试 | `MainActivityCancelPathTest` 6 条，接入 CI。**实测把 `onDismiss` 里的 `cancelEdit()` 删掉后 2 条转红**，确认不是空跑 |
+| `:app` demo 的仪器测试 | `MainActivityCancelPathTest` 7 条，接入 CI。**实测把 `onDismiss` 里的 `cancelEdit()` 删掉后 2 条转红**，确认不是空跑 |
+| demo 编辑态入口收敛到弹窗 | 删除 `activity_main.xml` 的 `edit_actions` 三个常驻按钮，「完成 / 取消 / 删除」改由表单与详情弹窗提供。**代价与验证见 §9.6** |
+
+### 9.6 demo 编辑态入口收敛（2026-10-10）
+
+**`edit_actions` 已删除**
+
+#### 改了什么
+
+`activity_main.xml` 底部常驻的「完成 / 取消 / 删除」三个按钮（`edit_actions`）
+连同 `MainActivity.kt:94-96` 的三行监听一并删除。三个出口改由业务方自己的
+弹窗提供：`sheet_event_form.xml`（表单，确定 / 取消）与
+`popup_event_detail.xml`（详情，完成 / 取消 / 删除 / 编辑）。
+布局约束同步由 `Bottom_toTopOf="@id/edit_actions"` 改为 `Bottom_toBottomOf="parent"`。
+
+#### 为什么它一度看着像死代码
+
+`MainActivity` 的 `EditController.onEnterEditing` **恒返回 `true`**，接管必然生效，
+FI-010 随即失效；而进入编辑态的四个入口里，三个会立刻弹出模态表单盖住底部按钮，
+第四个（`enterEditMode` 静默）来自详情弹窗且紧跟 `confirm/cancel/requestDelete`。
+按代码推理，「按钮可点且有用」的状态似乎不存在。
+
+`MainActivity:93` 的注释还写着「未接管时用页面底部的按钮走传统路径」——
+**这一分支在 demo 里永远走不到**。注释与代码不符，正是它差点被误当死代码删掉的原因。
+
+#### 实测推翻了这个结论
+
+唯一会「有编辑态却没有任何对话框」的状态是：**详情 →「删除」→ 二次确认对话框按返回键放弃**。
+此时 `AlertDialog` 两个按钮的 listener 都不触发、`performDelete` 不执行，
+编辑态原样保留（PRD 场景 E 的 E4「放弃 → 回到编辑态，数据不变」），
+而详情已关、表单没弹——`edit_actions` 的「取消」是当时唯一显眼的出口。
+
+已用 `abandoningDeleteConfirmationStillLeavesAnExit` 钉住该事实，
+再据此删除按钮并把该用例改写为断言 FI-010 出口
+（`abandoningDeleteConfirmationCanStillEscapeByTappingOutside`）。
+
+#### 代价：demo 现在依赖 FI-010
+
+删除后该状态下唯一出口是「点组件外部区域视为取消」（FI-010）。
+实测成立——`enterEditMode` 不调 `notifyEnterEditing`，故 `editTakenOver` 为 false，
+FI-010 生效，用户能退出且数据未变。
+
+但这是一个**没有任何提示的手势**：屏幕上只有一个高亮选中块，
+刚关掉模态对话框的用户多半不会再点。功能没坏，**可发现性变差**。
+将来若改动 FI-010 的语义或让 `editTakenOver` 在此路径上残留，
+demo 会静默地失去出口——这条依赖已由上述用例守住，改 FI-010 时必看它。
+
+#### 顺带修掉的一个隐患
+
+删除后 demo 里**不再存在永远可见、点了没反应的按钮**。
+那正是 PRD §7.7.2 点名的反例（「用户会看到一个能点、点了没反应的按钮」），
+demo 自己原本踩着。
+
+#### 未变的部分
+
+- 「业务方自备完成 / 取消 / 删除按钮」这一模式**没有丢失**：
+  `popup_event_detail.xml` 的四个按钮本来就是它的完整演示。
+- 删除成功路径的可达性不变（走 `performDelete`）。
+- 组件侧一行未动——组件本来就不内置按钮（PRD §7.7 的「可配置是否内置」仍未实现，见 §9.4 第 1 条）。
+
+#### 门禁
+
+detekt / lintDebug / test / verifyNoDeadCode(0) / verifyCoreCoverage(91.73%) /
+verifyAllCoverage(88.49%) / verifyKeptSymbols 全绿；`:app:connectedDebugAndroidTest` 7/7 全绿。
