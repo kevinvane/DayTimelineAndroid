@@ -36,6 +36,20 @@ object ConsumerApiSmoke {
         override fun onEventCreated(range: IntRange, content: CharSequence?) = onCreated(range)
     }
 
+    /**
+     * **Java 调用方**实现数据契约（OQ-7 / 风险 R12）。
+     *
+     * `JavaBusinessEvent` 是普通 Java 类：它编译不过就意味着 `TimelineEvent` 的签名
+     * 又变得 Java 不可实现了（value class 会把方法名混淆成 `getStart-ZruiD9E()`）。
+     * 经这里引用后，它同时进入混淆后的 release 仪器测试路径。
+     */
+    fun javaEvent(
+        id: String,
+        content: String?,
+        startMinute: Int,
+        endMinute: Int,
+    ): TimelineEvent = JavaBusinessEvent(id, content, startMinute, endMinute)
+
     /** 第四层接管契约（AD-22）。 */
     fun controller(onEnter: (EditDraft) -> Unit): EditController = object : EditController {
         override fun onEnterEditing(draft: EditDraft): Boolean {

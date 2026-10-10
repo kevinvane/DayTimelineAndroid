@@ -8,6 +8,8 @@ import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.kevinvane.daytimeline.library.DayTimelineView
+import com.github.kevinvane.daytimeline.library.api.endMinute
+import com.github.kevinvane.daytimeline.library.api.startMinute
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -91,6 +93,29 @@ class R8ConsumerTest {
     @Test
     fun businessEventImplementationWorksAfterMinification() {
         view.submitEvents(listOf(ConsumerApiSmoke.event("e1", "混淆前的标题")))
+        val bmp = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(bmp))
+        assertTrue(hasNonTransparentPixel(bmp))
+    }
+
+    /**
+     * **Java 调用方**也能实现数据契约，且混淆后组件真的读得到（OQ-7 / 风险 R12）。
+     *
+     * 断言刻意不停在「没崩」：读回 title / 起止时间，证明 `JavaBusinessEvent` 实现的
+     * 方法签名与组件的调用方一致——光 submit + draw 只能证明没抛异常。
+     */
+    @Test
+    fun javaCallerCanImplementContractAfterMinification() {
+        view.submitEvents(
+            listOf(ConsumerApiSmoke.javaEvent("j1", "Java 业务方的日程", 540, 600)),
+        )
+
+        val detail = view.detailOf("j1")
+        assertNotNull("Java 实现的契约提交后应能被组件读取", detail)
+        assertEquals("content 经 Java 实现回读应一致", "Java 业务方的日程", detail!!.content?.toString())
+        assertEquals("start 经 Java 实现回读应一致", 540, detail.startMinute.minuteOfDay)
+        assertEquals("end 经 Java 实现回读应一致", 600, detail.endMinute.minuteOfDay)
+
         val bmp = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
         view.draw(Canvas(bmp))
         assertTrue(hasNonTransparentPixel(bmp))

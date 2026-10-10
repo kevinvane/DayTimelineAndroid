@@ -65,8 +65,12 @@ data class Meeting(
 }
 ```
 
-> `start` / `end` 的类型是 `MinuteOfDay`（值类型），业务方拿不到裸 `Int`，
+> `start` / `end` 的类型是 `MinuteOfDay`（**私有构造函数的普通类**，只能经
+> `MinuteOfDay.of(hour, minute)` 等具名工厂构造），业务方拿不到裸 `Int`，
 > 因此 `start = 90` 这类把「小时」误当「分钟」的代码**编译不过**。
+> **Kotlin 与 Java 业务方均可实现 `TimelineEvent`**：Java 侧需自行声明
+> `expiredOverride` / `content` / `color` 三个可选方法的缺省值（与 Kotlin 缺省一致），
+> 完整示例见 `:r8test` 模块的 `JavaBusinessEvent.java`。
 
 需要按任务状态而非时间判断是否已过期时，追加 `expiredOverride`（三态推导规则见 PRD §9.4）。
 

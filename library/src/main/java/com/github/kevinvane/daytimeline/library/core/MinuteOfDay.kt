@@ -4,19 +4,37 @@ package com.github.kevinvane.daytimeline.library.core
  * 「当天的第几分钟」值类型。
  *
  * PRD D18 / D19 / §9.1：时间必须以「几点几分」表达，且要让「传错时间单位」在**编译期**
- * 就不可能发生。这里的做法是 `@JvmInline value class` + **私有构造函数**：
- * 业务方拿不到裸 `Int`，只能经 [of] / [parse] / [START_OF_DAY] 等工厂构造，
- * 因此 `event.start = 90` 这类把「小时」误当「分钟」的代码编译不过。
+ * 就不可能发生。这里的做法是**普通类 + 私有构造函数**：业务方拿不到裸 `Int`，
+ * 只能经 [of] / [parse] / [START_OF_DAY] 等工厂构造，因此 `event.start = 90`
+ * 这类把「小时」误当「分钟」的代码编译不过。
  *
  * 私有构造函数是本类型成立的关键，**不要**为了方便改成 public，也不要加 `operator invoke`。
+ *
+ * ## 为什么不是 `@JvmInline value class`
+ *
+ * 本类型最初是 `@JvmInline value class`（技术方案 AD-02 的原始决策）。它的问题在
+ * OQ-7 / 风险 R12 中被实测发现：Kotlin 会对**返回值类型为值类型**的方法名做编译期
+ * 混淆，字节码层的 `TimelineEvent.getStart()` 实际叫 `getStart-ZruiD9E()`，
+ * `-ZruiD9E` 不是合法 Java 标识符，**Java 调用方根本无法实现 `TimelineEvent` 契约**
+ * （`javac` 实测报「不是抽象类或接口中方法的覆盖」）。
+ *
+ * 普通类没有这个问题：接口方法名干净，Java 侧 `implements TimelineEvent` +
+ * `MinuteOfDay.of(9, 30)` 直接可用（`:r8test` 的 `JavaBusinessEvent.java` 就是守住
+ * 这条性质的守护用例，若改回 value class，它会立刻编译失败）。D18 保证不受影响——
+ * 私有构造函数与具名工厂仍在，只是「零分配」这个 compile-time 特性被交换掉了。
+ *
+ * ## 手写 equals / hashCode 的原因
+ *
+ * value class 的相等性与哈希由编译器按底层 `Int` 免费生成；普通类必须自己写。
+ * 它们已被 `TimeTest` 的用例钉住（含放进 Set/Map 的行为）。**新增字段时必须同步
+ * 更新这两个方法**，否则同一时刻的两个实例会被判为不等。
  *
  * 取值域固定为 `[0, 1440]`：0 表示 00:00，1440 表示 24:00（当日末尾，不跨天）。
  * 越界值一律被静默钳制而非抛异常——PRD Q4 要求任何输入下组件都不把异常抛给业务方。
  *
  * 纯 Kotlin，无任何 `android.*` 依赖（AD-02 / T2）。
  */
-@JvmInline
-value class MinuteOfDay private constructor(val minuteOfDay: Int) {
+class MinuteOfDay private constructor(val minuteOfDay: Int) {
 
     /** 小时部分 `[0, 24]`。1440 分钟对应 24。 */
     val hour: Int get() = minuteOfDay / MINUTES_PER_HOUR
@@ -48,6 +66,12 @@ value class MinuteOfDay private constructor(val minuteOfDay: Int) {
         }
     }
 
+    /** 同一分钟即相等。与 [hashCode] 必须保持一致，TimeTest 有用例钉住。 */
+    override fun equals(other: Any?): Boolean = other is MinuteOfDay && other.minuteOfDay == minuteOfDay
+
+    /** 直接散列底层分钟数；与 [equals] 必须保持一致，TimeTest 有用例钉住。 */
+    override fun hashCode(): Int = minuteOfDay
+
     companion object {
         const val MINUTES_PER_HOUR = 60
         const val HOURS_PER_DAY = 24
@@ -55,9 +79,11 @@ value class MinuteOfDay private constructor(val minuteOfDay: Int) {
         const val END_OF_DAY_MINUTE = MINUTES_PER_DAY
 
         /** 00:00。 */
+        @JvmField
         val START_OF_DAY: MinuteOfDay = MinuteOfDay(0)
 
         /** 24:00。当日末尾，不跨天（PRD E4：超过 24:00 的结束时间应截断到此）。 */
+        @JvmField
         val END_OF_DAY: MinuteOfDay = MinuteOfDay(END_OF_DAY_MINUTE)
 
         /**
@@ -71,6 +97,7 @@ value class MinuteOfDay private constructor(val minuteOfDay: Int) {
          * 归一化（钳制到 `[0, 1440]`、修正非正时长）统一由
          * [EventSanitizer] 负责——它才是校验层，值类型只负责保证类型安全。
          */
+        @JvmStatic
         fun of(hour: Int, minute: Int): MinuteOfDay =
             MinuteOfDay(hour * MINUTES_PER_HOUR + minute)
 
@@ -80,12 +107,14 @@ value class MinuteOfDay private constructor(val minuteOfDay: Int) {
          * 供组件内部算法自由用整数运算，避免反复构造/解包。
          * 同样不钳制，理由见 [of]。
          */
+        @JvmStatic
         fun ofMinute(minuteOfDay: Int): MinuteOfDay = MinuteOfDay(minuteOfDay)
 
         /**
          * 解析 `"09:30"` / `"9:30"` / `"24:00"`。格式非法返回 null，由上层记为数据异常。
          * 刻意不抛异常，与 Q4「不把异常抛给业务方」一致。
          */
+        @JvmStatic
         fun parse(text: String): MinuteOfDay? {
             val trimmed = text.trim()
             val colon = trimmed.indexOf(':')

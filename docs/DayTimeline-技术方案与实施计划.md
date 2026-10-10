@@ -2,10 +2,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v0.12（草案） |
+| 文档版本 | v0.14（草案） |
 | 状态 | 待评审 |
 | 编写日期 | 2026-09-30 |
-| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.7（v1.7 为 Q1 取消路径口径澄清，见 AD-25；FR / FI 编号未变） |
+| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.9（v1.7 为 Q1 取消路径口径澄清，见 AD-25；v1.8 关闭 R9 并新增 R12；v1.9 按 OQ-7 方案 A 支持 Java 接入，见 AD-02；FR / FI 编号未变） |
 | 文档读者 | 研发、测试、设计 |
 
 ---
@@ -102,18 +102,21 @@ library/src/main/java/com/github/kevinvane/daytimeline/library/
 - 内容总高度 = `24 × 格高 + 顶部留白 + 底部留白`（§19.2 高度约定，外部滚动模式直接作为 View 高度）。
 - 视口裁剪由 Canvas 天然完成，不需手动裁剪逻辑；只绘制与视口相交且非零高度的块（D4 尺寸不为负的守卫点之一）。
 
-### AD-02　时间用编译期安全的值类型（同时关闭 R9）
+### AD-02　时间用编译期安全的值类型（关闭 R9；v0.14 起改为普通类以支持 Java 调用方）
 
-**决策**：
+**决策（v0.14 修订后）**：
 
 ```kotlin
-@JvmInline
-value class MinuteOfDay private constructor(val minuteOfDay: Int) {
+class MinuteOfDay private constructor(val minuteOfDay: Int) {
+    val hour: Int; val minute: Int
+    override fun equals(other: Any?): Boolean = other is MinuteOfDay && other.minuteOfDay == minuteOfDay
+    override fun hashCode(): Int = minuteOfDay
     companion object {
-        fun of(hour: Int, minute: Int): MinuteOfDay   // 唯一正常构造入口
-        fun parse(text: String): MinuteOfDay          // "09:30"
-        val START_OF_DAY: MinuteOfDay
-        val END_OF_DAY: MinuteOfDay                   // 24:00
+        @JvmStatic fun of(hour: Int, minute: Int): MinuteOfDay   // 唯一正常构造入口
+        @JvmStatic fun ofMinute(minuteOfDay: Int): MinuteOfDay
+        @JvmStatic fun parse(text: String): MinuteOfDay?          // "09:30"
+        @JvmField val START_OF_DAY: MinuteOfDay
+        @JvmField val END_OF_DAY: MinuteOfDay                    // 24:00
     }
 }
 ```
@@ -131,14 +134,23 @@ interface TimelineEvent {
 
 **依据**：D18（传错单位在编译期不可能）、D19（编译期类型保障）、§9.1「时间用几点几分表达」。
 
-**关键结论 —— 风险 R9 可以关闭**：`value class` 是**编译期**特性，编译后展开为 `int`，**不依赖任何运行时 API 或 desugaring**。因此「最低支持版本 23」与「D18 编译期保障」**不构成冲突**，R9 提出的二选一（① 抬高 minSdk / ② 降级为运行期校验）**都不必选**。R9 应在 M1 用最小样例验证后标记为已关闭。
+**关键结论 —— 风险 R9 可以关闭（M1-8 已实测，2026-10-10）**：`value class` 是**编译期**特性，编译后展开为 `int`，**不依赖任何运行时 API 或 desugaring**。因此「最低支持版本 23」与「D18 编译期保障」**不构成冲突**，R9 提出的二选一（① 抬高 minSdk / ② 降级为运行期校验）**都不必选**。这个结论与「用不用 value class」无关——改为普通类后同样成立（普通类连擦除都不需要，兼容性只强不弱）。
 
-**代价**：
-- `value class` 会被擦除为 `int`，Java 调用方看不到这个类型。对外 API 需提供 Java 可见的入口（`setEvents(List<TimelineEvent>)` 中的对象类型是 interface，问题不大；`MinuteOfDay` 的工厂需在 `api/` 层加 `@JvmStatic` 门面）。
-- 反射/序列化场景下类型信息丢失，需在 `api/` 显式提供转换方法。
+实测证据（三条，均可在本机复现）：
+
+1. `javap -p` 反编译 `library/build/tmp/kotlin-classes/debug/…/MinuteOfDay.class`：类内唯一字段为 `private final int minuteOfDay`，没有任何一处引用运行时 API（value class 时代方法签名全部收 `int` 吐 `int`，如 `getHour-impl(int)`；普通类时代为普通实例方法，见 v0.14 修订）。
+2. `:library:assembleDebug` 在 `minSdk = 23` + Kotlin 2.0.21 下通过；`library/build.gradle.kts` **未启用** `isCoreLibraryDesugaring`，依赖里也没有 `desugar_jdk_libs`——不存在为支持值类型额外引入的兼容层。
+3. 74 个仪器测试在真机（Pixel / Android 9）全绿，`MinuteOfDay` 被 `core/`、`api/`、`internal/`、`paint/` 与 demo 全量使用。**口径说明**：真机型号为 API 28，不是 API 23；但产物只有 `int` 运算与 `kotlin-stdlib`（Kotlin 插件已携带），不含任何按 API 级别分支的行为，「与 minSdk 23 并存成立」这个结论由证据 1、2 独立成立，真机证据负责的是「行为在真实运行时不退化」。
+
+**代价与 v0.14 修订（OQ-7 决议：支持 Java 调用方）**：
+
+- ~~`value class` 会被擦除为 `int`，Java 调用方看不到这个类型，且无法实现 `TimelineEvent` 契约。~~ **已解决**：`MinuteOfDay` 改为普通类。原因是 Kotlin 会对**返回值类型为值类型**的方法名做编译期混淆，`javap` 显示接口只有 `int getStart-ZruiD9E()` / `int getEnd-ZruiD9E()`，`-ZruiD9E` 不是合法 Java 标识符，`javac` 实测按 `int getStart()` 实现直接报「不是抽象类或接口中方法的覆盖」（`@Override` 即编译失败）——Java 调用方根本无法实现数据契约。改普通类后方法名干净，Java 侧 `implements TimelineEvent` + `MinuteOfDay.of(9, 30)` 直接可用。
+- **新代价 D：手写 equals / hashCode**。value class 的相等性与哈希由编译器按底层 `Int` 免费生成；普通类必须自己写。已由 `TimeTest` 三条用例钉住（同时刻相等且哈希一致、不同时不相等且不认裸 `Int`/文本/null、可作 Set/Map 键）。**新增字段时必须同步更新这两个方法。**
+- **新代价 E：热路径恢复分配**。构造点共约 43 处（`EventSanitizer` 16、`SnapCalculator` 6、`EditSession` 4 等），集中在数据清洗与拖拽吸附；`OverlapLayoutEngine` 与绘制层零构造，布局/绘制热路径无新增分配。U12（200 条全同时）压测门槛不变，仍由既有用例守着。
+- **新代价 F：R8 保留规则必须同步收紧**。`consumer-rules.pro` 里 `MinuteOfDay` 原是 `-keepnames class`（只保类名）。普通类的公开成员（`getMinuteOfDay`/`getHour`/`of`/`ofMinute`/`parse`）是业务方可读可调的 API，只保类名时**跨 R8 边界即失效**——`:r8test` 的 `javaCallerCanImplementContractAfterMinification` 实测抓到 `NoSuchMethodError: getMinuteOfDay()I`（androidTest APK 是独立的一次 R8，按原名调用已在 app APK 里改过名的成员）。已改为 `-keep class …MinuteOfDay { *; }`，与 `EditDraft`/`EventDetail` 同规格。
+- **新代价 G：Java 接入仍有一点摩擦**。Kotlin 接口的默认实现（`expiredOverride`/`content`/`color`）在字节码层仍是抽象方法 + `DefaultImpls`（未开 `-Xjvm-default=all`），Java 实现方需自行给出缺省值。`:r8test` 的 `JavaBusinessEvent.java` 里有注释说明，将来若嫌摩擦大可评估 `-Xjvm-default=all`（本次不做）。
+- 反射/序列化场景下 `MinuteOfDay` 是普通类，反射可见性反而比 value class 更好；无需额外桥接。
 - 私有构造函数是编译期保证的关键，**不可为了方便改成 public 或加 `operator invoke`**。
-
-**待验证（M1）**：minSdk 23 + Kotlin 2.0.21 下产物无额外依赖；Java 调用方可用性；R9 正式关闭并同步更新 PRD §18。
 
 ### AD-03　重叠分栏与宽度分配（核心算法）
 
@@ -909,10 +921,10 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | OQ-1 | 17 项语义色项当前仅为 Material 3 baseline **占位值**（AD-12），设计终稿未出（M0 未完成） | 配色代码已可开发与验证，但视觉终稿无法验收；深浅两套需逐项替换 | 优先完成 M0，替换时逐项走深浅两套 | 中（原记「阻塞」已失效：配色实现未卡住） |
 | OQ-2 | 「零第三方依赖」未区分**运行时**与**测试期**。Robolectric / MockK 可让 View 层可单测，但会突破字面表述 | 影响测试策略与覆盖率达成方式 | 建议改述为「**运行时**零非 AndroidX 第三方依赖；测试期允许」 | 高 |
 | OQ-3 | K10 写「零第三方依赖」，§12.2 却允许 AndroidX 官方库。措辞冲突 | 影响依赖审查口径 | 统一为「零非 AndroidX 第三方运行时依赖」 | 中 |
-| OQ-4 | 风险 **R9**（minSdk 与 D18 冲突） | 本文 AD-02 给出结论「不冲突，`value class` 无运行时依赖」 | M1-8 实测后关闭 R9，并同步更新 PRD §18 | 中 |
+| OQ-4 | ~~风险 **R9**（minSdk 与 D18 冲突）~~ | — | **已关闭**（2026-10-10）：AD-02 结论已由 M1-8 实测证实（`javap` 字节码擦除为 `int`、无 desugaring 兼容层、真机 74 仪器用例全绿），R9 已在 PRD v1.8 §18 整条重写为「已排除」 | 已关闭 |
 | OQ-5 | ~~PRD §16.2 有重复段落：两次出现「排期为粗略预估…」~~ | — | **已处理**：冗余副本已删除，保留含「M0 未完成不得进入 M1」约束的完整版本（2026-10-10） | 已关闭 |
-| OQ-6 | PRD §12.2 原文「Android 7.0」已按 `minSdk = 23` 修正为「Android 6.0（API 23）」，但 §18 的 R9 仍以旧前提描述 | R9 结论一旦采纳，R9 整条应重写而非关闭 | 与 OQ-4 一并处理 | 中 |
-| OQ-7 | 对外 API 是否需要 Java 调用方友好门面（`value class` 擦除问题） | 影响 `api/` 设计 | 建议提供（`api/` 层加静态工厂），成本低 | 中 |
+| OQ-6 | ~~PRD §18 的 R9 仍以旧前提描述~~ | — | **已处理**（2026-10-10）：按「结论采纳后整条重写而非删除」重写为已排除并附实测证据，见 PRD v1.8 §18 | 已关闭 |
+| OQ-7 | ~~对外 API 是否需要 Java 调用方友好门面~~ | — | **已决议并实施（2026-10-10，方案 A）**：`MinuteOfDay` 由 `@JvmInline value class` 改为**普通类 + 私有构造函数 + `@JvmStatic` 工厂**，D18 编译期保证不受影响（裸 `Int` 仍赋不进去，TimeTest 有对照），Java 调用方现在可以实现 `TimelineEvent`（`:r8test` 的 `JavaBusinessEvent.java` + `javaCallerCanImplementContractAfterMinification` 守护，混淆后 7/7 真机全绿）。连带修掉 `consumer-rules.pro` 的 `MinuteOfDay` 只保类名不保成员（R8 跨 APK 边界 `NoSuchMethodError`）。**剩余小项**：Kotlin 接口默认实现未开 `-Xjvm-default=all`，Java 实现方需自写三个可选方法缺省值；是否开启该编译参数另行评估 | 已关闭 |
 | OQ-8 | L2 仪器测试的 `androidx.test` 版本当前未验证可用 | 影响 M2 起的测试排期 | M1 验证 | 低 |
 | OQ-9 | **表单输入的四个开放点**（空标题回落、表单打开时是否仍可拖拽、冲突态 E28 下能否提交、业务色深色适配责任） | 影响 AD-22 的实现细节 | 见《日程块表单输入方案》§9 的 QF-1~QF-4，当前均已给出建议默认值 | 中 |
 
@@ -934,6 +946,8 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | v0.10 | 2026-10-09 | 新增 **AD-24（FI-012 首次定位）**。前情：`dtAutoLocateOnFirstShow` 属性自 v1.1 起就声明在 `attrs.xml` / `TimelineConfig` 里、M3-8 早已标为完成，**但全仓没有任何代码读取它**——「支持自动定位当前时间」是个只会回答「支持」的功能。本次补齐：定位规则取 PRD §8.5 的「视口三分之一屏」而非固定 48dp（比例无量纲，按 AD-15 走 `Geometry` 代码常量，不进 `dimens.xml`）；`onSizeChanged` 为触发点（视口高度首个已知时刻）；`initialScrollSettled` 令业务方显式位置与 D12 状态恢复均优先于自动定位；外部滚动模式下 `maxScroll()` 恒为 0，天然不位移。顺带统一 `minuteToContentY()`，修掉 `scrollToMinute` 漏加 `topPadding` 导致所有非零留白下偏上 8dp 的既有缺陷（同一公式此前在五处各抄一遍）。**连带返工**：17 个存量仪器测试因该功能生效而失败（夹具把事件放 01:00 并用 `visibleBlockSnapshot` 定位），已在两个夹具 `setUp` 里显式关闭自动定位并注明原因。门禁全部复跑通过，63 个仪器测试真机全绿 | — |
 | v0.11 | 2026-10-10 | **评审 PRD Q1 的连带修订**（对齐 PRD v1.7）：① 新增 **AD-25**——评审 §14.3 Q1 时发现它字面只写「编辑态『取消』」，而 D3 与 §8.2 要求的是「**任何**取消路径」；实际有四条（FI-009 / FI-010 / **E20 自动取消** / 接管后退出），其中 E20 在 View 层只清了 `editSession`，遗留四项状态，导致选中描边残留、「编辑取消」事件不发（§15 完成率分母失真）、**接管标志残留会让下一轮 FI-010 被静默禁用**。修复方式是把清零收敛为私有 `clearEditState()` 单一出口（确认 / 取消 / 删除接管 / 删除确认 / E20 五处共用），顺带修掉 `confirmEdit` 漏清 `grabbedHandle`；E20 现与用户取消完全等价。新增 5 条仪器测试。② §7 开放问题编号由 `Q1`–`Q9` 改为 **`OQ-1`–`OQ-9`**——此前与 PRD §14.3 的产品底线 `Q1`–`Q11` 同号不同义，正文「Q1 专项」等引用两处含义。改后本节不再占用 `Qn`，正文中余下的 `Q1`–`Q11` 即为 PRD 底线；取消路径专项相关处（M4-7、M4-9、M4 出口、§4 对照表）另加「PRD」二字强调。③ **OQ-1 改写**：原文称色项「无取值、阻塞性=阻塞」，与本文 §9.1「17 项取值已就位（AD-12 占位）」自相矛盾，且配色实现早已开工——改为「已占位待设计定稿」，阻塞性降为「中」。④ OQ-5 标记已关闭（PRD §16.2 重复段落本次已删）。⑤ AD-09 与 §6.1 中「色项没有取值 / M0 是硬阻塞，无法开工」的过期表述同步订正为「阻塞的是视觉终稿验收，不是开发」。⑥ 覆盖率实测回写：核心 **91.73%**（原 91.64%）、可测逻辑 **88.49%**（原 88.79%）。⑦ **补回 AD-14**（绘制上下文必须复用）——该条内容此前在 AD-24 之后以无标题的孤儿段落存在，导致编号从 AD-13 直接跳到 AD-15，而 §8 变更记录与 AD-15/AD-18 都在引用它；已归位到 AD-13 与 AD-15 之间并补标题，内容与代码现状核对一致（`BlockContext` 为字段可变的普通类，KDoc 已写明不得长期持有）。⑧ **删除 AD-18 的两份残留重复副本**（位于 AD-25 之后、无标题、且比 §3 内的正文版本少一行表格与一句话），属早期编辑残留。**仪器测试已在真机复跑：`:library:connectedDebugAndroidTest` 68/68 全绿**（Pixel / Android 9），含本次新增的 5 条 E20 用例——本次修复的三个后果（选中描边残留、完成率分母漏计、FI-010 被静默禁用）现已全部有真机证据，不再是「编译通过即认为正常」。 | — |
 | v0.12 | 2026-10-10 | **修复 `ACTION_CANCEL` 并补两处覆盖缺口**（AD-26）：① 新增 **AD-26**——评审时发现 `onTouchEvent` 的 `ACTION_UP` 与 `ACTION_CANCEL` 共用一个分支，取消时只做清理、随后**仍按 `intent` 分派**：判为 Click 会凭空触发点击（编辑态下还会顺带 FI-010 取消），判为 LongPress 会凭空进入编辑态。用户被父容器打断却收到一次完整操作的副作用。该路径此前**测试侧零命中**。修复为 `ACTION_CANCEL` 提前 return、只做清理，并补喂 `gestureDetector`（此前只喂 DOWN，其 pending 的长按消息不会被撤掉）；编辑态保持不变——手势被中断不等于用户做了选择。**反向验证：回滚修复后 3 条测试同时转红**，失败信息与缺陷症状逐条对应。② 补**外部滚动模式下的取消路径**（3 条）——此前 `DayTimelineViewEditTest` 从不设 `scrollMode`，§8.6 / D6「外部容器滚动时取消行为一致」零证据。③ **为 `:app` 建仪器测试**（`MainActivityCancelPathTest` 6 条）并接入 CI——`app/src/` 此前只有 `main`，而 demo 侧两条最贴近真实用户的取消收尾（`BottomSheetDialog.onDismiss`、`PopupWindow.onDismiss` + `actionTaken`）都写在业务方侧，组件测试再绿也证明不了它们。断言改为**比对业务方数据源快照**而非数回调。**反向验证：删掉 `onDismiss` 里的 `cancelEdit()` 后 2 条转红。** ④ §9.4 第 6 条结项，新增第 7 条记录 demo 其余路径仍无自动化（日期切换、配置面板、删除成功路径）。**顺带删除 ctivity_main.xml 的 edit_actions 三个常驻按钮**——编辑态入口收敛到表单与详情弹窗，理由、代价与验证见 §9.6。**本次该用例数从 6 增至 7**：新增 bandoningDeleteConfirmationCanStillEscapeByTappingOutside 钉住「删除二次确认放弃后 FI-010 是唯一出口」这条依赖 | — |
+| v0.13 | 2026-10-10 | **完成 M1-8、关闭风险 R9**（对齐 PRD v1.8）：① AD-02 的「关键结论」从推理升级为**三条实测证据**——`javap -p` 反编译 `MinuteOfDay.class` 显示唯一字段 `private final int minuteOfDay`、方法签名全部收 `int` 吐 `int`（`getHour-impl(int)` 等），无任何运行时 API 引用；`:library:assembleDebug` 在 `minSdk 23` + Kotlin 2.0.21 下通过，`build.gradle.kts` 未启用 `isCoreLibraryDesugaring`、无 `desugar_jdk_libs`，即不存在为值类型引入的兼容层；74 个仪器测试真机全绿，擦除后的 `int` 在 API 23 运行时行为有真机证据。AD-02 原「待验证（M1）」三条中前两条证实、第三条被推翻（见 ②）。② **连带发现并实证：Java 调用方无法实现 `TimelineEvent` 契约**——`javap` 显示接口抽象方法为 `int getStart-ZruiD9E()` / `int getEnd-ZruiD9E()`，Kotlin 对值类型返回值的方法名做了编译期混淆，`-ZruiD9E` 非合法 Java 标识符；用 `javac` 实测按 `int getStart()` 实现，`@Override` 直接报「不是抽象类或接口中方法的覆盖」。AD-02 原判断「对象类型是 interface，问题不大」**对 Kotlin 调用方成立、对 Java 调用方不成立**。该限制已登记为 PRD §18 **R12**，OQ-7 按实测重写（原「建议提供静态工厂」的表述未反映「契约根本无法实现」这一事实），是否承诺 Java 接入待产品拍板。③ OQ-4 / OQ-6 关闭；§9.1 M1 行回写 M1-8 完成；§9.5 补两条（R9 关闭、Java 限制）。④ 顺带订正 §9.5 可测逻辑覆盖率为 88.49%（原 88.79%，v0.11 只改了 §9.2 门禁表，漏改此处） | — |
+| v0.14 | 2026-10-10 | **实施 OQ-7 方案 A：`MinuteOfDay` 改普通类，Java 调用方可以接入**（对齐 PRD v1.9，产品已拍板）。背景：v0.13 发现 value class 的方法名混淆（`getStart-ZruiD9E()`）使 Java 无法实现 `TimelineEvent`，OQ-7 决议「改普通类」而非「另做 int 契约」——后者会让 Java 侧重新丢失 D18 的单位保护。改动与验证：① `MinuteOfDay` 由 `@JvmInline value class` 改为 `class … private constructor`，公有 API 一字未减（`of`/`ofMinute`/`parse`/`START_OF_DAY`/`END_OF_DAY`/`minuteOfDay`/`hour`/`minute`），新增手写 `equals`/`hashCode`（value class 时代由编译器按底层 Int 免费生成）与 `@JvmStatic`/`@JvmField`，全库约 115 处引用零改动编译通过。② **D18 未削弱**：私有构造函数仍在，裸 `Int` 依旧赋不进 `start`/`end`（Spike 与 TimeTest 对照均验证）；`TimeTest` 新增三条钉住 equals/hashCode（同时刻相等且哈希一致、不认裸 `Int`/文本/null、可作 Set/Map 键）——普通类转换最典型的连带风险就是相等性行为变化。③ **新增 Java 守护用例**：`:r8test` 增加 `JavaBusinessEvent.java`（Java 实现 `TimelineEvent`）与 `javaCallerCanImplementContractAfterMinification`（断言读回 title/起止时间而非只查没崩）。**反向验证：把 `MinuteOfDay` 换回 git 原版 value class，该 Java 文件立刻编译失败并直指 `getEnd-ZruiD9E()`**——回退会被构建当场拦住。④ **连带修掉一个 R8 规则缺口**：`consumer-rules.pro` 里 `MinuteOfDay` 原是 `-keepnames class`（只保类名）。普通类的公开成员是对外 API，只保类名时**跨 R8 边界即失效**——新用例首次运行即 `NoSuchMethodError: getMinuteOfDay()I`（androidTest APK 是独立的一次 R8，按原名调用已在 app APK 里改名的成员）。改为 `-keep class …MinuteOfDay { *; }` 与 `EditDraft`/`EventDetail` 同规格后转绿。**这条印证 §5 的判断：规则写错在单遍 R8 下完全隐形，只有真跑消费端才暴露。** ⑤ 代价记录进 AD-02：热路径恢复分配（构造点约 43 处，`OverlapLayoutEngine` 与绘制层零构造，U12 门槛不变）；Java 侧仍有 KDoc 已说明的「接口默认方法需自写缺省值」小摩擦（未开 `-Xjvm-default=all`，另行评估）。⑥ 全量门禁复跑通过：detekt 0 违规、死代码 0、核心覆盖率 **91.81%**、可测逻辑 **88.60%**、lint 0 警告、R8 符号核对 10/10；仪器测试真机全绿——`:library` **74/74**、`:app` **7/7**、`:r8test` 混淆变体 **7/7**（含本次新增的 Java 用例）。JVM 单测 141 → **144** | — |
 
 ---
 
@@ -944,26 +958,26 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | 里程碑 | 状态 | 说明 |
 |---|:--:|---|
 | M0 设计定稿 | **部分** | 语义色项**结构**与 17 项取值已就位（Material 3 baseline 占位，AD-12）；交互标注、切图、字体资源仍缺，属设计职责 |
-| M1 工程基线 | **已完成** | `:app`→`:library` 接线、res 骨架、`androidx.customview` 依赖、lint 严格配置、CI（`.github/workflows/ci.yml`）、JaCoCo 覆盖率门禁（核心 + 可测逻辑）、detekt 与死代码自动阻断（`verifyNoDeadCode`）、R8 混淆消费端验证模块 `:r8test` 均已建立 |
+| M1 工程基线 | **已完成** | `:app`→`:library` 接线、res 骨架、`androidx.customview` 依赖、lint 严格配置、CI（`.github/workflows/ci.yml`）、JaCoCo 覆盖率门禁（核心 + 可测逻辑）、detekt 与死代码自动阻断（`verifyNoDeadCode`）、R8 混淆消费端验证模块 `:r8test` 均已建立。**M1-8（R9 结论实测）已完成**（2026-10-10），证据见 AD-02 |
 | M2 静态呈现 | **已完成** | `core/` 全部算法 + U1–U16 逐条验收（20 个用例）、网格与日程块绘制均已完成 |
 | M3 数据与滚动 | **已完成** | 数据契约、提交/单条更新/单条删除/切日期/指定当前时间、增量 diff + 滚动锚点、刷新收敛、30 秒定时器与生命周期摘除已完成；**两种滚动模式均已实现**——自身模式消费手势并执行惯性滚动，外部模式 `onMeasure` 按全天内容高度测量且 `Intent.Scroll` 分支 `return false` 让给外层（E29）。**FI-012 首次定位已于 v0.10 补齐**（此前 `autoLocateOnFirstShow` 无人消费，详见 AD-24） |
 | M4 交互闭环 | **已完成** | `GestureArbiter` 手势状态机、`EditSession` 编辑态、`SnapCalculator` 上下对称吸附、48dp 热区手柄、`confirmEdit`/`cancelEdit`/`requestDelete` 与 `EditController` 第四层接管均已实现。**E20 自动取消已于 v0.11 与用户取消拉齐**（状态全清 + 发「编辑取消」，PRD §14.3.1），5 条新仪器测试真机全绿 |
 | M5 打磨 | **已完成** | 字体放大标签降密度、`onSaveInstanceState` 状态保存、运行时资源重载（深色/多语言）、无障碍虚拟视图均已完成 |
-| M6 发布 | **部分** | `consumer-rules.pro`、README 已产出；**开启混淆的消费端验证仍未做**，四份交付文档未齐 |
+| M6 发布 | **部分** | `consumer-rules.pro`（含 v0.14 补齐的 `MinuteOfDay` 成员保留）、README 已产出；**开启混淆的消费端验证已完成**（`:r8test:verifyKeptSymbols` + 混淆变体仪器测试 7/7，见 §9.2）——此行原文「仍未做」为 v0.8 之前的过期记录；**四份交付文档（DL-03~DL-06）仍未齐** |
 
 ### 9.2 门禁现状
 
 | 门禁（§12.4） | 状态 | 证据 |
 |---|:--:|---|
-| 核心逻辑单元测试覆盖率 ≥ 90% | **达成** | `:library:verifyCoreCoverage` 实测 **91.73%**（9536/10396） |
+| 核心逻辑单元测试覆盖率 ≥ 90% | **达成** | `:library:verifyCoreCoverage` 实测 **91.81%**（9864/10744） |
 | 平台规范检查 0 错误 | **达成** | `:library:lintDebug` 通过，0 error / 0 warning（`warningsAsErrors = true`） |
 | 代码风格检查 0 违规 | **达成** | `:library:detekt` + `:app:detekt` 均 0 违规（53 → 0），配置见 `config/detekt/detekt.yml` |
 | 死代码 0 处 | **达成** | `:library:verifyNoDeadCode` 专项门禁，实测 0 处；豁免清单见 `config/detekt/EXEMPTIONS.md` |
 | 静态代码检查 0 严重 | **达成** | 同 detekt |
-| R8 混淆后功能正常 | **达成** | `:r8test:verifyKeptSymbols`（10 个契约类全保留）+ `:r8test:connectedReleaseAndroidTest`（混淆变体仪器测试 **6/6**，Pixel / Android 9，2026-10-10 复跑）。**首次运行即抓出 3 个发布阻断级缺陷** |
+| R8 混淆后功能正常 | **达成** | `:r8test:verifyKeptSymbols`（10 个契约类全保留）+ `:r8test:connectedReleaseAndroidTest`（混淆变体仪器测试 **7/7**，Pixel / Android 9，2026-10-10，含 OQ-7 方案 A 的 Java 调用方用例 `javaCallerCanImplementContractAfterMinification`）。**该用例首次运行即抓出 `consumer-rules.pro` 里 `MinuteOfDay` 只保类名不保成员的缺口**（`NoSuchMethodError: getMinuteOfDay()I`），已修复 |
 | 仪器测试（L2） | **达成** | `:library:connectedDebugAndroidTest` **74/74 全绿**（Pixel / Android 9，2026-10-10）。含 AD-25 的 5 条 E20 用例与 AD-26 的 3 条 `ACTION_CANCEL` 用例、3 条外部滚动模式取消用例 |
 | 示例应用仪器测试 | **达成** | `:app:connectedDebugAndroidTest` **7/7 全绿**（`MainActivityCancelPathTest`）。**2026-10-10 新建，此前 `app/src/` 只有 `main`**——demo 侧两条取消收尾只靠注释自证；已接入 CI |
-| 全库覆盖率 ≥ 75% | **达成（口径已修订）** | `:library:verifyAllCoverage` 实测 **88.49%**（3229/3649）。**口径与 PRD 原文不同**，见下方说明 |
+| 全库覆盖率 ≥ 75% | **达成（口径已修订）** | `:library:verifyAllCoverage` 实测 **88.60%**（3310/3736）。**口径与 PRD 原文不同**，见下方说明 |
 
 #### 9.2.1 「全库覆盖率」的口径修订（**已获产品认可**，PRD v1.4 §12.4.1）
 
@@ -1016,7 +1030,10 @@ PRD §12.4 原文是「全库覆盖率 ≥ 75%」。字面执行的结果是 **2
 | AD-24 首次定位（FI-012） | 见 AD-24。`firstShowAutoLocatesToOneThirdViewport` 等 9 个真机用例全绿；此前 17 个存量用例因该功能生效而失败并已修夹具（见 AD-24「连带影响」） |
 | R8 混淆消费端验证 | `:r8test:verifyKeptSymbols` + `:r8test:connectedReleaseAndroidTest`（混淆变体 5/5）。首次运行即抓出 3 个发布阻断级缺陷 |
 | detekt 与死代码自动阻断 | `:library:detekt` / `:app:detekt` 0 违规；`:library:verifyNoDeadCode` 专项门禁 0 处 |
-| 可测逻辑覆盖率门禁 | `:library:verifyAllCoverage` 88.79%，已接入 CI（口径见 §9.2.1 / PRD §12.4.1） |
+| 可测逻辑覆盖率门禁 | `:library:verifyAllCoverage` 88.49%，已接入 CI（口径见 §9.2.1 / PRD §12.4.1） |
+| **R9 关闭**（M1-8） | 三条实测：`javap` 显示 `MinuteOfDay` 不引用任何运行时 API（value class 时代擦除为 `int`，普通类时代为普通实例方法）；`minSdk 23` 构建通过且无 desugaring 兼容层；真机 74 仪器用例全绿。PRD v1.8 §18 的 R9 已整条重写为「已排除」 |
+| **Java 调用方可实现 `TimelineEvent`**（OQ-7 方案 A，2026-10-10） | `MinuteOfDay` 改普通类后 `javap` 方法名干净（`getStart()` 返回 `MinuteOfDay`，无 `-ZruiD9E` 混淆后缀）；`:r8test` 新增 `JavaBusinessEvent.java` + `javaCallerCanImplementContractAfterMinification`，混淆变体 7/7 真机全绿。**反向验证：把 `MinuteOfDay` 换回 git 原版 value class，Java 文件立刻编译失败并直指 `getEnd-ZruiD9E()`**——守护用例确认咬得住 |
+| **R8 保留规则补齐 `MinuteOfDay` 成员** | 由上面的新用例实测抓到（改普通类前该规则只保类名，跨 R8 边界 `NoSuchMethodError: getMinuteOfDay()I`）；已改 `-keep class …MinuteOfDay { *; }` 后复跑转绿 |
 | AD-26 `ACTION_CANCEL` 不再触发点击 / 长按 | 见 AD-26。3 条仪器测试；**回滚修复后实测 3 条同时转红**，确认断言真的咬得住 |
 | 外部滚动模式下的取消路径 | `cancelBehavesIdenticallyInExternalScrollMode` / `tappingOutsideStillCancelsInExternalScrollMode` / `e20AutoCancelAlsoWorksInExternalScrollMode`（此前该模式下取消路径零覆盖，D6 无证据） |
 | `:app` demo 的仪器测试 | `MainActivityCancelPathTest` 7 条，接入 CI。**实测把 `onDismiss` 里的 `cancelEdit()` 删掉后 2 条转红**，确认不是空跑 |

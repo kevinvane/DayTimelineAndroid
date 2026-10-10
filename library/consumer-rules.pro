@@ -68,8 +68,22 @@
 -keep class com.github.kevinvane.daytimeline.library.api.BlockContext { *; }
 -keep class com.github.kevinvane.daytimeline.library.api.TimelineColors { *; }
 
-# ---- 值类型：@JvmInline 展开为底层类型，保留名称便于日志与调试 ----
--keepnames class com.github.kevinvane.daytimeline.library.core.MinuteOfDay
+# ---- 值类型：公开数据契约，业务方（含 Java 调用方）要读字段、调工厂 ----
+#
+# MinuteOfDay 自 OQ-7 决议起是普通类（不再是 @JvmInline value class），
+# 它的成员 `minuteOfDay` / `hour` / `minute` / `of` / `ofMinute` / `parse`
+# 都是**对外可调可读的公开 API**，必须与 EditDraft / EventDetail 同规格保留。
+#
+# 此前这里是 `-keepnames class`（只保类名、不顾成员），理由是 value class
+#「擦除为 int，保留名称便于日志」。该规则对单遍 R8 的业务方恰好够用——
+# 业务方代码与库在同一个 R8 pass 里，成员改名两边一致。但它挡不住
+# **跨 APK 边界**：androidTest APK 是独立的一次 R8，测试代码按原名调用库成员，
+# 库成员在 app APK 里已被改名，运行即 NoSuchMethodError。
+# :r8test 的 javaCallerCanImplementContractAfterMinification 实测抓到过这一条。
+#
+# ⚠️ 这里同样必须用 `-keep class ... { *; }`：`-keepnames` 与
+# `-keepclassmembers` 都不同时满足「成员不被删」与「成员不被改名」。
+-keep class com.github.kevinvane.daytimeline.library.core.MinuteOfDay { *; }
 
 # ---- 数据异常（DataIssue）以数据类形式回调给业务方做日志记录 ----
 -keepclassmembers class com.github.kevinvane.daytimeline.library.core.DataIssue { *; }
