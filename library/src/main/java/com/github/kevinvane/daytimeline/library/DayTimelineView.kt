@@ -224,10 +224,8 @@ class DayTimelineView @JvmOverloads constructor(
 
     private val nowTicker = object : Runnable {
         override fun run() {
-            if (overrideNowMinute == null) nowMinute = currentMinuteOfDay()
-            // 重绘当前时间线；requestRefresh 内部会比对签名，无变化不会 invalidate
-            requestRefresh()
-            listener?.onNowRefreshed(nowMinute)
+            // 与 [refreshNow] 共用同一执行体：手动刷新与周期刷新必须零差异
+            tickNowOnce()
             handler.postDelayed(this, dimens.nowRefreshMillis)
         }
     }
@@ -355,6 +353,44 @@ class DayTimelineView @JvmOverloads constructor(
         nowMinute = overrideNowMinute ?: currentMinuteOfDay()
         states = TimeStateResolver.resolveAll(events, nowMinute)
         requestRefresh()
+    }
+
+    /**
+     * 手动触发一次当前时间线刷新（PRD §11.2）。
+     *
+     * 与本组件已有的 30 秒定时器（[nowTicker]）走**同一条路径**：重算 nowMinute、
+     * 重算日程三态、重绘、回调 [TimelineListener.onNowRefreshed]。
+     * 区别只在触发源——定时器是周期性的，本方法由业务方按需调用。
+     *
+     * ## 典型用途
+     *
+     * 业务方自己的页面在 `onResume` 后想让时间线立刻跟上真实时间，
+     * 而不愿等最多 30 秒。此时调本方法即可，**不需要**业务方自己去
+     * `setNowMinute(...)`——那会把「当前时间」变成固定值，反而关掉自动更新
+     * （[overrideNowMinute] 非空后定时器不再覆盖它）。
+     *
+     * 本方法**不**影响定时器的节奏：调用后仍在原位继续按 30 秒周期触发。
+     */
+    fun refreshNow() {
+        tickNowOnce()
+    }
+
+    /**
+     * 当前时间线刷新的单次执行体，由定时器与 [refreshNow] 共用。
+     *
+     * 抽出来是因为两条路径必须完全一致——曾出现过「定时器刷新了但业务方
+     * 手动刷新少做一步」这类只在手动路径上出现的缺陷。
+     *
+     * - 未用 [setNowMinute] 固定时间时，才跟随系统时钟（固定时间是测试语义，
+     *   不应被一次刷新覆盖回去）；
+     * - 重绘交给 [requestRefresh]，它内部比对绘制签名，无变化不会 invalidate（D17）；
+     * - 回调在最后：[listener] 读到 nowMinute 时，三态与绘制已就绪。
+     */
+    private fun tickNowOnce() {
+        if (overrideNowMinute == null) nowMinute = currentMinuteOfDay()
+        states = TimeStateResolver.resolveAll(events, nowMinute)
+        requestRefresh()
+        listener?.onNowRefreshed(nowMinute)
     }
 
     /** 设置参数配置（PRD §10.1 第一层 / FC-005）。 */
@@ -801,6 +837,35 @@ private fun renderSignature(): Long {
     }
 
     /**
+     * 取指定位置的日程，供业务方做「二次确认」（PRD §11.1）。
+     *
+     * 语义与用户触摸该位置**完全一致**：走的是同一套 [HitTester]（含 FI-015 的
+     * 48dp 最小触摸目标扩展），而不是只比对块的几何矩形。业务方若拿这个来判断
+     * 「点这里是不是选中了某条日程」，结论必须与用户手指点到的相同，
+     * 否则会出现「看着点在块上、组件却认为点在空白」的分歧。
+     *
+     * 坐标为**本视图的视口坐标**（可直接用 `MotionEvent` 的 x/y）。
+     * 滚动偏移由 [blockTopsInView] 内部处理，调用方不需要自己加。
+     *
+     * 命中空白或落在时间轴区域时返回 null。**本方法是纯读取**：
+     * 不改变 selectedId、不进入编辑态、不触发任何回调（与 [detailOf] 同性质）。
+     *
+     * @param x 视口坐标 x（px）。
+     * @param y 视口坐标 y（px）。
+     * @return 命中日程的只读详情；未命中返回 null。
+     */
+    fun eventAt(x: Float, y: Float): EventDetail? {
+        val contentLeft = resolveAxisEnd(width)
+        val contentRight = (width - dimens.endMargin).coerceAtLeast(contentLeft)
+        val hit = hitTester.hitTest(
+            x, y, contentLeft, contentRight,
+            blocks, blockTopsInView(), blockHeights,
+            editing = -1, editingTop = 0, editingHeight = 0,
+        )
+        return (hit as? HitTester.Hit.Block)?.block?.let { detailOf(it.event.id) }
+    }
+
+    /**
      * 以编程方式进入编辑态，等价于用户长按该日程块（FI-004）。
      *
      * 供业务方的详情弹窗使用：用户在弹窗里点「删除」「完成」时，
@@ -920,35 +985,6 @@ private fun renderSignature(): Long {
      */
     @Suppress("FunctionOnlyReturningConstant")
     internal fun currentHourRangeText(): String = "00:00 - 24:00"
-
-    /**
-     * 当前草稿的业务方视图。
-     *
-     * 调用点必须**在 `editSession` 被置空之前**取——置空后草稿就没了。
-     */
-    private fun EditSession.toDraft(): EditDraft = EditDraft(
-        isCreating = origin == null,
-        event = origin?.source,
-        range = startMinute..endMinute,
-        content = pendingContent,
-    )
-
-    /**
-     * 提交结果的业务方视图；[EditResult.range] 是**合法化后**的实际生效值。
-     *
-     * 两个 `when` 都必需：[EditSession.Commit] 是 sealed class，`range` / `content`
-     * 只声明在两个子类上，基类上没有共同属性可取。
-     */
-    private fun EditSession.Commit.toResult(): EditResult = EditResult(
-        range = when (this) {
-            is EditSession.Commit.Create -> startMinute..endMinute
-            is EditSession.Commit.Modify -> range
-        },
-        content = when (this) {
-            is EditSession.Commit.Create -> content
-            is EditSession.Commit.Modify -> content
-        },
-    )
 
     private fun replaceLocally(id: String, range: IntRange) {
         val updated = events.map {
@@ -1471,7 +1507,7 @@ private fun renderSignature(): Long {
 
     override fun onSaveInstanceState(): android.os.Parcelable {
         val superState = super.onSaveInstanceState()
-        return SavedState(superState).also {
+        return DayTimelineSavedState(superState).also {
             it.scrollOffset = scrollOffset
             it.viewDate = viewDate
             it.selectedId = selectedId
@@ -1479,7 +1515,7 @@ private fun renderSignature(): Long {
     }
 
     override fun onRestoreInstanceState(state: android.os.Parcelable?) {
-        if (state !is SavedState) {
+        if (state !is DayTimelineSavedState) {
             super.onRestoreInstanceState(state)
             return
         }
@@ -1493,37 +1529,6 @@ private fun renderSignature(): Long {
         selectedId = state.selectedId
         isToday = isSameDay(viewDate, System.currentTimeMillis())
         lastRenderSignature = Long.MIN_VALUE
-    }
-
-    /** 自身滚动模式下恢复滚动位置；外部滚动模式下滚动位置由外层负责（§8.6）。 */
-    private class SavedState : android.view.View.BaseSavedState {
-        var scrollOffset = 0
-        var viewDate = 0L
-        var selectedId: String? = null
-
-        constructor(superState: android.os.Parcelable?) : super(superState)
-
-        constructor(source: android.os.Parcel) : super(source) {
-            scrollOffset = source.readInt()
-            viewDate = source.readLong()
-            selectedId = source.readString()
-        }
-
-        override fun writeToParcel(out: android.os.Parcel, flags: Int) {
-            super.writeToParcel(out, flags)
-            out.writeInt(scrollOffset)
-            out.writeLong(viewDate)
-            out.writeString(selectedId)
-        }
-
-        companion object {
-        /** 边缘自动滚动帧间隔：约 60fps。 */
-            @JvmField
-            val CREATOR = object : android.os.Parcelable.Creator<SavedState> {
-                override fun createFromParcel(source: android.os.Parcel) = SavedState(source)
-                override fun newArray(size: Int) = arrayOfNulls<SavedState>(size)
-            }
-        }
     }
 
     // ================= 工具 =================
@@ -1627,3 +1632,78 @@ private fun Theme.toPublicColors(): TimelineColors = TimelineColors(
     editLayerTime = editLayerTime,
     editHandle = editHandle,
 )
+
+/**
+ * 当前草稿的业务方视图。
+ *
+ * 调用点必须**在 `editSession` 被置空之前**取——置空后草稿就没了。
+ *
+ * 顶层而不是 DayTimelineView 的成员：它只读 [EditSession] 的字段，
+ * 与视图状态无关。放在成员里会让它随视图生命周期一起被持有，
+ * 也把「类有多大」这个本来可以用拆分解决的问题继续堆在 View 上。
+ */
+private fun EditSession.toDraft(): EditDraft = EditDraft(
+    isCreating = origin == null,
+    event = origin?.source,
+    range = startMinute..endMinute,
+    content = pendingContent,
+)
+
+/**
+ * 提交结果的业务方视图；[EditResult.range] 是**合法化后**的实际生效值。
+ *
+ * 两个 `when` 都必需：[EditSession.Commit] 是 sealed class，`range` / `content`
+ * 只声明在两个子类上，基类上没有共同属性可取。
+ */
+private fun EditSession.Commit.toResult(): EditResult = EditResult(
+    range = when (this) {
+        is EditSession.Commit.Create -> startMinute..endMinute
+        is EditSession.Commit.Modify -> range
+    },
+    content = when (this) {
+        is EditSession.Commit.Create -> content
+        is EditSession.Commit.Modify -> content
+    },
+)
+
+/**
+ * [DayTimelineView] 的状态保存载体（AD-11 / D12 / E9）。
+ *
+ * 只在**自身滚动模式**下保存 `scrollOffset`：外部滚动模式下滚动位置归外层容器
+ * 负责（§8.6 高度约定），组件保存一份反而会在外层已恢复后又把它拽回去。
+ * `viewDate` 是两次模式都要的；`selectedId` 仅用于「回到前台时选中描边不闪断」，
+ * 不承载任何草稿——草稿一律不序列化（见 AD-27：序列化草稿会突破 §11.4 的承诺）。
+ *
+ * **刻意是 `internal` 而不是 `private`**：仪器测试必须能直接构造它做真 Parcel 往返。
+ * `saveHierarchyState` / `restoreHierarchyState` 那条路在同一进程内传递的是对象引用，
+ * 不经过序列化（实测把 `writeToParcel` 与 `Parcel` 构造同时改坏也不会转红），
+ * 抓不到真正的读写错误。`internal` 在 AAR 里依旧不外泄。
+ */
+internal class DayTimelineSavedState : android.view.View.BaseSavedState {
+    var scrollOffset = 0
+    var viewDate = 0L
+    var selectedId: String? = null
+
+    constructor(superState: android.os.Parcelable?) : super(superState)
+
+    constructor(source: android.os.Parcel) : super(source) {
+        scrollOffset = source.readInt()
+        viewDate = source.readLong()
+        selectedId = source.readString()
+    }
+
+    override fun writeToParcel(out: android.os.Parcel, flags: Int) {
+        super.writeToParcel(out, flags)
+        out.writeInt(scrollOffset)
+        out.writeLong(viewDate)
+        out.writeString(selectedId)
+    }
+
+    companion object {
+        @JvmField
+        val CREATOR = object : android.os.Parcelable.Creator<DayTimelineSavedState> {
+            override fun createFromParcel(source: android.os.Parcel) = DayTimelineSavedState(source)
+            override fun newArray(size: Int) = arrayOfNulls<DayTimelineSavedState>(size)
+        }
+    }
+}
