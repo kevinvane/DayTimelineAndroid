@@ -74,7 +74,24 @@ data class Meeting(
 
 需要按任务状态而非时间判断是否已过期时，追加 `expiredOverride`（三态推导规则见 PRD §9.4）。
 
-### 4. 提交与监听
+### 5. 按位置或 id 查询
+
+```kotlin
+// 按 id 取只读详情（已兜底修正后的值）
+val detail = timeline.detailOf(eventId)
+
+// 按视口坐标取日程，判断「这一点点到了哪条」
+val hit = timeline.eventAt(x, y)
+```
+
+两者都是**纯读取**：不改变选中态、不进入编辑态、不触发任何回调。
+`eventAt` 与用户手指点击走同一套命中规则（含 48dp 最小触摸目标扩展），
+所以它的结论和用户实际点到的总是一致的。
+
+需要清掉选中描边时调 `timeline.clearSelection()`。
+想让时间线立刻跟上真实时间（不等最多 30 秒的定时器）时调 `timeline.refreshNow()`。
+
+### 6. 提交与监听
 
 ```kotlin
 timeline.submitEvents(todayMeetings)
@@ -93,6 +110,9 @@ timeline.listener = object : TimelineListener {
 
     // 取消：只用于统计编辑完成率，切勿据此修改数据
     override fun onEditCancelled() { analytics.track("edit_cancel") }
+
+    // 当前时间线刷新：30 秒定时器与 refreshNow() 都会触发
+    override fun onNowRefreshed(nowMinute: Int) { }
 }
 ```
 
@@ -107,6 +127,7 @@ timeline.listener = object : TimelineListener {
 | 数据 | 提交列表 / 单条更新 / 单条删除 / 切换日期 / 指定当前时间 |
 | 视图 | 跳转指定时刻 / 刷新当前时间线 / 读取与恢复滚动位置 |
 | 交互 | 点击 / 长按 / 空白新建 / 拖拽移动 / 手柄改时长 / 完成 / 取消 / 删除（二次确认）/ 边缘自动滚动 |
+| 查询 | `detailOf(id)` 按 id 取只读详情 / `eventAt(x, y)` 按坐标取日程 |
 | 配置 | 17 项语义色项 + 全部尺寸 + 时间格式 + 滚动模式 + 编辑层行为，均支持代码与 XML 两种方式 |
 | 定制 | 四层：参数配置 / 网格绘制 / 块内容 / 交互接管，**业务方无需修改组件源码** |
 
@@ -151,6 +172,7 @@ library/src/main/java/.../library/
 ├── paint/                # 绘制实现、17 项语义色项、无障碍虚拟视图
 └── internal/             # 尺寸解析、状态保存
 app/                      # demo 与验收载体，不含可复用逻辑
+r8test/                   # 混淆消费端验证：以业务方身份开 R8 跑仪器测试
 ```
 
 `core/` **禁止 import 任何 `android.*`**。这条纪律是覆盖率能达标的前提——纯 Kotlin 类可用
@@ -167,25 +189,28 @@ JVM 单测直接跑，不需要设备也不需要 Robolectric。
 .\gradlew.bat :library:test                 # JVM 单元测试（不需要设备）
 .\gradlew.bat :library:lintDebug             # 平台规范检查
 .\gradlew.bat :library:verifyCoreCoverage   # 核心逻辑覆盖率门禁 ≥ 90%
-.\gradlew.bat :library:verifyAllCoverage     # 全库覆盖率门禁 ≥ 75%（需设备）
+.\gradlew.bat :library:verifyAllCoverage    # 可测逻辑覆盖率门禁 ≥ 75%（不需要设备）
 .\gradlew.bat :library:connectedAndroidTest # 仪器测试（需设备/模拟器）
+.\gradlew.bat :r8test:verifyKeptSymbols     # 混淆产物构建 + 对外契约类符号核对（不需要设备）
 ```
 
 ### 当前门禁状态
 
 | 门禁 | 状态 | 说明 |
-|---|:--:|---|
-| 核心逻辑覆盖率 ≥ 90% | **达标** | 实际 91.08% |
-| 平台规范检查 0 错误 0 警告 | **达标** | `lintDebug` 通过 |
-| 单元测试 | **达标** | 100 个用例全绿，含 U1–U16 逐条验收 |
-| 资源契约（真机） | 待验证 | 仪器测试已就位，需设备执行 |
-| 全库覆盖率 ≥ 75% | **未达标** | View 层只能由仪器测试覆盖，见下 |
-| 死代码 0 处 | 部分 | 已手工清理，未接入自动检查工具 |
-| R8 混淆验证 | 待验证 | 规则已就位，尚无 minify 消费端验证 |
+|---|---|---|
+| 核心逻辑覆盖率 ≥ 90% | **达标** | 实际 **91.81%**（2466/2686） |
+| 可测逻辑覆盖率 ≥ 75% | **达标** | 实际 **88.60%**（3310/3736），口径见 PRD §12.4.1 |
+| 平台规范检查 0 错误 0 警告 | **达标** | `lintDebug` 通过，`warningsAsErrors = true` |
+| 代码风格 / 静态检查 | **达标** | detekt 0 违规 |
+| 死代码 0 处 | **达标** | `:library:verifyNoDeadCode` 自动阻断，实测 0 处 |
+| JVM 单元测试 | **达标** | **144** 个用例全绿，含 U1–U16 逐条验收 || 仪器测试（真机） | **达标** | `:library` **102** 条、`:app` **7** 条、`:r8test` 混淆变体 **8** 条（Pixel_XL / Android 14，2026-10-10） |
+| R8 混淆消费端验证 | **达标** | 10 个对外契约类符号核对 + 混淆变体仪器测试 8/8 |
+| 已知安全漏洞 / 性能基准 / 文档完整性 | **未自动化** | PRD §12.4 三项要求，目前无 CI 或 Gradle 落地，靠人工核对 |
 
-> **关于全库覆盖率**：`api` / `paint` / `internal` 三个包（含 View 绘制与无障碍）无法用 JVM
-> 单测覆盖，而零依赖约束排除了 Robolectric，因此该口径必须靠仪器测试。相关门禁在无设备
-> 环境下必然不达标——这是约束冲突，不是实现缺陷。
+> **关于覆盖率口径**：`paint` / `internal` / 根包（含 View 绘制与无障碍）在结构上拿不到
+> JVM 单测覆盖率，共 6519 条指令（约占总量的 59%），由 102 条仪器测试与真机走查覆盖。
+> 因此 `verifyAllCoverage` 的统计范围是「**JVM 可测逻辑**」，不是全部代码——这是
+> 已获产品认可的口径（PRD §12.4.1），不是为了让数字好看。
 
 > **编译通过不等于能运行。** 曾出现过 lint 干净、107 个单测全绿、覆盖率达标，
 > 但真机启动即崩的情况：`dimens.xml` 里用 `<item format="float" type="dimen">` 声明
@@ -206,7 +231,7 @@ JVM 单测直接跑，不需要设备也不需要 Robolectric。
 | 文档 | 内容 |
 |---|---|
 | [产品需求文档](docs/DayTimeline-产品与需求文档.md) | 需求、界面与交互规格、数据契约、质量要求、验收标准。**唯一需求来源** |
-| [技术方案与实施计划](docs/DayTimeline-技术方案与实施计划.md) | 架构决策 AD-01~AD-23、任务拆解、门禁落地方案、开放问题 |
+| [技术方案与实施计划](docs/DayTimeline-技术方案与实施计划.md) | 架构决策 AD-01~AD-27、任务拆解、门禁落地方案、开放问题、实施进度回写（当前 v0.18） |
 | [日程块表单输入方案](docs/DayTimeline-日程块表单输入方案.md) | PRD v1.3 新增的表单输入能力设计（AD-22） |
 | [AGENTS.md](Agents.md) | 面向 AI 协作者的仓库指引与硬性约束 |
 

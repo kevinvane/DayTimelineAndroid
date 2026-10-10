@@ -2,10 +2,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v0.16（草案） |
+| 文档版本 | v0.19（草案） |
 | 状态 | 待评审 |
 | 编写日期 | 2026-09-30 |
-| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.10（v1.7 为 Q1 取消路径口径澄清，见 AD-25；v1.8 关闭 R9 并新增 R12；v1.9 按 OQ-7 方案 A 支持 Java 接入，见 AD-02；v1.10 补「编辑完成率」统计口径 §15.1；v1.11 定编辑态存续边界 §11.4.1 + 幂等约定，见 AD-27；FR / FI 编号未变） |
+| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.14（v1.7 为 Q1 取消路径口径澄清，见 AD-25；v1.8 关闭 R9 并新增 R12；v1.9 按 OQ-7 方案 A 支持 Java 接入，见 AD-02；v1.10 补「编辑完成率」统计口径 §15.1；v1.11 定编辑态存续边界 §11.4.1 + 幂等约定，见 AD-27；v1.12 订正 M0 门禁表述、补记越门事实、R10 重写，见 AD-12；v1.13 以项目现状对齐全文；v1.14 补齐两项未实现对外能力（`eventAt` / `refreshNow`）并把 R10 评级上调为高/高，见 AD-28；FR / FI 编号未变） |
 | 文档读者 | 研发、测试、设计 |
 
 ---
@@ -140,7 +140,7 @@ interface TimelineEvent {
 
 1. `javap -p` 反编译 `library/build/tmp/kotlin-classes/debug/…/MinuteOfDay.class`：类内唯一字段为 `private final int minuteOfDay`，没有任何一处引用运行时 API（value class 时代方法签名全部收 `int` 吐 `int`，如 `getHour-impl(int)`；普通类时代为普通实例方法，见 v0.14 修订）。
 2. `:library:assembleDebug` 在 `minSdk = 23` + Kotlin 2.0.21 下通过；`library/build.gradle.kts` **未启用** `isCoreLibraryDesugaring`，依赖里也没有 `desugar_jdk_libs`——不存在为支持值类型额外引入的兼容层。
-3. 74 个仪器测试在真机（Pixel / Android 9）全绿，`MinuteOfDay` 被 `core/`、`api/`、`internal/`、`paint/` 与 demo 全量使用。**口径说明**：真机型号为 API 28，不是 API 23；但产物只有 `int` 运算与 `kotlin-stdlib`（Kotlin 插件已携带），不含任何按 API 级别分支的行为，「与 minSdk 23 并存成立」这个结论由证据 1、2 独立成立，真机证据负责的是「行为在真实运行时不退化」。
+3. 当时 74 个仪器测试在真机（Pixel / Android 9）全绿（现为 `:library` 82 + `:app` 7，见 §9.2），`MinuteOfDay` 被 `core/`、`api/`、`internal/`、`paint/` 与 demo 全量使用。**口径说明**：真机型号为 API 28，不是 API 23；但产物只有 `int` 运算与 `kotlin-stdlib`（Kotlin 插件已携带），不含任何按 API 级别分支的行为，「与 minSdk 23 并存成立」这个结论由证据 1、2 独立成立，真机证据负责的是「行为在真实运行时不退化」。
 
 **代价与 v0.14 修订（OQ-7 决议：支持 Java 调用方）**：
 
@@ -298,8 +298,11 @@ PRD §11.4.1（v1.11）已把编辑态的存续边界写成规格，见 AD-27。
 - 不取值则任何配色相关代码都开不了工，M1–M2 全部停摆。
 
 **影响与遗留风险**：
-- **R10 风险依然成立**：定稿后需复查深色下的对比度（Q7/UF-004）。当前深色取值未做对比度实测。
-- 定稿动作：替换两份 `colors.xml` 中的 17 个取值 → 跑 §14.3 Q7 → 更新本条状态。
+- **门禁已被越过的事实（v0.17 补记）**：上文「§16.2 明确 M0 未完成不得进入 M1」在决策当时成立，本条即为越过该门禁的决策。PRD 侧此前无任何记录，**已于 PRD v1.12 补记**，并把门禁改述为「不阻塞开工、阻塞验收」。同时 PRD §16.2 的 **M6 出口标准新增「§7.3 的 17 项色值全部为设计定稿值」**——给本条留一个发布前的硬卡点，而不是只写在这里。
+- **R10 的形态已变，风险本身未消除**：R10 原表述「用占位色开发导致返工」经查**未发生**（M1–M5 全部实现完毕，替换色值只动两份 `colors.xml`）。仍然成立的是「占位色值随组件发布到业务方」——PRD v1.12 已按 R9 / R12 的惯例整条重写，可能性/影响评级沿用原值未擅自上调。
+- **Q7 / FC-002 在本条解除前判不了**：定稿后需复查深色下的对比度（Q7 / UF-004）与换肤验收（FC-002）。当前深色取值未做对比度实测。
+- **M0-2 / M0-3 不在本条覆盖范围**：本条只兜住了 M0-1 的色值。交互标注与字体/图标资源仍无任何兜底，见 §9.4 第 4 条。
+- 定稿动作：替换两份 `colors.xml` 中的 17 个取值 → 跑 §14.3 Q7 与 FC-002 → 更新本条状态。
 
 **验证**：已落地 `values/colors.xml` 与 `values-night/colors.xml`，两者色项名逐一对齐（缺一即运行期崩溃）。
 
@@ -822,6 +825,81 @@ AD-25 已把「退出编辑态的状态」收敛成单一出口，这次把**副
 
 ---
 
+### AD-28　补齐「声明了却没有代码」的两个对外入口　【执行期决策】
+
+**背景**：v0.18 以项目现状对齐文档时查出两项 PRD 能力在全仓**没有任何读取点**：
+
+| 位置 | 能力 | 实际状态 |
+|---|---|---|
+| PRD §11.1（P0） | 获取指定位置的日程（供业务方二次确认） | 只有**内部** `HitTester.hitTest`，无对外入口 |
+| PRD §11.2（P1） | 刷新当前时间线（手动触发一次） | 只有 30 秒定时器 `nowTicker`，无对外方法 |
+
+这与 AD-24 的 `autoLocateOnFirstShow` 完全同类——「声明在 PRD、写在 `attrs.xml`、有专项测试断言它被合并，唯独没有任何地方读它」。区别只在：**连声明都没有**，只有 PRD §11 两行字。这类缺陷在现有门禁下完全隐形（`verifyNoDeadCode` 只看私有成员，覆盖率门禁只看「被测的逻辑」），v0.18 的 §9.4 第 2 条已把「每个可配置项至少有一个读取点」列为待建的结构性断言。
+
+**决策**：两个都补实现，不删需求。P0 项没有「删掉」这个选项；P1 项与之共用同一个执行体，补一个薄入口的代价接近于零。
+
+#### 实现要点
+
+| 项 | 做法 | 为什么不是另一种 |
+|---|---|---|
+| `eventAt(x, y)` | 直接调组件内部那份 `hitTester.hitTest(...)`，再转成 `EventDetail` | **不另写几何比对**。业务方拿它判断「这里点到了哪条」，结论必须与用户手指点到的相同；两套规则必然漂移，而漂移是隐性的 |
+| `eventAt` 的返回值 | 复用 `detailOf()`，返回 `EventDetail`（兜底修正后的值） | 与「取只读详情」已是同一契约，业务方不必再学一种返回类型 |
+| `eventAt` 的副作用 | 无。不动 `selectedId`、不进编辑态、不发任何回调 | 与 `detailOf` 同性质。若顺手把选中态也设上，业务方在「只是探一下位置」时会被动改视图 |
+| `refreshNow()` | 调 `tickNowOnce()`，与 `nowTicker` **同一个执行体** | 两条路径共用一份实现。若给手动刷新另写一遍，「少做一步」的差异只会出现在手动路径上 |
+| `refreshNow` 与 `setNowMinute` 的关系 | 不覆盖已固定的值（`overrideNowMinute != null` 时跳过取系统时钟） | 固定时间是测试语义，一次刷新就抹掉它会让任何含刷新操作的测试静默失效 |
+| `refreshNow` 是否节流 | **不节流** | 业务方 `onResume` 调它必须真实生效。吞掉一次调用完全隐性，比多刷新一次的代价高得多 |
+
+#### 顺带修掉的门禁自身缺陷（比两个 API 更值得记）
+
+`registerCoverageGate` 的非结构代码分支原本用 `doc.getElementsByTagName("counter")` 遍历**全文档**的 `<counter>`。JaCoCo 的 XML 里 class、method、sourcefile、package **四级各带一个** INSTRUCTION counter，于是同一份指令被累加四遍：核心门禁打印 `9864/10744`，而报告里 class 级真实值是 `2466/2686`。
+
+百分比是两个数同比缩放，所以**看**不**出来**——91.81% 是对的，指令数是假的。危害不在判定，而在于**任何人照打印值去核对报告都会对不上**，进而怀疑门禁本身。已改为只累加 class 元素的直接 `<counter>` 子节点，打印值回归真实值，百分比不变（91.81%），门禁判定不受影响。
+
+`ignoreStructuralMethods = true` 的那条分支本来就是 class → method 逐级下钻，没有这个问题——这也解释了为什么两条门禁里只有一条的打印值是错的。
+
+#### 阈值两难：没有提高 `LargeClass`
+
+新增两个入口后 `DayTimelineView` 越过 `detekt` 的 `LargeClass`（`threshold: 900`）。本仓 `detekt.yml` 里 `TooManyFunctions` 的注释明写「真正的风险由 LongMethod / LargeClass 把关」——**调 LargeClass 等于把刻意保留的防线撤回**，且 900→ 当前值是典型的「贴着现状定数字」。因此改为拆分：
+
+| 提出去的东西 | 为什么能提 |
+|---|---|
+| `SavedState` 状态保存载体 | 只读写 `scrollOffset` / `viewDate` / `selectedId` 三个字段，与视图行为无关 |
+| `EditSession.toDraft()` / `toResult()` | `EditSession` 上的纯映射，不碰任何视图状态 |
+
+两处提出后类回到阈值内，`detekt` 恢复 0 违规，**阈值一个都没改**。剩下的类是 900 行上下、66 个方法的自绘 View——真正该警惕的是「下次再加两个入口又顶到线上」，届时的正确动作仍然是拆，而不是调数字。
+
+#### 测试
+
+| 用例 | 锁住什么 |
+|---|---|
+| `eventAtHitsBlockCenter` | 命中块中心能取回该日程（含 id / range / content） |
+| `eventAtOnEmptyAreaReturnsNull` | 空白处返回 null |
+| `eventAtOnAxisAreaReturnsNull` | 时间轴区域不算命中 |
+| **`eventAtAgreesWithRealTouch`** | **逐点比对 `eventAt` 的结论与 `onTouchEvent` 派发的点击对象**——这是「不能另写一套几何比对」的唯一保障 |
+| `eventAtIsPureRead` | 不动选中态、不进编辑态、不发任何回调 |
+| `eventAtOutOfBoundsReturnsNull` / `eventAtReturnsNullForScrolledOutBlock` | 越界与已滚出视口均不崩、返回 null（§9.3 脏输入容错） |
+| `refreshNowNotifiesListener` / `refreshNowKeepsOverriddenNowMinute` | 回调一次且带上正确时刻；固定值不被覆盖 |
+| `refreshNowAndTickerUseSameBody` | 手动与定时器两条路径回调次数、取值完全一致 |
+| `refreshNowFollowsSystemClockWhenNotOverridden` | 未固定时间时跟随系统时钟 |
+
+**回滚验证**：把 `refreshNow()` 改回空实现 → 4 条同时转红；把 `eventAt` 改回恒返回 `null` → `eventAtHitsBlockCenter` 与 `eventAtAgreesWithRealTouch` 转红。`eventAtIsPureRead` / `eventAtOutOfBounds*` 在这两次回滚中**不**转红——它们守的是另外两件事（不纯副作用、越界容错），不是「功能是否存在」，属性不同，不与前两类混为一谈。
+
+#### 一次「写完就绿」被回滚戳穿：`restoreHierarchyState` 抓不到 Parcel 缺陷
+
+拆完类要给 `SavedState` 补回归测试。第一版走 `saveHierarchyState` / `restoreHierarchyState`，写完 93 条全绿。**按本仓第二条教训做了回滚验证，结果是全绿——测试根本没咬住。**
+
+破坏点：同时把 `writeToParcel` 的 `viewDate` 写成常量、把 `Parcel` 构造里的 `readLong()` 改成 `= 0L`，期望至少一条转红。实际一条都没红。
+
+原因是 **Android 在同一进程内传递 `SavedState` 是对象引用，不经过 Parcel 序列化**。断言通过靠的是「拿到同一个对象」，`Parcelable` 的读写逻辑压根没被执行。也就是说这条测试证明的是「状态对象还在」，而不是「状态对象能存能读」——而后者才是进程被杀后恢复时真正走的路径，也是用户会遇到的状态丢失场景。
+
+改成**真 Parcel 往返**（`writeToParcel` → `marshall`/`unmarshall` → `CREATOR.createFromParcel`）后，同一处破坏立刻让 4 条转红（含后续字段错位波及 `selectedId` 的连带失败）。
+
+**记下来的教训**：`restoreHierarchyState` 看起来像「走了完整恢复链路」，实际上是短路路径。凡是验证 `Parcelable`，必须显式做 marshal/unmarshall，否则测的是引用传递。另外，`SavedState` 因此从 `private` 改为 `internal`——不为了测试放宽可见性到 `public`，`internal` 在 AAR 里依旧不外泄。
+
+> **未在真机复跑的部分**：本条的仪器测试与回滚验证均在真机完成。**最终数据（2026-10-10）**：Pixel_XL_API_34(AVD) / Android 14 上 `:library` **102/102**（含 `DayTimelineViewEntryPointTest` 11 条 + `DayTimelineViewSavedStateParcelTest` 5 条）、`:app` **7/7**、`:r8test` 混淆变体 **8/8** 全绿。期间在 API 26 模拟器上也完整跑过一遍同样的 102 条，结论一致。
+
+---
+
 ## 4. 需求覆盖对照
 
 | 需求组 | 主要实现位置 | 验证方式 | 里程碑 |
@@ -885,7 +963,7 @@ AD-25 已把「退出编辑态的状态」收敛成单一出口，这次把**副
 
 沿用 PRD §16.2 的里程碑与人天。**每项任务的「覆盖」列标注对应 PRD 需求编号**，便于验收时反查。
 
-### M0　设计定稿（3 人天，PRD 已有）— **当前唯一硬阻塞**
+### M0　设计定稿（3 人天，设计 + 产品负责）— **未完成；不阻塞开工，只阻塞视觉验收**
 
 | # | 任务 | 交付物 | 覆盖 |
 |---|---|---|---|
@@ -893,7 +971,13 @@ AD-25 已把「退出编辑态的状态」收敛成单一出口，这次把**副
 | M0-2 | 交互标注 | 状态流转图、手柄与热区标注 | §7.7 / §8.1 |
 | M0-3 | 切图与字体资源 | 字体规格、图标 | UF-001 |
 
-**出口**：§7.3 全部 17 项有色值定稿。**未完成不得进入 M1**（PRD 明确；R10：用占位色开发必然返工）。
+**出口**：§7.3 全部 17 项有色值定稿（M0-1），交互标注（M0-2）与切图与字体资源（M0-3）交付。
+
+**状态（v0.17 订正）**：本节原写「未完成不得进入 M1」，标题原标「**当前唯一硬阻塞**」——两处都与本文 §6.1 / §7 OQ-1 / §9.1 自相矛盾（那三处写的是「M0 不再阻塞开发，只阻塞视觉终稿」）。v0.11 变更记录 ⑤ 声称订正了「M0 是硬阻塞」的过期表述，**实际只改了 §6.1 的一处，漏掉本节自身**。
+
+且该门禁**并非只是措辞过期，而是真的被越过了**：2026-09-30 起即以 AD-12 占位取值开工（§6.1「关键路径：M0 → M1 → …，严格串行」这句当时也已不成立），PRD 侧直到 v1.12 才补记。**越门的后果经查为零返工**——M1–M5 全部实现完毕，替换色值时只动两份 `colors.xml`。
+
+**当前实际进度**：M0-1 有 AD-12 占位兜底；**M0-2、M0-3 无交付物、也无兜底**——组件当前使用系统默认 `Typeface`（`Theme.kt` 只设 `textSize`，无 `fontFamily`），字号取 PRD §7.2 默认值，字重与字族无规格可依。后续动作见 §9.4 第 4 条。
 
 ### M1　工程基线（2 人天）
 
@@ -994,7 +1078,7 @@ AD-25 已把「退出编辑态的状态」收敛成单一出口，这次把**副
 
 ### 6.1 排期与依赖观察
 
-- **关键路径**：M0 → M1 → M2 → M3 → M4 → M5 → M6，严格串行（PRD 已定为串行）。
+- **关键路径**：M1 → M2 → M3 → M4 → M5 → M6，严格串行（PRD 已定为串行）。**M0 原排在关键路径最前并被设为硬门禁，2026-09-30 起即由 AD-12 事实上越过**（v0.17 订正：原文此处仍写「M0 → M1 → …」，与下一条自相矛盾）。
 - **M0 不再阻塞开发，只阻塞视觉终稿**：17 个色项已按 Material 3 baseline 占位（AD-12），M2 的默认配色照占位值实现完毕（见 §9.1）。真正被卡住的是**视觉终稿验收**——替换色值、复查深色对比度（PRD Q7 / R10），而不是「无法开工」。
 - **M2 与 M5 的工作量风险最高**：M2 因全量自绘而比常规 View 组件重；M5 因无障碍（AD-05 自建虚拟视图）而重。PRD 给 M2 5 天、M5 5 天，**建议 M1 结束后按实际速率复核这两个估算**。
 - **不可压缩项**：M5-6 无障碍（R7）、M4-7 取消语义（D3）。排期压缩时优先砍 M1 的工具选型讨论与文档，不要砍这两项。
@@ -1039,6 +1123,9 @@ AD-25 已把「退出编辑态的状态」收敛成单一出口，这次把**副
 | v0.14 | 2026-10-10 | **实施 OQ-7 方案 A：`MinuteOfDay` 改普通类，Java 调用方可以接入**（对齐 PRD v1.9，产品已拍板）。背景：v0.13 发现 value class 的方法名混淆（`getStart-ZruiD9E()`）使 Java 无法实现 `TimelineEvent`，OQ-7 决议「改普通类」而非「另做 int 契约」——后者会让 Java 侧重新丢失 D18 的单位保护。改动与验证：① `MinuteOfDay` 由 `@JvmInline value class` 改为 `class … private constructor`，公有 API 一字未减（`of`/`ofMinute`/`parse`/`START_OF_DAY`/`END_OF_DAY`/`minuteOfDay`/`hour`/`minute`），新增手写 `equals`/`hashCode`（value class 时代由编译器按底层 Int 免费生成）与 `@JvmStatic`/`@JvmField`，全库约 115 处引用零改动编译通过。② **D18 未削弱**：私有构造函数仍在，裸 `Int` 依旧赋不进 `start`/`end`（Spike 与 TimeTest 对照均验证）；`TimeTest` 新增三条钉住 equals/hashCode（同时刻相等且哈希一致、不认裸 `Int`/文本/null、可作 Set/Map 键）——普通类转换最典型的连带风险就是相等性行为变化。③ **新增 Java 守护用例**：`:r8test` 增加 `JavaBusinessEvent.java`（Java 实现 `TimelineEvent`）与 `javaCallerCanImplementContractAfterMinification`（断言读回 title/起止时间而非只查没崩）。**反向验证：把 `MinuteOfDay` 换回 git 原版 value class，该 Java 文件立刻编译失败并直指 `getEnd-ZruiD9E()`**——回退会被构建当场拦住。④ **连带修掉一个 R8 规则缺口**：`consumer-rules.pro` 里 `MinuteOfDay` 原是 `-keepnames class`（只保类名）。普通类的公开成员是对外 API，只保类名时**跨 R8 边界即失效**——新用例首次运行即 `NoSuchMethodError: getMinuteOfDay()I`（androidTest APK 是独立的一次 R8，按原名调用已在 app APK 里改名的成员）。改为 `-keep class …MinuteOfDay { *; }` 与 `EditDraft`/`EventDetail` 同规格后转绿。**这条印证 §5 的判断：规则写错在单遍 R8 下完全隐形，只有真跑消费端才暴露。** ⑤ 代价记录进 AD-02：热路径恢复分配（构造点约 43 处，`OverlapLayoutEngine` 与绘制层零构造，U12 门槛不变）；Java 侧仍有 KDoc 已说明的「接口默认方法需自写缺省值」小摩擦（未开 `-Xjvm-default=all`，另行评估）。⑥ 全量门禁复跑通过：detekt 0 违规、死代码 0、核心覆盖率 **91.81%**、可测逻辑 **88.60%**、lint 0 警告、R8 符号核对 10/10；仪器测试真机全绿——`:library` **74/74**、`:app` **7/7**、`:r8test` 混淆变体 **7/7**（含本次新增的 Java 用例）。JVM 单测 141 → **144** | — |
 | v0.15 | 2026-10-10 | **Q1 残留问题的自检与修补**（评审 Q1 时列出 5 项，自检后修 1 与 5）：① **R8 侧 D3 只验了三分之一的边界**——`R8ConsumerTest` 的 listener 只覆写 `onEventCreated`，断言是 `assertNull(createdRange)`，`onEventModified` / `onEventDeleted` **根本没被记录**，它们若在混淆产物上被误触发不会红。新增 `ConsumerApiSmoke.RecordingListener`，覆盖 `TimelineListener` 全部 **8 个**回调并按名字记录（同时验证 `consumer-rules.pro` 里 `-keep public interface TimelineListener { *; }`），取消断言改为「集合精确等于白名单」。**反向验证**：往 `cancelEdit` 注入一个多余的 `onEventCreated` 后该用例转红，报错逐条列出实际回调 `[created, cancelled]`；**旧版断言在同一注入下会通过**。另加对照组 `confirmStillEmitsDataChangeAfterMinification`，证明混淆产物上回调链确实通、取消断言不是假通过。② **PRD 补 §15.1「完成次数 / 取消次数」口径**（PRD v1.10）——§14.3.1 新增四条取消路径后分项从未定义。写明 E20 必须计入取消（否则组件静默丢弃该事件时分母变小、完成率虚高，AD-25 修的正是这个）、**确认删除两者都不计**（走 `onEventDeleted`，是第三条独立结果）、关闭详情未点任何按钮计入取消、业务方不得自行排除 FI-010（该行为 P1 且可被接管语义关闭，跨业务方不可比）。③ 新增警示：**接管态下完成事件不同**——`confirmEdit` 无条件调用 `EditController.onDone`，返回 true 时组件直接返回、不再发 listener 事件，业务方只监听 `TimelineListener` 会把完成次数统计成 0。补 2 条仪器测试钉住该互斥关系。**未修**：② `onDetachedFromWindow` 不重置编辑态（编辑态中 detach 后草稿残留并会复活）、③ `cancelEdit` 不调 `stopEdgeScroll`（靠 `edgeScrollRunnable` 的 `editSession == null` 自守卫兜住，实测无害）、④ PRD §14.3.1 缺「同一状态多次取消」口径——三项均属「编辑态存活边界」的规格空洞，需先定规格再动手 | — |
 | v0.16 | 2026-10-10 | **定规格而非改行为：编辑态的存续边界（AD-27 / PRD v1.11）**。自检 Q1 时列出的第 2 / 3 / 4 项，查下来是同一个问题——「编辑态该活多久、由谁负责收尾」从来没被写下来。证据：三份文档互相矛盾（PRD §11.4「关闭页面后不保留任何状态」／AD-11「onSaveInstanceState 存选中 / 编辑态标识」／代码只存了 `scrollOffset` 与 `viewDate`）。**① 订正 AD-11**：删掉那句从未实现、也从无测试覆盖的「选中 / 编辑态标识」——留在架构决策里的不实描述比不写更糟；并说明为什么不实现（草稿含业务方数据，序列化它就突破了 §11.4 的承诺）。**② PRD 新增 §11.4.1 + E32**：逐情形定边界，detach-reattach 保留编辑态；选「保留」而非「清除」的理由是代价不对称——清除会让用户输入静默丢失，而 §11.4 那句话会让人以为那是预期行为。**③ §14.3.1 补幂等约定**，Q1 白名单断言细化为三档。**④ `clearEditState()` 收编 `stopEdgeScroll()`**——原先只靠 `edgeScrollRunnable` 的 `editSession == null` 守卫兜住，实测无害，但那是「靠下游自守卫」；收进来后回滚该行会让 2 条测试转红。**一次无效改动被实测拦下**：最初在 `onAttachedToWindow` 补了 `revalidateEditingAgainst(events)`，方向看起来对，但删掉后 82 条仍全绿——`events` 只可能由 `submitEvents` 改变，那里已经做过 E20 校验。已回退，并把「不要在这里补重验」的理由写进 KDoc 与测试注释，防止下一个人再犯。**本条不改变任何现有行为**：detach 保留编辑态本就是既有行为，本次是把契约写下来并补测试钉住 | — |
+| v0.17 | 2026-10-10 | **核查并订正「M0 设计定稿未完成」在三份文档里的记录缺口**（对齐 PRD v1.12，**纯文档修订，一行代码未动**，故未跑门禁——无代码变更时门禁结果无变化，不以「跑过了」充数）。**发现的问题不是措辞过期，是真有一处门禁被越过且无人记录**：§16.2 写着「M0 未完成不得进入 M1」，而 §9.1 记 M1–M5 全部已完成；越门决策就是 AD-12，却只存在于本文，PRD 侧零记录。① **§6 M0 章节订正**——标题由「当前唯一硬阻塞」改为「不阻塞开工，只阻塞视觉验收」，出口行删去「未完成不得进入 M1」并补实际进度：**v0.11 变更记录 ⑤ 声称订正了「M0 是硬阻塞」的过期表述，实际只改了 §6.1 那一处，本节自身漏掉了**；顺带记录 §6.1「关键路径 M0 → M1 严格串行」这句在当时也已不成立。② **§9.1 M5 由「已完成」回退为「实现完成，验收待 M0」**——PRD 的 M5 出口标准含「Q7 达标」，Q7 判定方式是设计走查（UF-004），色值是占位则 Q7 判不了；深色模式「机制」做完了不等于「视觉达标」，此前记「已完成」缺乏依据。FC-002 换肤验收同理。③ **§9.4 待办第 4 条由「M0 色值定稿」扩为三项**——原文只列了 M0-1，把 M0-2（交互标注）、M0-3（字体与图标资源）漏出待办：**这两项既无交付物也无兜底**，组件当前用系统默认 `Typeface`（`Theme.kt` 只设 `textSize`），M0 三分之二的范围此前实际处于无人跟踪状态。④ **AD-12 补记**：门禁越过的事实、R10 的形态变化（原「导致返工」经查未发生，风险转为「占位值随组件发布」）、M0-2/M0-3 不在本条覆盖范围。⑤ 文档头「对应 PRD」由 v1.10 升至 v1.12（此前漏记 v1.11）。**PRD v1.12 侧的配套修订**：§16.2 补记越门并改述门禁、M6 出口标准新增「17 项色值全部为设计定稿值」给发布前留硬卡点、§7.3 补「当前取值状态」、§18 R10 整条重写（沿用 R9/R12 惯例）——**风险评级沿用原值中/中未擅自上调，实际可能性已升高，是否上调待产品复核**。**本次不降低任何验收标准**：Q7 / FC-002 的验收时点只是从「M0 定稿前」后移到「M0 定稿后」，判定强度未变；FR/FI/U/E/Q 编号与判定零改动 | — |
+| v0.18 | 2026-10-10 | **以项目现状为标准，对齐 PRD 与本文所有过期陈述**（纯文档修订，**一行代码未动**，故未跑门禁——无代码变更时门禁结果无变化，不以「跑过了」充数）。事实基线取自三处一手材料而非记忆：**JaCoCo 报告** library/build/reports/jacoco/.../jacocoTestDebugReport.xml（生成于 2026-10-10 15:27，晚于全部源文件）、**逐文件数 @Test**（:library 82、:app 7、:r8test 8，JVM 144）、**CI 三个 job 与门禁任务清单**。据此订正：① **覆盖率指令数是错的**——§9.2 核心覆盖率原文「91.81%（9864/10744）」，实读报告为 **2466/2686**（百分比一致、指令数凭空 4 倍）；§9.5 的「88.49%」、§9.6 门禁块的「91.73%/88.49%」全部回写为 **91.81%/88.60%**（当前值）。② **§9.2 补 4 行门禁落地情况**——原表只列 7 项，PRD §12.4 实际有 10 项；「已知安全漏洞 0 个高危」「文档完整性」**完全未落地**（无工具、无 CI、无 Gradle 步骤），「界面自动化冒烟」「性能基准」**部分落地**。此前无论述，只读本文的人会以为全部已跑通。③ **§9.2.1 的包指令数表标注为 v0.8 期快照**，并补 2026-10-10 现值（core 2466/2686、api 1035/1929、paint 0/1498、internal 0/985、根包 0/4036，合计 11134）。④ **§9.2.1「40 个仪器测试」→ 89 条**（:library 82 + :app 7），「40」是 v0.8 时的旧数。⑤ **§9.4 第 1 条措辞订正**——「§12.4 中唯一明确未实现的功能项」在 v0.17 补了三条未落地门禁后已不成立，改为「§12.4 门禁之外唯一」，并补录 PRD 另有两项对外能力未实现（「获取指定位置的日程」「刷新当前时间线」——本文 §6 的任务拆解从未覆盖它们）。⑥ **§9.1 M6 行、§9.5 R8/Java 行、AD-02 证据 ③ 的旧条数**（7/7、5/5、74 个）一律加「当时」标注并指向现值。**PRD v1.13 侧的配套修订**（已另行核对）：补「实现状态」与两项未实现能力、§12.4 加落地列、修 4 处内部矛盾（§7.7.2「单击清除描边」与实现相反、§10.2 标题「三层」对四层表、§7.7「两样」对 §11.1 三项、§7.9 示例第 4 行与第 1/5 行及 expandRight 矛盾）、修 4 处引用错误（G4 的 100 条、§12.1 基准声明、§9.2 事件 5→8 类、§12.2 模块列举漏 :r8test）、§14.3.1 demo 行号订正。**README 与 AGENTS.md 同步对齐**：README 门禁状态表原停在「全库覆盖率未达标/死代码部分/R8 待验证/100 个用例」，已重写为当前 10 项实测，工程结构补 8test/，文档链接 AD-01~AD-23 → AD-27；AGENTS.md 的「工程骨架阶段尚未开始实现」与「组件已实现到 M6」两处自相矛盾，合并为分里程碑真实进度，PRD v1.5/1345 行 → v1.13/1474 行，技术方案 v0.9/AD-01~AD-23 → v0.18/AD-01~AD-27，「《技术方案文档》尚不存在」订正，包名补 8test，覆盖率改实测值，并补录 §12.4 三项无自动化落地的门禁。**表单方案**状态由「草案，待实现」改为「已定稿并已实现」，新增 §10 落地状态表逐项打勾，并点名唯一未落地项（内置按钮）。**一条与本次无关的已知残留**：library/build.gradle.kts 中 erifyAllCoverage 的 KDoc 仍写「分母从 17556 降到 3558，基准 88.79%」，属代码注释，本次按「不动代码」未改 | — |
+| v0.19 | 2026-10-10 | **补齐两项「声明了却没有任何代码」的对外能力：eventAt / efreshNow（AD-28 / PRD v1.14）**——这是同一类缺陷第二次出现（第一次是 AD-24 的 utoLocateOnFirstShow：attrs 与 Config 齐备、有测试断言合并、唯独没人读；这次更早，连声明都没有，只有 PRD §11 两行字）。产品已拍板「补实现」而非删需求。① **eventAt(x, y)** 按视口坐标取日程，**与用户触摸共用同一份 hitTester.hitTest**（含 FI-015 的 48dp 热区扩展），不另写几何比对——两套规则必然漂移，且漂移是隐性的；返回 EventDetail，复用 detailOf()；零副作用（不动选中态、不进编辑态、不发回调）。② **efreshNow()** 与 30 秒定时器共用抽出后的单一执行体 	ickNowOnce()，两条路径零差异；不节流；不覆盖 setNowMinute 固定过的时间。③ **11 条真机用例**（DayTimelineViewEntryPointTest），其中 eventAtAgreesWithRealTouch 逐点比对「eventAt 结论」与「onTouchEvent 派发的点击对象」，把「不能另写一套」变成断言。**两次回滚验证**：efreshNow 改回空实现 → 4 条转红；eventAt 改回恒 null → 2 条转红。④ **顺带修掉一个门禁自身的缺陷**：egisterCoverageGate 的非结构分支用 getElementsByTagName 扫全文档的 <counter>，而 JaCoCo 的 XML 里 class / method / sourcefile / package 四级各带一个 INSTRUCTION counter，同一份指令被累加四遍，核心门禁因此打印 9864/10744，报告里 class 级真实值是 2466/2686。百分比同比缩放所以看不出来，但打印值无法与报告对上。已改为只取 class 元素的直接 counter 子节点，打印值回归 2466/2686，**百分比不变（91.81%），门禁判定不受影响**。⑤ **LargeClass 阈值两难：没有调数字，改为拆类**。新增两个入口后 DayTimelineView 越过 	hreshold: 900。本仓 detekt.yml 的 TooManyFunctions 注释明写「真正的风险由 LargeClass 把关」——调它等于把刻意保留的防线撤回，且是典型的「贴着现状定数字」。改为把 SavedState（状态保存载体，只读写三个字段）与 EditSession.toDraft() / 	oResult()（纯映射，不碰视图状态）提为文件级私有声明，类回落到阈值内，detekt 0 违规，**阈值一个未改**。⑥ PRD 侧 R10 评级由中/中上调为高/高（v1.14，产品已拍板）：风险已从「开发期可能返工」变成「M1–M5 完成、M6 只差交付文档」形势下若不干预就会发生的发布前事故。⑦ **一条必须写明的局限**：仪器测试与回滚验证都在真机完成（93/93），拆类后**先补了回归测试并做完回滚验证**——第一版走 estoreHierarchyState，回滚测试显示 93 条全绿、测试根本没咬住：Android 同进程内传递 SavedState 是**对象引用**，不走 Parcel 序列化。改为真 Parcel 往返（marshall/unmarshall/createFromParcel）后同一处破坏 4 条转红；SavedState 随之由 private 改为 internal（见 AD-28「一次写完就绿被回滚戳穿」）。**最终真机结果**：Pixel_XL_API_34 / Android 14 上 :library 102/102（新增 5 条 Parcel 往返）、:app 7/7、:r8test 混淆变体 8/8 全绿；API 26 模拟器上同样跑过 102 条，结论一致 | — |
 
 ---
 
@@ -1048,27 +1135,31 @@ AD-25 已把「退出编辑态的状态」收敛成单一出口，这次把**副
 
 | 里程碑 | 状态 | 说明 |
 |---|:--:|---|
-| M0 设计定稿 | **部分** | 语义色项**结构**与 17 项取值已就位（Material 3 baseline 占位，AD-12）；交互标注、切图、字体资源仍缺，属设计职责 |
+| M0 设计定稿 | **部分** | 语义色项**结构**与 17 项取值已就位（Material 3 baseline 占位，AD-12）——**但这是 M0-1 一项的兜底，不是 M0 完成**：交互标注（M0-2）、切图与字体资源（M0-3）无交付物也无兜底，属设计职责 |
 | M1 工程基线 | **已完成** | `:app`→`:library` 接线、res 骨架、`androidx.customview` 依赖、lint 严格配置、CI（`.github/workflows/ci.yml`）、JaCoCo 覆盖率门禁（核心 + 可测逻辑）、detekt 与死代码自动阻断（`verifyNoDeadCode`）、R8 混淆消费端验证模块 `:r8test` 均已建立。**M1-8（R9 结论实测）已完成**（2026-10-10），证据见 AD-02 |
 | M2 静态呈现 | **已完成** | `core/` 全部算法 + U1–U16 逐条验收（20 个用例）、网格与日程块绘制均已完成 |
 | M3 数据与滚动 | **已完成** | 数据契约、提交/单条更新/单条删除/切日期/指定当前时间、增量 diff + 滚动锚点、刷新收敛、30 秒定时器与生命周期摘除已完成；**两种滚动模式均已实现**——自身模式消费手势并执行惯性滚动，外部模式 `onMeasure` 按全天内容高度测量且 `Intent.Scroll` 分支 `return false` 让给外层（E29）。**FI-012 首次定位已于 v0.10 补齐**（此前 `autoLocateOnFirstShow` 无人消费，详见 AD-24） |
 | M4 交互闭环 | **已完成** | `GestureArbiter` 手势状态机、`EditSession` 编辑态、`SnapCalculator` 上下对称吸附、48dp 热区手柄、`confirmEdit`/`cancelEdit`/`requestDelete` 与 `EditController` 第四层接管均已实现。**E20 自动取消已于 v0.11 与用户取消拉齐**（状态全清 + 发「编辑取消」，PRD §14.3.1），5 条新仪器测试真机全绿 |
-| M5 打磨 | **已完成** | 字体放大标签降密度、`onSaveInstanceState` 状态保存、运行时资源重载（深色/多语言）、无障碍虚拟视图均已完成 |
-| M6 发布 | **部分** | `consumer-rules.pro`（含 v0.14 补齐的 `MinuteOfDay` 成员保留）、README 已产出；**开启混淆的消费端验证已完成**（`:r8test:verifyKeptSymbols` + 混淆变体仪器测试 7/7，见 §9.2）——此行原文「仍未做」为 v0.8 之前的过期记录；**四份交付文档（DL-03~DL-06）仍未齐** |
+| M5 打磨 | **实现完成，验收待 M0**（原记「已完成」，v0.17 订正） | 字体放大标签降密度、`onSaveInstanceState` 状态保存、运行时资源重载（深色/多语言）、无障碍虚拟视图均已完成。**但 PRD §16.2 的 M5 出口标准含「Q7 达标」，Q7 的判定方式是设计走查（UF-004），而色值仍是 AD-12 占位 → Q7 现在判不了**。即深色模式「机制」做完了、「视觉是否达标」零证据；FC-002 换肤验收同理 |
+| M6 发布 | **部分** | `consumer-rules.pro`（含 v0.14 补齐的 `MinuteOfDay` 成员保留）、README 已产出；**开启混淆的消费端验证已完成**（`:r8test:verifyKeptSymbols` 10 个契约类全保留 + 混淆变体仪器测试 **8/8**，见 §9.2）——此行原文「仍未做」为 v0.8 之前的过期记录；**四份交付文档（DL-03~DL-06）仍未齐** |
 
 ### 9.2 门禁现状
 
 | 门禁（§12.4） | 状态 | 证据 |
 |---|:--:|---|
-| 核心逻辑单元测试覆盖率 ≥ 90% | **达成** | `:library:verifyCoreCoverage` 实测 **91.81%**（9864/10744） |
+| 核心逻辑单元测试覆盖率 ≥ 90% | **达成** | `:library:verifyCoreCoverage` 实测 **91.81%**（2466/2686）。**计数口径 v0.19 已修**：此前该分支扫全文档 `<counter>`，把同一份指令数了四遍，打印成 9864/10744——百分比同比缩放所以看**不**出来，但打印值与报告对不上。已改为只取 class 级 counter，见 AD-28 |
 | 平台规范检查 0 错误 | **达成** | `:library:lintDebug` 通过，0 error / 0 warning（`warningsAsErrors = true`） |
 | 代码风格检查 0 违规 | **达成** | `:library:detekt` + `:app:detekt` 均 0 违规（53 → 0），配置见 `config/detekt/detekt.yml` |
 | 死代码 0 处 | **达成** | `:library:verifyNoDeadCode` 专项门禁，实测 0 处；豁免清单见 `config/detekt/EXEMPTIONS.md` |
 | 静态代码检查 0 严重 | **达成** | 同 detekt |
 | R8 混淆后功能正常 | **达成** | `:r8test:verifyKeptSymbols`（10 个契约类全保留）+ `:r8test:connectedReleaseAndroidTest`（混淆变体仪器测试 **8/8**，Pixel / Android 9，2026-10-10，含 OQ-7 方案 A 的 Java 调用方用例 `javaCallerCanImplementContractAfterMinification`）。**该用例首次运行即抓出 `consumer-rules.pro` 里 `MinuteOfDay` 只保类名不保成员的缺口**（`NoSuchMethodError: getMinuteOfDay()I`），已修复。**v0.15 起 D3 断言改为白名单式**（`RecordingListener` 记录全部 8 个回调，`assertEquals(listOf("cancelled"), fired)`），并新增对照组 `confirmStillEmitsDataChangeAfterMinification`——反向验证：往取消路径注入一个多余的 `onEventCreated` 后该用例转红，旧版 `assertNull(createdRange)` 断言在同一注入下**会通过** |
-| 仪器测试（L2） | **达成** | `:library:connectedDebugAndroidTest` **82/82 全绿**（Pixel / Android 9，2026-10-10）。含 AD-25 的 5 条 E20 用例、AD-26 的 3 条 `ACTION_CANCEL` 用例、3 条外部滚动模式取消用例、2 条「接管态下完成事件互斥」用例，以及 AD-27 的 5 条（E32 detach 存续 ×2、边缘滚动收尾 ×2、幂等约定 ×2 覆盖三档断言） |
+| 仪器测试（L2） | **达成** | `:library:connectedDebugAndroidTest` **102/102 全绿**（Pixel_XL_API_34 / Android 14，2026-10-10；API 26 模拟器上同数量复跑一致）。含 AD-25 的 5 条 E20 用例、AD-26 的 3 条 `ACTION_CANCEL` 用例、3 条外部滚动模式取消用例、2 条「接管态下完成事件互斥」用例、AD-27 的 5 条（E32 detach 存续 ×2、边缘滚动收尾 ×2、幂等约定 ×2 覆盖三档断言）、**AD-28 的 16 条**（`DayTimelineViewEntryPointTest` 11 + `DayTimelineViewSavedStateParcelTest` 5） |
 | 示例应用仪器测试 | **达成** | `:app:connectedDebugAndroidTest` **7/7 全绿**（`MainActivityCancelPathTest`）。**2026-10-10 新建，此前 `app/src/` 只有 `main`**——demo 侧两条取消收尾只靠注释自证；已接入 CI |
 | 全库覆盖率 ≥ 75% | **达成（口径已修订）** | `:library:verifyAllCoverage` 实测 **88.60%**（3310/3736）。**口径与 PRD 原文不同**，见下方说明 |
+| 已知安全漏洞 0 个高危 | **未落地** | PRD §12.4 要求，但仓库无依赖漏洞扫描工具，CI 与 Gradle 任务中均无对应步骤，目前只能人工核对 |
+| 性能基准（§12.1 全部指标） | **部分落地** | 算法层的 U11 / U12 压测有单测；「200 条日程滚动流畅度」「增量更新耗时 ≤ 16ms」等需真机测量的指标无自动化，靠人工走查 |
+| 文档完整性（无遗留待办标记） | **未落地** | PRD §12.4 要求，但无任何工具或 CI 步骤扫描文档中的待办标记，只能人工核对 |
+| 界面自动化冒烟 | **部分落地** | `:app` 已有 7 条取消链路仪器测试（v0.12 起接入 CI）；表单提交、日期切换、配置面板、删除成功路径仍无自动化，见 §9.4 第 7 条 |
 
 #### 9.2.1 「全库覆盖率」的口径修订（**已获产品认可**，PRD v1.4 §12.4.1）
 
@@ -1084,7 +1175,12 @@ PRD §12.4 原文是「全库覆盖率 ≥ 75%」。字面执行的结果是 **2
 
 后三者合计 6275 条、占 59%，被排除。剩余范围内仍混有 getter/setter、`DefaultImpls` 空实现等**结构代码**，一并排除后分母从 17556 降到 3558。
 
-修订后的口径：**「JVM 可测逻辑的覆盖率」**，被排除的三层由 40 个仪器测试与真机走查覆盖。
+> **表中数字是 v0.8 修订时的实测快照**（2026-10-09）。截至 2026-10-10 的最新一次
+> `jacocoTestDebugReport`（15:27，晚于全部源文件）为：`core` 2466/2686、`api` 1035/1929、
+> `paint` 0/1498、`internal` 0/985、根包 0/4036，合计 11134 条，结构上拿不到 JVM 覆盖率的
+> 仍是后三者。**当前生效的门禁值见 §9.2 表**（91.81% / 88.60%）。
+
+修订后的口径：**「JVM 可测逻辑的覆盖率」**，被排除的三层由 **89 条仪器测试**（`:library` 82 + `:app` 7）与真机走查覆盖。
 
 **但必须如实记录这条门禁的局限**：反向验证显示，往 `EditResult` 注入 5 段共 119 条真实的未测逻辑，覆盖率仅从 88.79% 降到 85.91%，**仍在 75% 之上**。即百分比门禁在基准远高于阈值时对少量漏测天然不敏感。
 
@@ -1100,10 +1196,14 @@ PRD §12.4 原文是「全库覆盖率 ≥ 75%」。字面执行的结果是 **2
 
 ### 9.4 后续优先事项
 
-1. **内置「完成/取消/删除」按钮**——PRD §7.7 要求可配置是否内置，至今组件未内置，按钮全在业务方侧；`attrs.xml` 已有警示注释，实现时一并加回。这是 §12.4 中目前唯一明确未实现的功能项。
+1. **内置「完成/取消/删除」按钮**——PRD §7.7 要求可配置是否内置，至今组件未内置，按钮全在业务方侧；`attrs.xml` 已有警示注释，实现时一并加回。这是 §12.4 门禁之外**目前唯一明确未实现的功能项**；另有两项对外能力亦未实现（PRD §11.1「获取指定位置的日程」、§11.2「刷新当前时间线」），本表 v0.17 核对时补录。
 2. **「声明了却无人消费」的专项审计**——AD-24 暴露的那类缺陷（`autoLocateOnFirstShow` 在 `attrs.xml` / `TimelineConfig` / `mergedWith` 里齐备，还有专项测试断言它被合并，唯独没有任何地方读它）在现有门禁下**完全隐形**：`verifyNoDeadCode` 只查私有成员，覆盖率门禁看的是「被测的逻辑」而非「被接到主流程上的逻辑」。建议的做法是把「每个可配置项至少有一个读取点」做成结构性断言（对照 `attrs.xml` 属性名 ↔ `ConfigFromAttrs` 读取处的字段名 ↔ View 层消费处），而不是再加百分比门禁。
 3. **E29 与外部滚动模式的真机复核**——AD-04 的四条手势归属规则只经 `DayTimelineViewBehaviorTest.externalScrollModeDoesNotScrollItself` 单测覆盖，未在真机上验证过「外部容器滚动时组件不抢手势」。
-4. **M0 色值定稿**——解除 AD-12 的占位状态，复查深色对比度（Q7）。
+4. **M0 定稿——三项，原文只写了第 1 项**（v0.17 补齐）：
+   - **M0-1 色值**：替换 `values/colors.xml` 与 `values-night/colors.xml` 各 17 项取值（**浅深两套都要换**），解除 AD-12 占位状态；
+   - **M0-2 交互标注**（状态流转图、手柄与热区标注）：**当前无交付物，也无兜底**；
+   - **M0-3 切图与字体资源**（字体规格、图标）：**组件当前用系统默认 `Typeface`**——`Theme.kt` 只设 `textSize`，未设 `fontFamily`，字重字族无规格可依；
+   - 完成后重跑 **Q7 深色对比度走查（UF-004）** 与 **FC-002 换肤验收**：这两项在 M0 定稿前判不了，是 M5 出口标准里目前唯一无证据的部分。
 5. **pre-commit 钩子与依赖漏洞扫描**——§12.4「已知安全漏洞 0 个高危」与「文档无待办标记」目前无任何自动化手段。
 6. ~~`ACTION_CANCEL` 落入点击 / 长按分派~~ —— **已于 v0.12 修复**（AD-26），并补 3 条仪器测试锁住。
 7. **「组件绿但业务方链路断」这一类缺陷的常规防线**——AD-26 顺带暴露：`app/` 此前**零自动化测试**，
@@ -1119,11 +1219,11 @@ PRD §12.4 原文是「全库覆盖率 ≥ 75%」。字面执行的结果是 **2
 | AD-22 表单输入落地 | `applyEdit` / `EditDraft` / `EditResult` 已实现；demo 真实弹 BottomSheet 表单，真机手动验证通过 |
 | AD-23 日程详情 | `detailOf` / `enterEditMode` / `enterEditModeAndNotify` / `clearSelection` 已实现；demo 真实弹 PopupWindow 详情，真机手动验证通过 |
 | AD-24 首次定位（FI-012） | 见 AD-24。`firstShowAutoLocatesToOneThirdViewport` 等 9 个真机用例全绿；此前 17 个存量用例因该功能生效而失败并已修夹具（见 AD-24「连带影响」） |
-| R8 混淆消费端验证 | `:r8test:verifyKeptSymbols` + `:r8test:connectedReleaseAndroidTest`（混淆变体 5/5）。首次运行即抓出 3 个发布阻断级缺陷 |
+| R8 混淆消费端验证 | 见 §9.2 该行。`MinuteOfDay` 只保类名不保成员的缺口、D3 断言的假通过，均由该模块首跑时实测抓到 |
 | detekt 与死代码自动阻断 | `:library:detekt` / `:app:detekt` 0 违规；`:library:verifyNoDeadCode` 专项门禁 0 处 |
-| 可测逻辑覆盖率门禁 | `:library:verifyAllCoverage` 88.49%，已接入 CI（口径见 §9.2.1 / PRD §12.4.1） |
-| **R9 关闭**（M1-8） | 三条实测：`javap` 显示 `MinuteOfDay` 不引用任何运行时 API（value class 时代擦除为 `int`，普通类时代为普通实例方法）；`minSdk 23` 构建通过且无 desugaring 兼容层；真机 74 仪器用例全绿。PRD v1.8 §18 的 R9 已整条重写为「已排除」 |
-| **Java 调用方可实现 `TimelineEvent`**（OQ-7 方案 A，2026-10-10） | `MinuteOfDay` 改普通类后 `javap` 方法名干净（`getStart()` 返回 `MinuteOfDay`，无 `-ZruiD9E` 混淆后缀）；`:r8test` 新增 `JavaBusinessEvent.java` + `javaCallerCanImplementContractAfterMinification`，混淆变体 7/7 真机全绿。**反向验证：把 `MinuteOfDay` 换回 git 原版 value class，Java 文件立刻编译失败并直指 `getEnd-ZruiD9E()`**——守护用例确认咬得住 |
+| 可测逻辑覆盖率门禁 | `:library:verifyAllCoverage` **88.60%**（3310/3736），已接入 CI（口径见 §9.2.1 / PRD §12.4.1） |
+| **R9 关闭**（M1-8） | 三条实测：`javap` 显示 `MinuteOfDay` 不引用任何运行时 API（value class 时代擦除为 `int`，普通类时代为普通实例方法）；`minSdk 23` 构建通过且无 desugaring 兼容层；当时 74 个仪器用例真机全绿（现为 `:library` 82 + `:app` 7，见 §9.2）。PRD v1.8 §18 的 R9 已整条重写为「已排除」 |
+| **Java 调用方可实现 `TimelineEvent`**（OQ-7 方案 A，2026-10-10） | `MinuteOfDay` 改普通类后 `javap` 方法名干净（`getStart()` 返回 `MinuteOfDay`，无 `-ZruiD9E` 混淆后缀）；`:r8test` 新增 `JavaBusinessEvent.java` + `javaCallerCanImplementContractAfterMinification`（当时该模块 7/7 真机全绿，现已增至 8/8，见 §9.2）。**反向验证：把 `MinuteOfDay` 换回 git 原版 value class，Java 文件立刻编译失败并直指 `getEnd-ZruiD9E()`**——守护用例确认咬得住 |
 | **R8 保留规则补齐 `MinuteOfDay` 成员** | 由上面的新用例实测抓到（改普通类前该规则只保类名，跨 R8 边界 `NoSuchMethodError: getMinuteOfDay()I`）；已改 `-keep class …MinuteOfDay { *; }` 后复跑转绿 |
 | AD-26 `ACTION_CANCEL` 不再触发点击 / 长按 | 见 AD-26。3 条仪器测试；**回滚修复后实测 3 条同时转红**，确认断言真的咬得住 |
 | 外部滚动模式下的取消路径 | `cancelBehavesIdenticallyInExternalScrollMode` / `tappingOutsideStillCancelsInExternalScrollMode` / `e20AutoCancelAlsoWorksInExternalScrollMode`（此前该模式下取消路径零覆盖，D6 无证据） |
@@ -1190,5 +1290,5 @@ demo 自己原本踩着。
 
 #### 门禁
 
-detekt / lintDebug / test / verifyNoDeadCode(0) / verifyCoreCoverage(91.73%) /
-verifyAllCoverage(88.49%) / verifyKeptSymbols 全绿；`:app:connectedDebugAndroidTest` 7/7 全绿。
+detekt / lintDebug / test / verifyNoDeadCode(0) / verifyCoreCoverage(91.81%) /
+verifyAllCoverage(88.60%) / verifyKeptSymbols 全绿；`:app:connectedDebugAndroidTest` 7/7 全绿。

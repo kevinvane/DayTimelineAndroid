@@ -1,10 +1,11 @@
 # DayTimeline
 
-可嵌入任意 Android 应用的**单日 24 小时时间轴视图组件**。当前仓库处于**工程骨架阶段，尚未开始实现**。
+可嵌入任意 Android 应用的**单日 24 小时时间轴视图组件**。当前仓库已进入**实施后期**：组件与 demo 均已实现并有门禁守护，**尚未完成 M6 发布**（详见下方里程碑状态）。
 
 ## 仓库现状（先看这个，避免误判）
 
-- 组件已实现到 **M6**：`library` 有完整实现，`app` 是可运行的 demo（`:app` 已依赖 `:library`）。
+- 组件实现进度（以技术方案 §9.1 为准，2026-10-10）：**M0 部分**（仅色值有 Material 3 baseline 占位兜底，交互标注与切图/字体资源无交付）、**M1–M4 已完成**、**M5 实现完成但验收待 M0**（Q7 深色对比度依赖定稿色值）、**M6 部分**（尚缺 DL-03~DL-06 四份交付文档）。
+  `library` 有完整实现，`app` 是可运行的 demo（`:app` 已依赖 `:library`），另有第三个模块 `:r8test`（混淆消费端验证）。
   `library/src/main/java/` 下的 `core/` 是**纯 Kotlin、零 `android.*` 依赖**的核心算法，
   改它必须同步补单测。
 - Git 已初始化，分支 `master`，remote 为 `git@github.com:kevinvane/DayTimelineAndroid.git`。
@@ -12,9 +13,9 @@
 
 ## 需求与技术方案来源
 
-- `docs/DayTimeline-产品与需求文档.md`（PRD，v1.5，约 1345 行，UTF-8 中文，状态：待评审）——**唯一需求来源，动手前先读它。**
-- `docs/DayTimeline-技术方案与实施计划.md`（v0.9 草案）——架构决策 AD-01~AD-23、M0–M6 任务拆解、测试与门禁落地、实施进度、开放问题。**PRD §1.2 把架构与实现方案排除在外，这两份要配套读。**
-- `docs/DayTimeline-日程块表单输入方案.md`（v0.1 草案）——PRD v1.3 新增的表单输入能力设计（AD-22）。**方案已定稿并已实现**。
+- `docs/DayTimeline-产品与需求文档.md`（PRD，v1.14，约 1486 行，UTF-8 中文，状态：待评审）——**唯一需求来源，动手前先读它。**
+- `docs/DayTimeline-技术方案与实施计划.md`（v0.19 草案）——架构决策 AD-01~AD-28、M0–M6 任务拆解、测试与门禁落地、实施进度、开放问题。**PRD §1.2 把架构与实现方案排除在外，这两份要配套读。**
+- `docs/DayTimeline-日程块表单输入方案.md`（v0.1 草案，**已实现**）——PRD v1.3 新增的表单输入能力设计（AD-22）。**方案已定稿并已实现**。
 
 读取注意：三个文件都是 UTF-8 中文，**PowerShell 控制台会显示成乱码**——用 read 工具读，或先设 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`。
 
@@ -29,7 +30,7 @@ PRD 中最该记住的几条：
 | §10.2 | 定制分四层，**第二至四层必须通过提供定制入口实现，不允许业务方改或复制组件源码**（D7） |
 | §12.4 | 质量门禁：核心逻辑覆盖率 ≥90%、全库 ≥75%、死代码 0 处 |
 
-**PRD 刻意不含技术架构与实现方案**（§1.2 明确列为「不属于本文档」），对应的《技术方案文档》尚不存在——架构决策由研发另行输出，不要假装 PRD 已经指定了实现方式。
+**PRD 刻意不含技术架构与实现方案**（§1.2 明确列为「不属于本文档」），对应的《技术方案文档》由其配套输出（当前 v0.17）——不要假装 PRD 已经指定了实现方式。
 
 ## 硬性约束
 
@@ -45,7 +46,7 @@ PRD 中最该记住的几条：
 - Gradle 8.13（wrapper 已缓存）+ AGP 8.13.2 + Kotlin 2.0.21；本机 JDK 17；`jvmTarget`/source-target 均为 **11**。
 - **View 体系，不是 Compose**——`gradle/libs.versions.toml` 里没有任何 Compose 依赖，UI 栈是 AppCompat + Material 3 + ConstraintLayout。
 - `compileSdk` 用的 AGP 8.13 新 DSL：`compileSdk { version = release(36) }`，不是常见的 `compileSdk = 36`。`minSdk = 23`，`targetSdk = 36`。
-- 包名：`com.github.kevinvane.daytimeline.app` / `com.github.kevinvane.daytimeline.library`。
+- 包名：`com.github.kevinvane.daytimeline.app` / `com.github.kevinvane.daytimeline.library` / `com.github.kevinvane.daytimeline.r8test`。
 - `settings.gradle.kts` 设了 `RepositoriesMode.FAIL_ON_PROJECT_REPOS` → **任何模块的 build 文件里加 `repositories {}` 会直接失败**。
 - 依赖版本统一加到 `gradle/libs.versions.toml`，不要在模块里写裸坐标。
 
@@ -89,8 +90,8 @@ Windows 下用 `gradlew.bat`：
 .\gradlew.bat :app:installDebug             # 装到已连接设备/模拟器
 .\gradlew.bat test                          # 全部 JVM 单元测试（不需要设备）
 .\gradlew.bat :library:testDebugUnitTest --tests "com.github.kevinvane.daytimeline.library.*"
-.\gradlew.bat :library:verifyCoreCoverage   # 核心逻辑覆盖率门禁 ≥90%（实测 91.73%）
-.\gradlew.bat :library:verifyAllCoverage     # 全库可测逻辑覆盖率门禁 ≥75%（实测 88.49%，不需要设备）
+.\gradlew.bat :library:verifyCoreCoverage   # 核心逻辑覆盖率门禁 ≥90%（实测 91.81%）
+.\gradlew.bat :library:verifyAllCoverage     # 全库可测逻辑覆盖率门禁 ≥75%（实测 88.60%，不需要设备）
 .\gradlew.bat detekt                          # 静态检查 + 代码风格 0 违规
 .\gradlew.bat :library:verifyNoDeadCode       # 死代码 0 处（依赖 detekt）
 .\gradlew.bat :r8test:verifyKeptSymbols       # 混淆产物构建 + 对外契约类符号核对（不需要设备）
@@ -107,18 +108,24 @@ Windows 下用 `gradlew.bat`：
 - **detekt**（`config/detekt/detekt.yml`）：静态检查 + 代码风格 0 违规。
 - **死代码门禁** `verifyNoDeadCode`：扫描未被引用的私有成员，0 处即通过。
   与 detekt 分两步跑，失败时能一眼看出是哪条红线。
-- **JaCoCo 覆盖率门禁**：`verifyCoreCoverage`（core ≥90%，实测 91.73%）与
-  `verifyAllCoverage`（core + api 可测逻辑 ≥75%，实测 88.49%）。
+- **JaCoCo 覆盖率门禁**：`verifyCoreCoverage`（core ≥90%，实测 **91.81%**，2466/2686）与
+  `verifyAllCoverage`（core + api 可测逻辑 ≥75%，实测 **88.60%**，3310/3736）。
   口径与敏感度边界见 `library/build.gradle.kts` 里 `verifyAllCoverage` 的 KDoc。
+  **数据来源**：以上是本地 `library/build/reports/jacoco/.../jacocoTestDebugReport.xml`
+  （2026-10-10 15:27，晚于全部源文件）的实测值，未重跑测试。
 - **R8 混淆消费端验证**（`:r8test` 模块）：核对对外契约类是否按 `consumer-rules.pro`
   保留，再在**混淆后的 release 变体**上跑仪器测试——这是「业务方开启混淆后功能正常」
   的唯一有效证据（library 自身不开混淆，保留规则写错也不会有任何东西报错）。
 - **CI**（`.github/workflows/ci.yml`）：三个 job——静态门禁 / 仪器测试 / R8 验证。
-- **仪器测试** 82 个（`:library:connectedDebugAndroidTest`）+ 7 个
+- **仪器测试** 102 个（`:library:connectedDebugAndroidTest`，2026-10-10 实测全绿；含 AD-28 的
+  16 条 `DayTimelineViewEntryPointTest` + `DayTimelineViewSavedStateParcelTest`）+ 7 个
   （`:app:connectedDebugAndroidTest`），R8 混淆变体 8 个。
 
 尚未建立：
 
+- **PRD §12.4 十项门禁里有三项无任何自动化落地**：「已知安全漏洞 0 个高危」、
+  「性能基准（§12.1 全部指标）」、「文档完整性（无遗留待办标记）」——
+  三者既不在 CI 也不在任何 Gradle 任务里，目前只能靠人工核对。表格里其余七项均已自动阻断。
 - 无 pre-commit 钩子（当前只在 CI 里阻断）。
 - 无死代码检查工具之外的「删除前确认」类防护。
 - **`:app` demo 只覆盖了取消链路、表单提交与删除二次确认的「放弃」分支**
@@ -191,3 +198,39 @@ reattach 时再验一次是对同一份数据的第二次比对。已回退，�
 **比第一课更值得警惕**：新测试全绿只证明「没有测到变化」，不证明「改动有用」。
 判据是**回滚后测试是否变红**——那条对 `stopEdgeScroll` 有效（2 条转红），
 对这一行无效（一条都没变）。**回滚验证顺带告诉你改动到底有没有被覆盖到。**
+
+## 第六条：看起来像「走了完整链路」的测试，可能一次都没走
+
+给 `SavedState` 补回归测试时写了 `saveHierarchyState` / `restoreHierarchyState`，
+跑完全绿。**回滚验证时把 `writeToParcel` 和 `Parcel` 构造同时改坏，93 条依然全绿**——
+一次都没红，测试根本没咬住。
+
+原因是 **Android 在同一进程内传递 `SavedState` 走的是对象引用，不经过 Parcel 序列化**。
+断言通过靠的是「拿到了同一个对象」，`Parcelable` 的读写逻辑压根没被执行。
+这条测试证明的是「状态对象还在」，不是「状态对象能存能读」——而后者才是
+进程被杀后恢复时真正走的路径，也是用户会遇到的状态丢失场景。
+
+改成真 Parcel 往返（`marshall` / `unmarshall` / `CREATOR.createFromParcel`）后，
+同一处破坏立刻 4 条转红。
+
+**判据**：凡验证 `Parcelable`，不要用 `HierarchyState` 那对 API 代替序列化——
+那是短路路径。**凡是「看起来覆盖了整条链路」的断言，单独确认一次它走的是哪条路**
+——本例中两条路的差异只有一行 `Parcel`，但结论完全相反。
+
+## 第五条：「声明了却没有任何代码」——这类缺陷会重复出现
+
+2026-10-08 是第一次（AD-24 的 `dtAutoLocateOnFirstShow`）：`attrs.xml`、`TimelineConfig`、
+`mergedWith` 三处齐备，还有专项测试断言它被合并，**唯独没有任何地方读它**。
+「支持自动定位当前时间」是个只会回答「支持」的功能。
+
+2026-10-10 是第二次，而且更难发现：PRD §11 白纸黑字列着
+「获取指定位置的日程」（P0）与「刷新当前时间线」（P1），
+**连 `attrs.xml` 的声明都没有**——`eventAt` / `refreshNow` 两个方法根本不存在。
+第一次至少有「配置项被合并」的测试守着，第二次除了一行 PRD 之外什么都没有。
+
+**共同点：声明、文档、规格三者齐全，实现为零。** 这类缺陷对现有门禁完全隐形：
+`verifyNoDeadCode` 只看私有成员，覆盖率门禁只看「被测的逻辑」，
+两者都不看「被接到主流程上的逻辑」。已在技术方案 §9.4 第 2 条登记待建结构性断言
+（对照 PRD 能力清单 ↔ 对外方法名 ↔ 消费点），**建好之前只能靠人工核对**。
+
+新增对外 API 或配置项时自问一句：**它真的被谁读到了？**
