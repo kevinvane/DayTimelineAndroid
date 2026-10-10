@@ -11,6 +11,7 @@ import com.github.kevinvane.daytimeline.library.api.endMinute
 import com.github.kevinvane.daytimeline.library.api.startMinute
 import com.github.kevinvane.daytimeline.library.api.EditDraft
 import com.github.kevinvane.daytimeline.library.api.EditResult
+import com.github.kevinvane.daytimeline.library.api.ScrollMode
 import com.github.kevinvane.daytimeline.library.api.TimelineConfig
 import com.github.kevinvane.daytimeline.library.api.TimelineListener
 import com.github.kevinvane.daytimeline.library.core.MinuteOfDay
@@ -426,6 +427,110 @@ class DayTimelineViewEditTest {
         assertEquals("确认后手柄抓取状态必须与其他出口一样清零", 0, readInt("grabbedHandle"))
         assertNull("确认后不得残留选中态", readString("selectedId"))
         assertEquals("确认后接管标志必须清零", false, readBoolean("editTakenOver"))
+    }
+
+    // ===== 外部滚动模式下的取消路径（FI-002 / §8.6 / D6）=====
+
+    /**
+     * §8.6：外部滚动模式下，**取消的语义与自身滚动模式完全一致**。
+     *
+     * 两种滚动模式的差别只在「滚动归谁」，编辑闭环不该有任何差异——
+     * 这是 PRD §8.6 与 D6（「放入可滚动容器」不得出问题）的直接要求。
+     */
+    @Test
+    fun cancelBehavesIdenticallyInExternalScrollMode() {
+        view.setConfig(TimelineConfig(scrollMode = ScrollMode.EXTERNAL))
+        enterEditByAccessibility("morning")
+        assertTrue("前置条件：外部滚动模式下也应能进入编辑态", view.isEditing())
+        fired.clear()
+
+        view.cancelEdit()
+
+        assertFalse("外部滚动模式下取消必须退出编辑态", view.isEditing())
+        assertEquals(
+            "取消语义不得因滚动模式而异，实际回调：$fired",
+            listOf("cancelled"), fired,
+        )
+        assertNull("外部滚动模式下取消也不得残留选中态", readString("selectedId"))
+        assertEquals("外部滚动模式下接管标志也必须清零", false, readBoolean("editTakenOver"))
+    }
+
+    /** 外部滚动模式下 FI-010 同样生效：点外部即取消。 */
+    @Test
+    fun tappingOutsideStillCancelsInExternalScrollMode() {
+        view.setConfig(TimelineConfig(scrollMode = ScrollMode.EXTERNAL))
+        enterEditByAccessibility("morning")
+        fired.clear()
+
+        tapOutsideEditBlock()
+
+        assertFalse("外部滚动模式下点外部也应取消", view.isEditing())
+        assertEquals("FI-010 语义与滚动模式无关，实际回调：$fired", listOf("cancelled"), fired)
+    }
+
+    /** 外部滚动模式下 E20 自动取消同样生效（不能因为不滚就少一条路径）。 */
+    @Test
+    fun e20AutoCancelAlsoWorksInExternalScrollMode() {
+        view.setConfig(TimelineConfig(scrollMode = ScrollMode.EXTERNAL))
+        enterEditByAccessibility("morning")
+        fired.clear()
+
+        view.submitEvents(listOf(Ev("afternoon", 180, 240, "深度工作")), notifyIssues = false)
+
+        assertFalse("外部滚动模式下 E20 也应自动取消", view.isEditing())
+        assertEquals("E20 语义与滚动模式无关，实际回调：$fired", listOf("cancelled"), fired)
+    }
+
+    // ===== ACTION_CANCEL：手势被中断不得当作一次完整操作 =====
+
+    /**
+     * `ACTION_CANCEL` 后**不得**凭空触发点击（可能顺带取消编辑态或弹出详情）。
+     *
+     * 修复前 `ACTION_UP` 与 `ACTION_CANCEL` 共用一个分支，取消时只做清理、
+     * 随后仍按 `intent` 分派——判定为 Click 就会照常走 `handleTap`。
+     * 用户被父容器打断（侧滑返回、下拉刷新抢手）却收到一次完整点击。
+     */
+    @Test
+    fun actionCancelDoesNotFireTap() {
+        tapOutsideEditBlock(action = MotionEvent.ACTION_CANCEL)
+
+        assertFalse("手势被打断不得凭空进入新建编辑态", view.isEditing())
+        assertTrue("手势被打断不得触发任何回调，实际回调：$fired", fired.isEmpty())
+    }
+
+    /**
+     * `ACTION_CANCEL` 后**不得**凭空进入编辑态（FI-004 的长按）。
+     *
+     * 长按判定同样落在 `onUp()`，取消时若照常分派就会凭空进入编辑态，
+     * 用户看到的是「手指刚碰了一下，块就自己被选中了」。
+     */
+    @Test
+    fun actionCancelDoesNotStartEditingFromBlock() {
+        tapAt(centerYOf("morning"), action = MotionEvent.ACTION_CANCEL)
+
+        assertFalse("手势被打断不得凭空进入编辑态", view.isEditing())
+        assertTrue("手势被打断不得触发长按回调，实际回调：$fired", fired.isEmpty())
+    }
+
+    /**
+     * 编辑态下被 `ACTION_CANCEL` 打断：**编辑态保持不变**（用户仍可确认或取消），
+     * 且不产生任何回调。
+     *
+     * 这是 PRD §8.2「抬起 → 处于拖拽中 → 保留编辑态」的延续：手势被系统中断
+     * 不等于用户做出了选择，组件不得替他做。
+     */
+    @Test
+    fun actionCancelKeepsExistingEditingStateUntouched() {
+        enterEditByAccessibility("morning")
+        fired.clear()
+
+        tapOutsideEditBlock(action = MotionEvent.ACTION_CANCEL)
+
+        assertTrue("手势被打断不得把编辑态改成别的状态", view.isEditing())
+        assertEquals(
+            "编辑态下的 ACTION_CANCEL 是清理而非取消，不得触发任何回调，实际回调：$fired",
+            emptyList<String>(), fired,
+        )
     }
 
     // ===== AD-22：第四层接管 + 表单输入 =====
@@ -854,6 +959,39 @@ class DayTimelineViewEditTest {
      */
     private fun tapOutsideEditBlock() = tapAt(HEIGHT - 10)
 
+    /**
+     * 同一位置，但第二动作是 [action]。
+     *
+     * `ACTION_CANCEL` 走的是「按下 → 被打断」的路径，**没有抬起**——
+     * 这正是它此前与 `ACTION_UP` 共用分支而出错的场景。
+     */
+    private fun tapOutsideEditBlock(action: Int) = tapAt(HEIGHT - 10, action)
+
+    /** 指定视口 y 处模拟「按下 → 第二动作」，默认第二动作是抬起。 */
+    private fun tapAt(y: Int, action: Int = MotionEvent.ACTION_UP) {
+        val x = WIDTH / 2
+        val down = System.currentTimeMillis()
+        listOf(MotionEvent.ACTION_DOWN, action).forEach { a ->
+            val e = MotionEvent.obtain(down, down, a, x.toFloat(), y.toFloat(), 0)
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { view.dispatchTouchEvent(e) }
+            e.recycle()
+        }
+    }
+
+    /**
+     * 取日程块在视口内的中心 y，用于把测试点击落在块上而非空白。
+     *
+     * 走 `blockBoundsInParent` 而不是自己算——它已经处理了滚动偏移与轴宽偏移，
+     * 测试侧重算一遍只会引入第二份可能过期的公式。
+     */
+    private fun centerYOf(id: String): Int {
+        val block = view.visibleBlockSnapshot().firstOrNull { it.second.event.id == id }?.second
+        requireNotNull(block) { "测试前置失败：视口内找不到日程 $id" }
+        val bounds = view.blockBoundsInParent(block)
+        requireNotNull(bounds) { "测试前置失败：取不到日程 $id 的边界" }
+        return bounds.centerY()
+    }
+
     private fun readBoolean(name: String): Boolean =
         fieldOf(name).get(view) as Boolean
 
@@ -864,20 +1002,6 @@ class DayTimelineViewEditTest {
         val block = view.visibleBlockSnapshot().firstOrNull { it.second.event.id == id }?.second
         requireNotNull(block) { "测试前置失败：视口内找不到日程 $id" }
         view.dispatchEventLongClickForAccessibility(block)
-    }
-
-    /** 在指定视口 y 处模拟一次「按下即抬起」的点击（不移动 → 判定为 Click）。 */
-    private fun tapAt(y: Int) {
-        val x = WIDTH / 2
-        val down = System.currentTimeMillis()
-        listOf(
-            MotionEvent.ACTION_DOWN,
-            MotionEvent.ACTION_UP,
-        ).forEach { action ->
-            val e = MotionEvent.obtain(down, down, action, x.toFloat(), y.toFloat(), 0)
-            InstrumentationRegistry.getInstrumentation().runOnMainSync { view.dispatchTouchEvent(e) }
-            e.recycle()
-        }
     }
 
     // ---- 反射工具 ----

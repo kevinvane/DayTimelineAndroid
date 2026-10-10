@@ -49,7 +49,7 @@ jobs:
         run: ./gradlew :library:verifyNoDeadCode --stacktrace
 
       - name: 编译组件库与示例应用
-        run: ./gradlew :library:assembleDebug :app:assembleDebug --stacktrace
+        run: ./gradlew :library:assembleDebug :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
 
       - name: JVM 单元测试
         run: ./gradlew :library:testDebugUnitTest --stacktrace
@@ -97,12 +97,18 @@ jobs:
         with:
           api-level: 34
           arch: x86_64
-          script: ./gradlew :library:connectedDebugAndroidTest
+          # :app 也要跑：组件库测的是「组件自己不误发数据变更」，
+          # demo 测的是「业务方接了 EditController 之后收不收得干净」——
+          # BottomSheet / PopupWindow 的 onDismiss 收尾写在 demo 侧，不在组件里。
+          # 组件测试绿而 demo 这条链路断掉的情况是真实发生过的。
+          script: ./gradlew :library:connectedDebugAndroidTest :app:connectedDebugAndroidTest
       - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: instrumented-report
-          path: library/build/reports/androidTests/**
+          path: |
+            library/build/reports/androidTests/**
+            app/build/reports/androidTests/**
           retention-days: 7
 
   # R8 / 混淆消费端验证（PRD §12.5 / T7 / 风险 R8）。

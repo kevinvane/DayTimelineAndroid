@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v0.11（草案） |
+| 文档版本 | v0.12（草案） |
 | 状态 | 待评审 |
 | 编写日期 | 2026-09-30 |
 | 对应 PRD | `docs/DayTimeline-产品与需求文档.md` v1.7（v1.7 为 Q1 取消路径口径澄清，见 AD-25；FR / FI 编号未变） |
@@ -655,7 +655,69 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | `submittingDataThatKeepsTheEditedEventDoesNotCancel` | 对照组 E21 / E28：不得误取消 |
 | `confirmEditAlsoClearsGrabbedHandleLikeEveryOtherExit` | 五个清零出口清同一批状态 |
 
-**未决**：`onTouchEvent` 的 `ACTION_CANCEL` 仍落入点击 / 长按分派，见 §9.4 第 6 条。
+**未决**：~~`onTouchEvent` 的 `ACTION_CANCEL` 仍落入点击 / 长按分派~~ —— **已修，见 AD-26**。
+
+### AD-26　`ACTION_CANCEL` 只做清理，不得当作一次完整操作　【PRD v1.7 连带】
+
+**背景**：`onTouchEvent` 里 `ACTION_UP` 与 `ACTION_CANCEL` 走同一个分支。
+取消时（`:1114`）只做了三件清理——解父容器拦截、回收 `VelocityTracker`、不启动惯性——
+随后**仍按 `gestureArbiter.onUp()` 的结果继续分派**：
+
+| `intent` | 分派到 | 用户实际经历 |
+|---|---|---|
+| `Click` | `handleTap` | 凭空触发点击；若正处于编辑态且点在外部，还会触发 FI-010 取消 |
+| `LongPress` | `enterEditByLongPress` | 凭空进入编辑态 |
+
+`ACTION_CANCEL` 的语义是「这次手势被系统或父容器中断」——
+下拉刷新抢手、侧滑返回、通知栏下滑打断。用户**没有完成任何操作**，
+组件却替他执行了一次完整操作的副作用。
+
+**测试侧当时是零覆盖**：全仓 `ACTION_CANCEL` 只出现在主源码两处，`src/test` 与
+`src/androidTest` 一次都没命中过。也就是说这条路径此前既没被验证、也没被禁止。
+
+**决策**：`ACTION_CANCEL` 分支**提前 return**，只做清理，绝不进入 `when (intent)`：
+
+1. 把 `ACTION_CANCEL` 事件补喂给 `gestureDetector`——否则它内部 pending 的
+   长按超时消息不会被撤掉（此前只喂 `ACTION_DOWN`）。
+2. 仍做解拦截与回收 `VelocityTracker`，与原逻辑一致。
+3. 返回值按 `intent` 是否为 `Scroll` 决定：判为滚动的仍不消费、交给父容器；
+   其余返回 `true` 表示本次手势已被处理。
+4. **编辑态保持不变**——手势被中断不等于用户做出了选择，
+   组件不得替他取消（PRD §8.2「抬起 → 处于拖拽中 → 保留编辑态」的延续）。
+
+**测试**：3 条仪器测试（`DayTimelineViewEditTest`），分别对应上表的三种可观察后果。
+
+| 用例 | 锁住什么 |
+|---|---|
+| `actionCancelDoesNotFireTap` | 不得凭空触发点击 / 凭空进新建编辑态 |
+| `actionCancelDoesNotStartEditingFromBlock` | 不得凭空进入编辑态、不得发长按回调 |
+| `actionCancelKeepsExistingEditingStateUntouched` | 编辑态下被取消打断时，编辑态原样保留且零回调 |
+
+**反向验证**：把修复回滚后重跑，**这 3 条同时转红**，失败信息正是上表描述的症状
+（「凭空进入新建编辑态」/「凭空触发长按回调，实际回调：[click]」/「把编辑态改成别的状态」）。
+这是判断「测试是否真的咬得住」的必要一步——写完就绿不等于测试有效。
+
+**连带补齐的两处覆盖缺口**（同批处理，见 §9.5）：
+
+- **外部滚动模式下的取消路径**：此前 `DayTimelineViewEditTest` 全程只设
+  `autoLocateOnFirstShow` 与 `defaultNewDurationMinutes`，**从不设 `scrollMode`**，
+  `EXTERNAL` 只在另两个文件里测过 `onMeasure` 高度与「不让外层滚动」，均不涉及编辑态。
+  PRD §8.6 与 D6 要求「外部容器滚动时也不能崩、取消行为一致」，此前无任何证据。
+  补 3 条：`cancelBehavesIdenticallyInExternalScrollMode` /
+  `tappingOutsideStillCancelsInExternalScrollMode` /
+  `e20AutoCancelAlsoWorksInExternalScrollMode`。
+
+- **`:app` demo 的取消链路**：`app/src/` 此前**只有 `main`**，零自动化测试。
+  而 demo 里两条最贴近真实用户的取消收尾——
+  `BottomSheetDialog.onDismiss`（`MainActivity:227`）与
+  `PopupWindow.onDismiss` + `actionTaken`（`EventDetailPopup:196`）——
+  **都写在业务方侧、不在组件里**，组件自己的测试再绿也证明不了它们。
+  新增 `MainActivityCancelPathTest` 6 条，断言方式刻意改为**比对业务方数据源快照**
+  而不是数回调：D3 的实质是「用户的数据没被改」，直接比对数据更贴近后果，
+  也不必往 demo 里塞测试专用钩子。
+  **反向验证**：把 `onDismiss` 里的 `cancelEdit()` 删掉后，
+  `cancellingTheFormChangesNothing` 与 `dismissingTheFormWithoutSubmittingChangesNothing`
+  同时转红。
 
 ---
 
@@ -871,6 +933,7 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | v0.9 | 2026-10-09 | 新增 **AD-23 日程详情**（对齐 PRD v1.5 §7.7.2）：组件零新增 View，只加 detailOf / enterEditMode / clearSelection 三个入口与 EventDetail 只读快照。记录 enterEditMode 的必要性——三个出口都以编辑态为前提，而 FI-004 只认长按手势，业务方在详情里点「删除」会静默无效；记录首版把「进入编辑态」与「弹出表单」耦合导致的「点编辑弹出两个表单」及拆分方案（影响面还包含完成/取消/删除）；记录被否决的 editDraftOf() 方案（会给业务方可写句柄，绕过 D3）；记录真机发现的两个问题：showAsDropDown 因 anchor 为整个时间轴而把弹窗推出屏幕，以及 ContextCompat.getColor 误用属性 ID 致真机崩溃（编译/lint/detekt 全部通过）。文档头「对应 PRD」升至 v1.5。**本次（v0.10）另行订正一处记录错位**：本行此前误写在 §9.5「已完成」表格末尾，使变更记录实际止于 v0.8 | — |
 | v0.10 | 2026-10-09 | 新增 **AD-24（FI-012 首次定位）**。前情：`dtAutoLocateOnFirstShow` 属性自 v1.1 起就声明在 `attrs.xml` / `TimelineConfig` 里、M3-8 早已标为完成，**但全仓没有任何代码读取它**——「支持自动定位当前时间」是个只会回答「支持」的功能。本次补齐：定位规则取 PRD §8.5 的「视口三分之一屏」而非固定 48dp（比例无量纲，按 AD-15 走 `Geometry` 代码常量，不进 `dimens.xml`）；`onSizeChanged` 为触发点（视口高度首个已知时刻）；`initialScrollSettled` 令业务方显式位置与 D12 状态恢复均优先于自动定位；外部滚动模式下 `maxScroll()` 恒为 0，天然不位移。顺带统一 `minuteToContentY()`，修掉 `scrollToMinute` 漏加 `topPadding` 导致所有非零留白下偏上 8dp 的既有缺陷（同一公式此前在五处各抄一遍）。**连带返工**：17 个存量仪器测试因该功能生效而失败（夹具把事件放 01:00 并用 `visibleBlockSnapshot` 定位），已在两个夹具 `setUp` 里显式关闭自动定位并注明原因。门禁全部复跑通过，63 个仪器测试真机全绿 | — |
 | v0.11 | 2026-10-10 | **评审 PRD Q1 的连带修订**（对齐 PRD v1.7）：① 新增 **AD-25**——评审 §14.3 Q1 时发现它字面只写「编辑态『取消』」，而 D3 与 §8.2 要求的是「**任何**取消路径」；实际有四条（FI-009 / FI-010 / **E20 自动取消** / 接管后退出），其中 E20 在 View 层只清了 `editSession`，遗留四项状态，导致选中描边残留、「编辑取消」事件不发（§15 完成率分母失真）、**接管标志残留会让下一轮 FI-010 被静默禁用**。修复方式是把清零收敛为私有 `clearEditState()` 单一出口（确认 / 取消 / 删除接管 / 删除确认 / E20 五处共用），顺带修掉 `confirmEdit` 漏清 `grabbedHandle`；E20 现与用户取消完全等价。新增 5 条仪器测试。② §7 开放问题编号由 `Q1`–`Q9` 改为 **`OQ-1`–`OQ-9`**——此前与 PRD §14.3 的产品底线 `Q1`–`Q11` 同号不同义，正文「Q1 专项」等引用两处含义。改后本节不再占用 `Qn`，正文中余下的 `Q1`–`Q11` 即为 PRD 底线；取消路径专项相关处（M4-7、M4-9、M4 出口、§4 对照表）另加「PRD」二字强调。③ **OQ-1 改写**：原文称色项「无取值、阻塞性=阻塞」，与本文 §9.1「17 项取值已就位（AD-12 占位）」自相矛盾，且配色实现早已开工——改为「已占位待设计定稿」，阻塞性降为「中」。④ OQ-5 标记已关闭（PRD §16.2 重复段落本次已删）。⑤ AD-09 与 §6.1 中「色项没有取值 / M0 是硬阻塞，无法开工」的过期表述同步订正为「阻塞的是视觉终稿验收，不是开发」。⑥ 覆盖率实测回写：核心 **91.73%**（原 91.64%）、可测逻辑 **88.49%**（原 88.79%）。⑦ **补回 AD-14**（绘制上下文必须复用）——该条内容此前在 AD-24 之后以无标题的孤儿段落存在，导致编号从 AD-13 直接跳到 AD-15，而 §8 变更记录与 AD-15/AD-18 都在引用它；已归位到 AD-13 与 AD-15 之间并补标题，内容与代码现状核对一致（`BlockContext` 为字段可变的普通类，KDoc 已写明不得长期持有）。⑧ **删除 AD-18 的两份残留重复副本**（位于 AD-25 之后、无标题、且比 §3 内的正文版本少一行表格与一句话），属早期编辑残留。**仪器测试已在真机复跑：`:library:connectedDebugAndroidTest` 68/68 全绿**（Pixel / Android 9），含本次新增的 5 条 E20 用例——本次修复的三个后果（选中描边残留、完成率分母漏计、FI-010 被静默禁用）现已全部有真机证据，不再是「编译通过即认为正常」。 | — |
+| v0.12 | 2026-10-10 | **修复 `ACTION_CANCEL` 并补两处覆盖缺口**（AD-26）：① 新增 **AD-26**——评审时发现 `onTouchEvent` 的 `ACTION_UP` 与 `ACTION_CANCEL` 共用一个分支，取消时只做清理、随后**仍按 `intent` 分派**：判为 Click 会凭空触发点击（编辑态下还会顺带 FI-010 取消），判为 LongPress 会凭空进入编辑态。用户被父容器打断却收到一次完整操作的副作用。该路径此前**测试侧零命中**。修复为 `ACTION_CANCEL` 提前 return、只做清理，并补喂 `gestureDetector`（此前只喂 DOWN，其 pending 的长按消息不会被撤掉）；编辑态保持不变——手势被中断不等于用户做了选择。**反向验证：回滚修复后 3 条测试同时转红**，失败信息与缺陷症状逐条对应。② 补**外部滚动模式下的取消路径**（3 条）——此前 `DayTimelineViewEditTest` 从不设 `scrollMode`，§8.6 / D6「外部容器滚动时取消行为一致」零证据。③ **为 `:app` 建仪器测试**（`MainActivityCancelPathTest` 6 条）并接入 CI——`app/src/` 此前只有 `main`，而 demo 侧两条最贴近真实用户的取消收尾（`BottomSheetDialog.onDismiss`、`PopupWindow.onDismiss` + `actionTaken`）都写在业务方侧，组件测试再绿也证明不了它们。断言改为**比对业务方数据源快照**而非数回调。**反向验证：删掉 `onDismiss` 里的 `cancelEdit()` 后 2 条转红。** ④ §9.4 第 6 条结项，新增第 7 条记录 demo 其余路径（表单提交、删除二次确认、日期切换、配置面板）仍无自动化 | — |
 
 ---
 
@@ -898,7 +961,8 @@ scroller.fling(scrollOffset, 0, 0, velocityY, 0, max, 0, 0)
 | 死代码 0 处 | **达成** | `:library:verifyNoDeadCode` 专项门禁，实测 0 处；豁免清单见 `config/detekt/EXEMPTIONS.md` |
 | 静态代码检查 0 严重 | **达成** | 同 detekt |
 | R8 混淆后功能正常 | **达成** | `:r8test:verifyKeptSymbols`（10 个契约类全保留）+ `:r8test:connectedReleaseAndroidTest`（混淆变体仪器测试 **6/6**，Pixel / Android 9，2026-10-10 复跑）。**首次运行即抓出 3 个发布阻断级缺陷** |
-| 仪器测试（L2） | **达成** | `:library:connectedDebugAndroidTest` **68/68 全绿**（Pixel / Android 9，2026-10-10）。含 AD-25 新增的 5 条 E20 取消路径用例（`e20AutoCancelEmitsNoDataChangeAndClearsAllEditState` / `e20AutoCancelRestoresTapOutsideCancelForTheNextSession` / `e20AutoCancelHandsDraftToControllerSoItsFormCanClose` / `submittingDataThatKeepsTheEditedEventDoesNotCancel` / `confirmEditAlsoClearsGrabbedHandleLikeEveryOtherExit`） |
+| 仪器测试（L2） | **达成** | `:library:connectedDebugAndroidTest` **74/74 全绿**（Pixel / Android 9，2026-10-10）。含 AD-25 的 5 条 E20 用例与 AD-26 的 3 条 `ACTION_CANCEL` 用例、3 条外部滚动模式取消用例 |
+| 示例应用仪器测试 | **达成** | `:app:connectedDebugAndroidTest` **6/6 全绿**（`MainActivityCancelPathTest`）。**2026-10-10 新建，此前 `app/src/` 只有 `main`**——demo 侧两条取消收尾只靠注释自证；已接入 CI |
 | 全库覆盖率 ≥ 75% | **达成（口径已修订）** | `:library:verifyAllCoverage` 实测 **88.49%**（3229/3649）。**口径与 PRD 原文不同**，见下方说明 |
 
 #### 9.2.1 「全库覆盖率」的口径修订（**已获产品认可**，PRD v1.4 §12.4.1）
@@ -936,7 +1000,12 @@ PRD §12.4 原文是「全库覆盖率 ≥ 75%」。字面执行的结果是 **2
 3. **E29 与外部滚动模式的真机复核**——AD-04 的四条手势归属规则只经 `DayTimelineViewBehaviorTest.externalScrollModeDoesNotScrollItself` 单测覆盖，未在真机上验证过「外部容器滚动时组件不抢手势」。
 4. **M0 色值定稿**——解除 AD-12 的占位状态，复查深色对比度（Q7）。
 5. **pre-commit 钩子与依赖漏洞扫描**——§12.4「已知安全漏洞 0 个高危」与「文档无待办标记」目前无任何自动化手段。
-6. **`ACTION_CANCEL` 落入点击 / 长按分派（AD-25 附带发现，未修）**——`onTouchEvent` 的 `ACTION_UP` 与 `ACTION_CANCEL` 共用一个分支，取消时只做速度追踪与父容器解拦截的清理，随后**仍按 `intent` 正常分派**：若仲裁结果是 Click 会照常走 `handleTap`（可能触发 FI-010 取消或打开详情弹窗），是 LongPress 则凭空进入编辑态。全仓 `ACTION_CANCEL` 仅出现在主源码两处，**测试侧零命中**。属真实缺陷但独立于 D3 主线，未在 AD-25 一并修改，需补用例后修复。
+6. ~~`ACTION_CANCEL` 落入点击 / 长按分派~~ —— **已于 v0.12 修复**（AD-26），并补 3 条仪器测试锁住。
+7. **「组件绿但业务方链路断」这一类缺陷的常规防线**——AD-26 顺带暴露：`app/` 此前**零自动化测试**，
+   demo 里 `BottomSheetDialog.onDismiss` / `PopupWindow.onDismiss` 两条取消收尾只靠注释自证安全。
+   本次已为 `:app` 建 `connectedDebugAndroidTest` 并接入 CI，但**只有取消链路**被覆盖；
+   表单提交、删除二次确认、日期切换、配置面板等 demo 路径仍无自动化。
+   根因与第 2 条同源：门禁只看「被测的逻辑」，不看「被接到真实界面上的逻辑」。
 
 ### 9.5 已完成（原列为待办，现已具备证据）
 
@@ -948,3 +1017,6 @@ PRD §12.4 原文是「全库覆盖率 ≥ 75%」。字面执行的结果是 **2
 | R8 混淆消费端验证 | `:r8test:verifyKeptSymbols` + `:r8test:connectedReleaseAndroidTest`（混淆变体 5/5）。首次运行即抓出 3 个发布阻断级缺陷 |
 | detekt 与死代码自动阻断 | `:library:detekt` / `:app:detekt` 0 违规；`:library:verifyNoDeadCode` 专项门禁 0 处 |
 | 可测逻辑覆盖率门禁 | `:library:verifyAllCoverage` 88.79%，已接入 CI（口径见 §9.2.1 / PRD §12.4.1） |
+| AD-26 `ACTION_CANCEL` 不再触发点击 / 长按 | 见 AD-26。3 条仪器测试；**回滚修复后实测 3 条同时转红**，确认断言真的咬得住 |
+| 外部滚动模式下的取消路径 | `cancelBehavesIdenticallyInExternalScrollMode` / `tappingOutsideStillCancelsInExternalScrollMode` / `e20AutoCancelAlsoWorksInExternalScrollMode`（此前该模式下取消路径零覆盖，D6 无证据） |
+| `:app` demo 的仪器测试 | `MainActivityCancelPathTest` 6 条，接入 CI。**实测把 `onDismiss` 里的 `cancelEdit()` 删掉后 2 条转红**，确认不是空跑 |

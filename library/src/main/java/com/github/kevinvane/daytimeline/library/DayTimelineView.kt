@@ -1108,25 +1108,31 @@ private fun renderSignature(): Long {
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                val intent = gestureArbiter.onUp()
                 grabbedHandle = 0
                 stopEdgeScroll()
                 if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                    // 手势被系统或父容器中断：只做清理，**绝不**按 intent 分派。
+                    // 若照常分派，Click 会凭空触发点击或打开详情弹窗，
+                    // LongPress 会凭空进入编辑态——用户明明是被打断，却收到了一次完整操作。
+                    // 编辑态保持不变，用户仍可确认或取消（§8.2「抬起」那一行）。
+                    gestureDetector.onTouchEvent(event)
                     parent?.requestDisallowInterceptTouchEvent(false)
                     parentDisallowRequested = false
                     lastVelocityTracker?.recycle()
                     lastVelocityTracker = null
+                    // 判为滚动的仍不消费，交给父容器；其余表示本次手势已被处理
+                    return gestureArbiter.intent != GestureArbiter.Intent.Scroll
+                }
+                val intent = gestureArbiter.onUp()
+                // 只在确实判为滚动时才做惯性收尾；点击 / 长按 / 编辑拖拽
+                // 不应启动 scroller 动画，否则会与编辑态的绘制时序打架
+                if (intent == GestureArbiter.Intent.Scroll) {
+                    endScrollGesture(y)
                 } else {
-                    // 只在确实判为滚动时才做惯性收尾；点击 / 长按 / 编辑拖拽
-                    // 不应启动 scroller 动画，否则会与编辑态的绘制时序打架
-                    if (intent == GestureArbiter.Intent.Scroll) {
-                        endScrollGesture(y)
-                    } else {
-                        lastVelocityTracker?.recycle()
-                        lastVelocityTracker = null
-                        parent?.requestDisallowInterceptTouchEvent(false)
-                        parentDisallowRequested = false
-                    }
+                    lastVelocityTracker?.recycle()
+                    lastVelocityTracker = null
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    parentDisallowRequested = false
                 }
 
                 when (intent) {

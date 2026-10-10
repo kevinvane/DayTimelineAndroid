@@ -89,12 +89,12 @@ Windows 下用 `gradlew.bat`：
 .\gradlew.bat :app:installDebug             # 装到已连接设备/模拟器
 .\gradlew.bat test                          # 全部 JVM 单元测试（不需要设备）
 .\gradlew.bat :library:testDebugUnitTest --tests "com.github.kevinvane.daytimeline.library.*"
-.\gradlew.bat :library:verifyCoreCoverage   # 核心逻辑覆盖率门禁 ≥90%（实测 91.64%）
-.\gradlew.bat :library:verifyAllCoverage     # 全库可测逻辑覆盖率门禁 ≥75%（实测 88.26%，不需要设备）
+.\gradlew.bat :library:verifyCoreCoverage   # 核心逻辑覆盖率门禁 ≥90%（实测 91.73%）
+.\gradlew.bat :library:verifyAllCoverage     # 全库可测逻辑覆盖率门禁 ≥75%（实测 88.49%，不需要设备）
 .\gradlew.bat detekt                          # 静态检查 + 代码风格 0 违规
 .\gradlew.bat :library:verifyNoDeadCode       # 死代码 0 处（依赖 detekt）
 .\gradlew.bat :r8test:verifyKeptSymbols       # 混淆产物构建 + 对外契约类符号核对（不需要设备）
-.\gradlew.bat connectedAndroidTest           # 需要设备/模拟器
+.\gradlew.bat connectedAndroidTest           # 需要设备/模拟器（含 :app 的 6 条 demo 用例）
 ```
 
 `lint` 用的是 AGP 默认规则 + `lint { warningsAsErrors = true }`——**没有配置任何 lint baseline**，
@@ -107,19 +107,23 @@ Windows 下用 `gradlew.bat`：
 - **detekt**（`config/detekt/detekt.yml`）：静态检查 + 代码风格 0 违规。
 - **死代码门禁** `verifyNoDeadCode`：扫描未被引用的私有成员，0 处即通过。
   与 detekt 分两步跑，失败时能一眼看出是哪条红线。
-- **JaCoCo 覆盖率门禁**：`verifyCoreCoverage`（core ≥90%，实测 91.64%）与
-  `verifyAllCoverage`（core + api 可测逻辑 ≥75%，实测 88.26%）。
+- **JaCoCo 覆盖率门禁**：`verifyCoreCoverage`（core ≥90%，实测 91.73%）与
+  `verifyAllCoverage`（core + api 可测逻辑 ≥75%，实测 88.49%）。
   口径与敏感度边界见 `library/build.gradle.kts` 里 `verifyAllCoverage` 的 KDoc。
 - **R8 混淆消费端验证**（`:r8test` 模块）：核对对外契约类是否按 `consumer-rules.pro`
   保留，再在**混淆后的 release 变体**上跑仪器测试——这是「业务方开启混淆后功能正常」
   的唯一有效证据（library 自身不开混淆，保留规则写错也不会有任何东西报错）。
 - **CI**（`.github/workflows/ci.yml`）：三个 job——静态门禁 / 仪器测试 / R8 验证。
-- **仪器测试** 52 个（`connectedDebugAndroidTest`），R8 混淆变体 6 个。
+- **仪器测试** 74 个（`:library:connectedDebugAndroidTest`）+ 6 个
+  （`:app:connectedDebugAndroidTest`），R8 混淆变体 6 个。
 
 尚未建立：
 
 - 无 pre-commit 钩子（当前只在 CI 里阻断）。
 - 无死代码检查工具之外的「删除前确认」类防护。
+- **`:app` demo 只覆盖了取消链路**（`MainActivityCancelPathTest` 6 条）。表单提交、
+  删除二次确认、日期切换、配置面板等业务方侧路径仍无自动化——这类缺陷的特点是
+  **组件测试全绿也照样发生**，因为收尾代码写在业务方而不在组件里。
 - 仪器测试的执行数据**不并入** JaCoCo JVM 报告，因此覆盖率门禁看不到
   View / 绘制 / 资源读取层的执行情况。补上需要 `jacoco-android` 等第三方插件，
   与 K10「零第三方依赖」冲突，待单独评估。
@@ -129,3 +133,19 @@ Windows 下用 `gradlew.bat`：
 **我曾把「编译通过、lint 干净、单测全绿」当成「功能正常」汇报过一次，结果 App 在真机上直接崩。**
 这三项都不加载或不过问 Android 运行时。凡是声称「没问题」的结论，
 要么说清覆盖了什么，要么明确写「未在真机验证」。
+
+## 第二条：写完就绿，不等于测试有效
+
+**新写的测试第一次就通过时，要先确认它真的咬得住。**
+2026-10-10 修 `ACTION_CANCEL` 与 demo 取消链路时，两处都用「回滚修复 → 重跑」验证过：
+
+- 把 `onTouchEvent` 的 `ACTION_CANCEL` 修复还原 → 3 条测试同时转红，
+  失败信息逐条对应缺陷症状（「凭空进入新建编辑态」/「凭空触发长按回调，实际回调：[click]」）。
+- 把 `MainActivity.onDismiss` 里的 `cancelEdit()` 删掉 → 2 条测试同时转红。
+
+不这么做的话，一批全是「只断言了注释里那句话」的测试也能全绿，
+它们唯一的价值是让人误以为覆盖了。**新测试的第一次绿灯值得警惕，红过一次才算数。**
+
+反过来，写断言时也常踩这个坑：先断言「数据变了」还是先断言「数据没变」，
+决定了用例是有效还是空跑——`cancellingTheFormChangesNothing` 先在表单里改了标题再取消，
+否则「什么都没丢」也能通过。**要让对照组先证明这条链路本来是能生效的。**
