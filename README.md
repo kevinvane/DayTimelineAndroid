@@ -611,6 +611,15 @@ timeline.eventBlockPainter = object : EventBlockPainter {
 .\gradlew.bat :r8test:connectedReleaseAndroidTest
 ```
 
+> ⚠️ **JitPack 的构建绿灯不是门禁。** 它执行的是
+> `clean publishToMavenLocal -xtest -xlint`——**跳过测试与 lint，也不触发上面任何一个
+> `verify*` 任务**。上面这张清单只由 [CI](.github/workflows/ci.yml) 把关。
+> 发版前请自己跑一遍，或看 CI 结果。
+>
+> 另：仓库未应用 `maven-publish`、也没有 `jitpack.yml`，JitPack 会自行识别 Android library
+> 模块并注入 `maven-publish`、自动选用 JDK 17（**消费者不受影响**），代价是本地
+> 跑不了 `publishToMavenLocal`。
+
 ### 工程结构
 
 ```
