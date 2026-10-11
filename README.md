@@ -45,7 +45,6 @@
 | 已发布版本 | 坐标 | 对应提交 | 状态 |
 |---|---|---|---|
 | **`1.0.0-rc1`** | `com.github.kevinvane:DayTimelineAndroid:1.0.0-rc1` | `95d081c` | ✅ **可用**，已逐项核对 |
-| ~~`1.0.0-beat`~~ | — | ~~`dd9e606`~~ | ❌ **已废弃，tag 已删除** |
 
 ### 为什么是 `-rc1` 而不是 `1.0.0`
 
@@ -63,18 +62,6 @@ DL-03~DL-06 四份交付文档未齐。`rc` 如实反映这一状态——
 - `MinuteOfDay` 已无 `boxed-impl`（value class 标志），确为普通类，**Java 接入方可用**
 - `proguard.txt` 含 21 条保留规则，与仓库 `consumer-rules.pro` 一致
 
-### 关于已删除的 `1.0.0-beat`
-
-该版本的 tag 打在 `dd9e606`（2026-10-09），**落后 `master` 28 个提交**：
-`EditDraft` / `EditResult` / `EventDetail` 三个类不存在，
-`eventAt` / `refreshNow` / `enterEditMode` / `clearSelection` 四个方法不存在，
-`MinuteOfDay` 仍是 `@JvmInline value class`（Java 接入方无法实现 `TimelineEvent`）；
-随包 `proguard.txt` 也是旧版，缺三个新类的 `-keep`、缺 `$DefaultImpls` 保留、
-`MinuteOfDay` 仍是 `-keepnames`——**开混淆的接入方会运行崩溃**。
-
-tag 与该版本在 JitPack 上均已删除。JitPack 的产物删除后会保留约 7 天，
-之后引用旧坐标会解析失败。
-
 ### 维护者须知
 
 - `library` 未应用 `maven-publish`，仓库也没有 `jitpack.yml`。
@@ -84,8 +71,8 @@ tag 与该版本在 JitPack 上均已删除。JitPack 的产物删除后会保�
   接入方在自己的应用里分发时需自行附带本许可证。
 - JitPack 构建时执行 `clean publishToMavenLocal -xtest -xlint`，**不跑门禁**。
   门禁只由 [CI](#从源码构建与质量门禁) 把关。
-- **JitPack 返回 `ok` 不等于产物正确。** `1.0.0-beat` 就是 `ok` 却缺 3 个类、5 个方法，
-  CI 全绿也照样放行。发布后必须按上面的「产物核对」逐项检查。
+- **JitPack 返回 `ok` 不等于产物正确。** 现有门禁没有一项能发现「打 tag 的提交不是最新提交」
+  或「产物与源码不同步」。发布后必须按上面的「产物核对」逐项检查。
 
 功能实现进度：组件 M0–M5 已完成，M6（发布）进行中；色值、交互标注与切图/字体资源尚无交付，
 详见 [技术方案文档](docs/DayTimeline-技术方案与实施计划.md)。
