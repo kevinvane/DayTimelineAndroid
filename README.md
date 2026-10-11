@@ -42,41 +42,50 @@
 
 本文档描述的是 **`master` 分支当前状态**。
 
-| 已发布版本 | 坐标 | 对应提交 |
-|---|---|---|
-| `1.0.0-beat`（2026-10-11 构建） | `com.github.kevinvane:DayTimelineAndroid:1.0.0-beat` | `dd9e606` |
+| 已发布版本 | 坐标 | 对应提交 | 状态 |
+|---|---|---|---|
+| **`1.0.0-rc1`** | `com.github.kevinvane:DayTimelineAndroid:1.0.0-rc1` | `95d081c` | ✅ **可用**，已逐项核对 |
+| ~~`1.0.0-beat`~~ | — | ~~`dd9e606`~~ | ❌ **已废弃，tag 已删除** |
 
-### ⚠️ `1.0.0-beat` 落后于本文档
+### 为什么是 `-rc1` 而不是 `1.0.0`
 
-该 tag 打在 `dd9e606`（2026-10-09），**落后 `master` 28 个提交**。
-已下载该版本 AAR 核对 `classes.jar`，以下 API **在 `1.0.0-beat` 中不存在**，
-按本文档接入会**编译失败**：
+M6（发布）尚未完成：§7.3 的 17 项色值仍是 Material 3 baseline 占位值（R10 风险 **高/高**），
+DL-03~DL-06 四份交付文档未齐。`rc` 如实反映这一状态——
+**颜色与文档尚未定稿，不建议用于生产**。
 
-| 能力 | 本文所在章节 | `1.0.0-beat` |
-|---|---|---|
-| `EditDraft` / `EditResult` + `applyEdit` 表单输入（AD-22） | [编辑态](#5-编辑态接入你自己的表单) | ❌ 类不存在 |
-| `EventDetail` + `detailOf(id)` 详情快照（AD-23） | [只读查询](#6-只读查询) | ❌ 类不存在 |
-| `enterEditMode(id)` / `enterEditModeAndNotify(id)` | [其余常用入口](#7-其余常用入口) | ❌ 方法不存在 |
-| `clearSelection()`（AD-23） | [其余常用入口](#7-其余常用入口) | ❌ 方法不存在 |
-| `eventAt(x, y)` 按坐标查询（AD-28） | [只读查询](#6-只读查询) | ❌ 方法不存在 |
-| `refreshNow()` 刷新当前时间线（AD-28） | [其余常用入口](#7-其余常用入口) | ❌ 方法不存在 |
-| `MinuteOfDay` 改普通类，Java 方可实现 `TimelineEvent`（OQ-7） | [Java 调用方](#java-调用方) | ❌ 仍是 value class，**Java 接入方无法实现接口** |
+### 产物核对
 
-同一份 AAR 内的 `proguard.txt` 也是该提交的旧版本：缺少 `EditDraft` / `EditResult` /
-`EventDetail` 的 `-keep`、缺少接口 `$DefaultImpls` 保留、`MinuteOfDay` 仍是 `-keepnames`。
-**开启混淆的接入方会直接运行崩溃。**
+`1.0.0-rc1` 的 AAR 已下载解包逐项核对（不只看 JitPack 的 `ok` 状态）：
 
-> 结论：**请勿在生产项目中使用 `1.0.0-beat`**。
-> 建议从当前 `master` 重新打一个 tag（如 `1.0.0`）后再接入。
+- `EditDraft` / `EditResult` / `EventDetail` / `EventDetailKt` / `EditDraftKt` 五个类均在
+- `detailOf` / `eventAt` / `enterEditMode` / `enterEditModeAndNotify` / `clearSelection` /
+  `refreshNow` 六个方法均在
+- `MinuteOfDay` 已无 `boxed-impl`（value class 标志），确为普通类，**Java 接入方可用**
+- `proguard.txt` 含 21 条保留规则，与仓库 `consumer-rules.pro` 一致
+
+### 关于已删除的 `1.0.0-beat`
+
+该版本的 tag 打在 `dd9e606`（2026-10-09），**落后 `master` 28 个提交**：
+`EditDraft` / `EditResult` / `EventDetail` 三个类不存在，
+`eventAt` / `refreshNow` / `enterEditMode` / `clearSelection` 四个方法不存在，
+`MinuteOfDay` 仍是 `@JvmInline value class`（Java 接入方无法实现 `TimelineEvent`）；
+随包 `proguard.txt` 也是旧版，缺三个新类的 `-keep`、缺 `$DefaultImpls` 保留、
+`MinuteOfDay` 仍是 `-keepnames`——**开混淆的接入方会运行崩溃**。
+
+tag 与该版本在 JitPack 上均已删除。JitPack 的产物删除后会保留约 7 天，
+之后引用旧坐标会解析失败。
 
 ### 维护者须知
 
 - `library` 未应用 `maven-publish`，仓库也没有 `jitpack.yml`。
   JitPack 会自行识别 Android library 模块并注入 `maven-publish`、自动选用 JDK 17，
   **消费者不受影响**；但本地跑不了 `publishToMavenLocal`。
-- 根目录 [`LICENSE`](LICENSE) 为 Apache-2.0。JitPack 会从 GitHub 仓库根目录读取许可证并随 AAR 一并分发，接入方引入即视为接受。
+- **AAR 内不含 LICENSE 文件**——AGP 不把许可证打进产物，JitPack 也不会附带。
+  接入方在自己的应用里分发时需自行附带本许可证。
 - JitPack 构建时执行 `clean publishToMavenLocal -xtest -xlint`，**不跑门禁**。
   门禁只由 [CI](#从源码构建与质量门禁) 把关。
+- **JitPack 返回 `ok` 不等于产物正确。** `1.0.0-beat` 就是 `ok` 却缺 3 个类、5 个方法，
+  CI 全绿也照样放行。发布后必须按上面的「产物核对」逐项检查。
 
 功能实现进度：组件 M0–M5 已完成，M6（发布）进行中；色值、交互标注与切图/字体资源尚无交付，
 详见 [技术方案文档](docs/DayTimeline-技术方案与实施计划.md)。
@@ -116,7 +125,7 @@ dependencyResolutionManagement {
 
 ```kotlin
 dependencies {
-    implementation("com.github.kevinvane:DayTimelineAndroid:<Tag>")
+    implementation("com.github.kevinvane:DayTimelineAndroid:1.0.0-rc1")
 }
 ```
 
@@ -124,9 +133,8 @@ dependencies {
 > AAR 就是 `:library` 模块的内容，多模块坐标 `com.github.kevinvane:DayTimelineAndroid:library:<Tag>`
 > 返回 404。
 >
-> ⚠️ **目前只有 `1.0.0-beat` 可用，且它落后于本文档**，见[版本与发布状态](#版本与发布状态)。
-> 在从 `master` 重新打 tag 之前，请按[从源码构建](#从源码构建与质量门禁)克隆本仓库、
-> 以 `project(":library")` 接入。
+> 跟随开发进度可用 `master-SNAPSHOT`，但它随每次提交重编，**不适合生产**。
+> 详见[版本与发布状态](#版本与发布状态)。
 
 ### 2. 放置组件
 
@@ -577,7 +585,8 @@ timeline.eventBlockPainter = object : EventBlockPainter {
 | 不提供图形化配置界面 | 配置只经 XML / 代码 |
 | 同刻日程等宽并排 | 总列数取当天最大重叠数，不按内容长度做流式宽度 |
 | **文案暂仅有中文** | 组件内文案全部走 `strings.xml`（可被业务方覆盖），但库自身**未提供 `values-xx` 翻译**。非中文环境会显示中文，请在自己的资源里覆盖同名项 |
-| **`1.0.0-beat` 不可用** | 已发布版本落后 `master` 28 个提交，缺 AD-22 / AD-23 / AD-28 的 API，且混淆保留规则是旧版。见[版本与发布状态](#版本与发布状态) |
+| **颜色未定稿** | 17 项语义色项当前是 Material 3 baseline **占位值**，不是设计终稿。深浅色机制可用，但视觉验收结论在定稿前不成立 |
+| **交付文档未齐** | DL-03~DL-06（快速上手 / 完整能力 / 主题定制 / 交互说明）尚未产出，当前以本文档与 KDoc 为准 |
 
 ---
 
@@ -709,4 +718,5 @@ JVM 单测直接跑，不需要设备也不需要 Robolectric。
 
 本项目采用 [Apache License 2.0](LICENSE)，许可证全文见仓库根目录的 [`LICENSE`](LICENSE) 文件。
 
-> JitPack 在打包时会附带同一份许可证，接入方引入依赖即视为接受。
+> ⚠️ **AAR 产物内不含许可证文件。** AGP 不把 `LICENSE` 打进构件，JitPack 也不会附带——
+> 若你的应用会重新分发该组件，需自行在应用内附带本许可证文本。
