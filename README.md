@@ -104,11 +104,6 @@ dependencies {
 }
 ```
 
-> 坐标是**仓库级**的，不是 `...:library:<Tag>`——JitPack 对本仓库只发布了这一份
-> AAR 就是 `:library` 模块的内容，多模块坐标 `com.github.kevinvane:DayTimelineAndroid:library:<Tag>`
-> 返回 404。
->
-> 跟随开发进度可用 `master-SNAPSHOT`，但它随每次提交重编，**不适合生产**。
 > 详见[版本与发布状态](#版本与发布状态)。
 
 ### 2. 放置组件
@@ -189,7 +184,7 @@ timeline.listener = object : TimelineListener {
 }
 ```
 
-> 🚨 **组件不修改业务方数据、不做持久化、不发起任何网络请求。**
+> **组件不修改业务方数据、不做持久化、不发起任何网络请求。**
 > 所有变更只通过事件通知，是否落库由你决定。
 >
 > 特别地：**取消编辑绝不产生任何数据变更**。`onEditCancelled` 只用于统计编辑完成率，
@@ -701,6 +696,3 @@ JVM 单测直接跑，不需要设备也不需要 Robolectric。
 ## 许可
 
 本项目采用 [Apache License 2.0](LICENSE)，许可证全文见仓库根目录的 [`LICENSE`](LICENSE) 文件。
-
-> ⚠️ **AAR 产物内不含许可证文件。** AGP 不把 `LICENSE` 打进构件，JitPack 也不会附带——
-> 若你的应用会重新分发该组件，需自行在应用内附带本许可证文本。
