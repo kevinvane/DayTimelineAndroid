@@ -102,6 +102,29 @@ jobs:
           # BottomSheet / PopupWindow 的 onDismiss 收尾写在 demo 侧，不在组件里。
           # 组件测试绿而 demo 这条链路断掉的情况是真实发生过的。
           script: ./gradlew :library:connectedDebugAndroidTest :app:connectedDebugAndroidTest
+      - name: 失败用例明细
+        if: failure()
+        run: |
+          xmls=$(find . -path '*/build/outputs/androidTest-results/connected/*/TEST-*.xml')
+          if [ -z "$xmls" ]; then
+            echo "未找到 androidTest XML 报告——测试可能未启动即失败，请看上方日志"
+          else
+            echo "$xmls" | while IFS= read -r f; do
+              echo "::group::$f"
+              python3 -c "
+          import sys, xml.etree.ElementTree as ET
+          root = ET.parse(sys.argv[1]).getroot()
+          cases = list(root.iter('testcase'))
+          bad = [c for c in cases if c.find('failure') is not None or c.find('error') is not None]
+          print('用例总数 %d，失败 %d' % (len(cases), len(bad)))
+          for c in bad:
+              node = c.find('failure') if c.find('failure') is not None else c.find('error')
+              print('--- FAIL %s.%s' % (c.get('classname'), c.get('name')))
+              print((node.text or node.get('message') or '').strip()[:3000])
+          " "$f"
+              echo "::endgroup::"
+            done
+          fi
       - uses: actions/upload-artifact@v6
         if: always()
         with:
@@ -137,6 +160,30 @@ jobs:
           api-level: 34
           arch: x86_64
           script: ./gradlew :r8test:connectedReleaseAndroidTest
+
+      - name: 失败用例明细
+        if: failure()
+        run: |
+          xmls=$(find . -path '*/build/outputs/androidTest-results/connected/*/TEST-*.xml')
+          if [ -z "$xmls" ]; then
+            echo "未找到 androidTest XML 报告——测试可能未启动即失败，请看上方日志"
+          else
+            echo "$xmls" | while IFS= read -r f; do
+              echo "::group::$f"
+              python3 -c "
+          import sys, xml.etree.ElementTree as ET
+          root = ET.parse(sys.argv[1]).getroot()
+          cases = list(root.iter('testcase'))
+          bad = [c for c in cases if c.find('failure') is not None or c.find('error') is not None]
+          print('用例总数 %d，失败 %d' % (len(cases), len(bad)))
+          for c in bad:
+              node = c.find('failure') if c.find('failure') is not None else c.find('error')
+              print('--- FAIL %s.%s' % (c.get('classname'), c.get('name')))
+              print((node.text or node.get('message') or '').strip()[:3000])
+          " "$f"
+              echo "::endgroup::"
+            done
+          fi
 
       - uses: actions/upload-artifact@v6
         if: always()
