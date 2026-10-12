@@ -96,6 +96,7 @@ Windows 下用 `gradlew.bat`：
 .\gradlew.bat :library:verifyAllCoverage     # 全库可测逻辑覆盖率门禁 ≥75%（实测 88.60%，不需要设备）
 .\gradlew.bat detekt                          # 静态检查 + 代码风格 0 违规
 .\gradlew.bat :library:verifyNoDeadCode       # 死代码 0 处（依赖 detekt）
+.\gradlew.bat :library:verifyColorsFinalized  # 17 项色值须为设计定稿值 + 对比度达标（依赖 detekt）
 .\gradlew.bat :r8test:verifyKeptSymbols       # 混淆产物构建 + 对外契约类符号核对（不需要设备）
 .\gradlew.bat connectedAndroidTest           # 需要设备/模拟器（含 :app 的 7 条 demo 用例）
 ```
@@ -119,6 +120,11 @@ Windows 下用 `gradlew.bat`：
   保留，再在**混淆后的 release 变体**上跑仪器测试——这是「业务方开启混淆后功能正常」
   的唯一有效证据（library 自身不开混淆，保留规则写错也不会有任何东西报错）。
 - **CI**（`.github/workflows/ci.yml`）：三个 job——静态门禁 / 仪器测试 / R8 验证。
+- **色值定稿门禁** `verifyColorsFinalized`：§16.2 的 M6 出口硬卡点原先只存在于文字里，
+  占位值可再次混入发布物而无人拦截。新增后核对三件事——色名集合与设计交付完全一致
+  （兼挡「漏配」与「改名」）、34 个取值须等于设计定稿、按 §7.3 算 WCAG 对比度。
+  已回滚验证（改回 M3 占位 → 红；深色文件删色名 → 红并指名缺哪个）。
+  **改色值会被这道门禁拦下，除非同步更新设计交付文档与 `build.gradle.kts` 的登记表**。
 - **仪器测试** 102 个（`:library:connectedDebugAndroidTest`，2026-10-10 实测全绿；含 AD-28 的
   16 条 `DayTimelineViewEntryPointTest` + `DayTimelineViewSavedStateParcelTest`）+ 7 个
   （`:app:connectedDebugAndroidTest`），R8 混淆变体 8 个。

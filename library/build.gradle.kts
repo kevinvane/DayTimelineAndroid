@@ -100,6 +100,267 @@ tasks.register("verifyNoDeadCode") {
     }
 }
 
+/**
+ * 设计侧定稿色值登记表（PRD §7.3 的 17 项 × 深浅两套 = 34 个值）。
+ *
+ * 唯一来源：`docs/DayTimeline-设计侧定稿交付.md`（设计侧交付，2026-10-12）。
+ * 这份副本**不是**另立标准，而是把交付结论钉进可执行的门禁——
+ * 理由见 [verifyColorsFinalized] 的 KDoc。
+ *
+ * 设计改版时：先改设计交付文档，再改这里，然后改两份 `colors.xml`。
+ * 三者缺一，`verifyColorsFinalized` 都会失败并指出缺哪一处。
+ */
+val designFinalColors: Map<String, Pair<String, String>> = mapOf(
+    "day_timeline_background" to ("#FFFFFF" to "#121014"),
+    "day_timeline_grid_line" to ("#E8E5EA" to "#3A3740"),
+    "day_timeline_axis_label" to ("#5A5560" to "#D8D3DC"),
+    "day_timeline_now" to ("#D92D20" to "#FF8A80"),
+    "day_timeline_block_bg_past" to ("#F3F1F4" to "#1E1B22"),
+    "day_timeline_block_bg_ongoing" to ("#EDE3FF" to "#5B3FA3"),
+    "day_timeline_block_bg_upcoming" to ("#F0EEF2" to "#2A2730"),
+    "day_timeline_block_text_past" to ("#9A949E" to "#8F8994"),
+    "day_timeline_block_text" to ("#211E24" to "#F0ECF2"),
+    "day_timeline_block_accent_past" to ("#C9C4CC" to "#4A4550"),
+    "day_timeline_block_accent" to ("#7A4FD6" to "#C9A7FF"),
+    "day_timeline_block_stroke" to ("#ECE9EF" to "#4A4550"),
+    "day_timeline_selected" to ("#5B2FC9" to "#D6B8FF"),
+    "day_timeline_edit_layer_bg" to ("#66FFFFFF" to "#66121014"),
+    "day_timeline_edit_layer_text" to ("#1F1B24" to "#F5F1F7"),
+    "day_timeline_edit_layer_time" to ("#6B3FD4" to "#D8B8FF"),
+    "day_timeline_edit_handle" to ("#6B3FD4" to "#D8B8FF"),
+)
+
+/** 解析 colors.xml，取出色名 → 取值（大写十六进制）。 */
+fun parseColorXml(file: File): Map<String, String> =
+    Regex("""<color name="([^"]+)">\s*(#[0-9A-Fa-f]{6,8})\s*</color>""")
+        .findAll(file.readText())
+        .associate { it.groupValues[1] to it.groupValues[2].uppercase() }
+
+/** sRGB → 相对亮度（WCAG 定义）。 */
+fun relativeLuminance(hex: String): Double {
+    fun channel(c: Int): Double {
+        val s = c / 255.0
+        return if (s <= 0.03928) s / 12.92 else Math.pow((s + 0.055) / 1.055, 2.4)
+    }
+    val h = hex.uppercase().removePrefix("#")
+    // substring 的第二个参数是**结束下标**，不是长度——写成 (2, 2) 会得到空串
+    val r = h.substring(0, 2).toInt(16)
+    val g = h.substring(2, 4).toInt(16)
+    val b = h.substring(4, 6).toInt(16)
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+}
+
+/** WCAG 对比度。 */
+fun contrastRatio(a: String, b: String): Double {
+    val la = relativeLuminance(a)
+    val lb = relativeLuminance(b)
+    val (hi, lo) = if (la >= lb) la to lb else lb to la
+    return (hi + 0.05) / (lo + 0.05)
+}
+
+/**
+ * 把带 alpha 的色值合成到不透明底色上。
+ *
+ * 第 14 项编辑层底色是 40% 半透明（深浅适配只允许替换取值、不允许代码分支，
+ * 透明度必须写进取值），直接拿它跟文字算对比度会**高估**——
+ * 实际看到的是它叠在页面背景上的结果。
+ */
+fun compositeOver(fg: String, bg: String): String {
+    val f = fg.uppercase().removePrefix("#")
+    val b = bg.uppercase().removePrefix("#")
+    val alpha = if (f.length == 8) f.substring(0, 2).toInt(16) / 255.0 else 1.0
+    val out = (0..2).map { i ->
+        val fv = f.substring(i * 2, i * 2 + 2).toInt(16)
+        val bv = b.substring(i * 2, i * 2 + 2).toInt(16)
+        Math.round(alpha * fv + (1 - alpha) * bv).toInt().coerceIn(0, 255)
+    }
+    return "#%02X%02X%02X".format(out[0], out[1], out[2])
+}
+
+/**
+ * 色值定稿门禁（PRD §16.2 的 M6 出口硬卡点「§7.3 的 17 项色值全部为设计定稿值」）。
+ *
+ * ## 为什么要有这个任务
+ *
+ * 该出口标准此前**只存在于文字里**：§16.2 写着「色值必须为定稿值」，
+ * 但没有任何自动化能判定，占位值随时可以再次混进发布物而无人拦截
+ * ——这正是 PRD §18 R10 描述的事故形态。M0-1 定稿落地后，这个缺口若不补上，
+ * 下一次有人把某个色值改回占位值，门禁清单上仍然写着「已通过」。
+ *
+ * 这是本仓库第三次出现「清单上写着、实际什么都不拦」，前两次分别是
+ * `:app:detekt` 漏掉 `src/androidTest`、以及 `verifyNoDeadCode` 守着 detekt 里
+ * 根本不存在的 `UnusedReturnValue`。
+ *
+ * ## 查什么
+ *
+ * 1. 两份 `colors.xml` 的色名集合必须与 [designFinalColors] 完全一致——
+ *    同时挡住「漏配」（运行期才崩）与「改名」（破坏业务方同名覆盖的对外契约）。
+ * 2. 每个取值必须等于设计定稿值——**就地调色而不经设计评审会在这里失败**。
+ * 3. 按 §7.3 的成对关系算 WCAG 对比度，把 Q7 从「只能人工走查」变成可自动判定。
+ *
+ * ## 已知偏差的处理
+ *
+ * 浅色「已过态」文字 `#9A949E` 对底色 `#F3F1F4` 为 2.63:1，低于下述 3.0 的下限。
+ * §7.3 对该项只给定性要求（「低对比度」）而未给数值，故**不判为不合格**，
+ * 但也不能装作没看见：它登记在 [acceptedContrastDeviations] 里，
+ * 每次运行都会照常打印出来，直到设计复核后把取值改掉为止。
+ */
+val acceptedContrastDeviations = setOf(
+    // 浅色已过态 2.63:1。§7.3 只给定性要求「低对比度」而未给数值，故不判失败，
+    // 但每次运行都照常打印，直到设计复核后把取值改掉为止。
+    // 建议值 #8F8994（3.03:1，恰为设计为深色同一项选定的值）。
+    // 见 docs/DayTimeline-设计侧定稿交付.md 与 PRD §19.4 v1.18 第 ⑤ 条。
+    "light:day_timeline_block_text_past/day_timeline_block_bg_past",
+)
+
+tasks.register("verifyColorsFinalized") {
+    group = "verification"
+    description = "色值定稿门禁：17 项取值须与设计交付一致，且满足 §7.3 的对比度要求（PRD §16.2 M6 出口）"
+    dependsOn("detekt")
+
+    val lightFile = layout.projectDirectory.file("src/main/res/values/colors.xml").asFile
+    val darkFile = layout.projectDirectory.file("src/main/res/values-night/colors.xml").asFile
+    inputs.file(lightFile)
+    inputs.file(darkFile)
+    outputs.upToDateWhen { false }
+
+    doLast {
+        val light = parseColorXml(lightFile)
+        val dark = parseColorXml(darkFile)
+        val expected = designFinalColors
+
+        // ① 色名集合
+        check(light.keys == expected.keys) {
+            "浅色 colors.xml 的色项与设计交付不一致：\n" +
+                "  缺失：${expected.keys - light.keys}\n" +
+                "  多出：${light.keys - expected.keys}"
+        }
+        check(dark.keys == expected.keys) {
+            "深色 colors-night/colors.xml 的色项与设计交付不一致：\n" +
+                "  缺失：${expected.keys - dark.keys}\n" +
+                "  多出：${dark.keys - expected.keys}"
+        }
+        check(light.keys == dark.keys) {
+            "深浅两套色名不一致（PRD §7.3：少写一个名字 = 运行期崩溃）：\n" +
+                "  仅浅色有：${light.keys - dark.keys}\n" +
+                "  仅深色有：${dark.keys - light.keys}"
+        }
+
+        // ② 取值须与设计定稿一致
+        val wrong = buildList {
+            for ((name, pair) in expected) {
+                val (l, d) = pair
+                if (light[name] != l) add("  $name 浅色：文件=${light[name]} 设计定稿=$l")
+                if (dark[name] != d) add("  $name 深色：文件=${dark[name]} 设计定稿=$d")
+            }
+        }
+        check(wrong.isEmpty()) {
+            buildString {
+                appendLine("以下取值与设计定稿交付不一致（PRD §7.3；R10 的「占位值混入发布物」即由此拦下）：")
+                wrong.forEach(::appendLine)
+                appendLine()
+                appendLine("色值是设计交付物。就地调色等于绕开设计评审——那正是当初产生")
+                appendLine("Material 3 baseline 占位值的同一个问题。确需变更请先改设计稿。")
+                appendLine("来源：docs/DayTimeline-设计侧定稿交付.md")
+            }
+        }
+
+        // ③ 对比度
+        val report = StringBuilder()
+        val failures = mutableListOf<String>()
+        val parked = mutableListOf<String>()
+
+        fun checkPair(
+            fgName: String,
+            bgName: String,
+            min: Double,
+            note: String,
+        ) {
+            for ((mode, colors) in listOf("light" to light, "dark" to dark)) {
+                // 带 alpha 的底色先合成到页面背景上，否则会高估对比度
+                val bg = compositeOver(colors[bgName]!!, colors["day_timeline_background"]!!)
+                val ratio = contrastRatio(colors[fgName]!!, bg)
+                val line = "  $mode $fgName / $bgName = ${"%.2f".format(ratio)}:1（下限 $min，$note）"
+                val key = "$mode:$fgName/$bgName"
+                when {
+                    ratio >= min -> report.appendLine(line + "  PASS")
+                    key in acceptedContrastDeviations -> {
+                        report.appendLine(line + "  **已登记偏差（不判失败）**")
+                        parked += line
+                    }
+                    else -> {
+                        report.appendLine(line + "  FAIL")
+                        failures += line
+                    }
+                }
+            }
+        }
+
+        checkPair("day_timeline_axis_label", "day_timeline_background", 4.5, "常规文字",
+        )
+        checkPair("day_timeline_block_text", "day_timeline_block_bg_ongoing", 4.5, "常规文字",
+        )
+        checkPair("day_timeline_block_text", "day_timeline_block_bg_upcoming", 4.5, "常规文字",
+        )
+        checkPair("day_timeline_block_text_past", "day_timeline_block_bg_past", 3.0,
+            "已过态：要求低但不能读不出来",
+        )
+        checkPair("day_timeline_edit_layer_text", "day_timeline_edit_layer_bg", 4.5,
+            "编辑层文字 / 合成底",
+        )
+        checkPair("day_timeline_edit_layer_time", "day_timeline_edit_layer_bg", 4.5,
+            "编辑层时间 / 合成底",
+        )
+        checkPair("day_timeline_now", "day_timeline_background", 3.0, "高辨识度",
+        )
+        checkPair("day_timeline_edit_handle", "day_timeline_background", 3.0, "高辨识度",
+        )
+        checkPair("day_timeline_selected", "day_timeline_block_bg_upcoming", 3.0,
+            "选中态须与常规态明显可辨",
+        )
+
+        // §7.3「刻度线弱于文字」是相对要求，只能结构化表达：不得比轴标签更重
+        for ((mode, colors) in listOf("light" to light, "dark" to dark)) {
+            val grid = contrastRatio(
+                colors["day_timeline_grid_line"]!!, colors["day_timeline_background"]!!,
+            )
+            val label = contrastRatio(
+                colors["day_timeline_axis_label"]!!, colors["day_timeline_background"]!!,
+            )
+            val ok = grid < label
+            report.appendLine(
+                "  $mode 刻度线(${"%.2f".format(grid)}:1) 弱于轴标签文字(${"%.2f".format(label)}:1)  " +
+                    if (ok) "PASS" else "FAIL",
+            )
+            if (!ok) failures += "  $mode 刻度线对比度未弱于轴标签文字（§7.3 第 2 行）"
+        }
+
+        check(failures.isEmpty()) {
+            buildString {
+                appendLine("以下色值不满足 PRD §7.3 的对比度要求：")
+                failures.forEach(::appendLine)
+                appendLine()
+                appendLine(report.toString().trimEnd())
+                appendLine()
+                appendLine("对比度由 PRD §7.3 的定性要求（正常对比度 / 低对比度 / 高辨识度 / 弱于文字）")
+                appendLine("折算而来。**色值是设计交付物，请交设计复核，不要就地改色。**")
+            }
+        }
+
+        logger.lifecycle(
+            "[色值门禁] verifyColorsFinalized 通过：17 项 × 深浅两套 = 34 个取值与设计交付一致，"
+                + "对比度全部达标",
+        )
+        logger.lifecycle(report.toString().trimEnd())
+        if (parked.isNotEmpty()) {
+            logger.lifecycle(
+                "[色值门禁] 另有 ${parked.size} 项**已登记偏差**（不判失败，待设计复核）：",
+            )
+            parked.forEach { logger.lifecycle("  $it") }
+        }
+    }
+}
+
 jacoco {
     toolVersion = "0.8.12"
 }

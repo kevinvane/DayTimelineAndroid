@@ -597,6 +597,7 @@ timeline.eventBlockPainter = object : EventBlockPainter {
 # 门禁（全部可离线执行，不需要设备）
 .\gradlew.bat detekt                        # 静态检查 + 代码风格 0 违规
 .\gradlew.bat :library:verifyNoDeadCode     # 死代码 0 处
+.\gradlew.bat :library:verifyColorsFinalized # 17 项色值须为设计定稿值 + 对比度达标
 .\gradlew.bat :library:verifyCoreCoverage   # 核心逻辑覆盖率 ≥ 90%
 .\gradlew.bat :library:verifyAllCoverage    # 可测逻辑覆盖率 ≥ 75%
 .\gradlew.bat :library:lintDebug            # 平台规范检查 0 错误 0 警告
@@ -641,6 +642,7 @@ JVM 单测直接跑，不需要设备也不需要 Robolectric。
 | 平台规范检查 0 错误 0 警告 | ✅ 达标 | `warningsAsErrors = true`，无 lint baseline |
 | 代码风格 / 静态检查 | ✅ 达标 | detekt 0 违规 |
 | 死代码 0 处 | ✅ 达标 | `:library:verifyNoDeadCode` 自动阻断 |
+| 色值为设计定稿值 | ✅ 达标 | `:library:verifyColorsFinalized`：34 个取值须等于设计交付，并按 §7.3 算对比度 |
 | JVM 单元测试 | ✅ 达标 | **144** 个用例全绿 |
 | 仪器测试 | ✅ 达标 | `:library` **102**、`:app` **7**、`:r8test` 混淆变体 **8** |
 | R8 混淆消费端验证 | ✅ 达标 | 10 个对外契约类符号核对 + 混淆变体仪器测试 8/8 |

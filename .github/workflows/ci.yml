@@ -48,6 +48,12 @@ jobs:
       - name: 死代码门禁
         run: ./gradlew :library:verifyNoDeadCode --stacktrace
 
+      # 色值须为设计定稿值（PRD §16.2 的 M6 出口硬卡点 / §18 R10）。
+      # 此前该出口标准只存在于文字里，占位值可以再次混进发布物而无人拦截——
+      # 这正是 R10 描述的事故形态。单独一步，便于失败时一眼看出是哪条红线。
+      - name: 色值定稿门禁
+        run: ./gradlew :library:verifyColorsFinalized --stacktrace
+
       - name: 编译组件库与示例应用
         run: ./gradlew :library:assembleDebug :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
 
