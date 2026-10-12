@@ -30,6 +30,10 @@ material = { group = "com.google.android.material", name = "material", version.r
 androidx-activity = { group = "androidx.activity", name = "activity", version.ref = "activity" }
 androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
 androidx-customview = { group = "androidx.customview", name = "customview", version.ref = "customview" }
+# detekt 1.23 把 NoUnusedImports 从 style 移到了独立的 formatting 规则集，
+# **不走 plugins 块**：该插件的 marker 在 Maven Central 上不存在（404），
+# 官方用法是挂到 detektPlugins 配置上。构建期工具，不进 AAR，不影响接入方依赖。
+detekt-formatting = { group = "io.gitlab.arturbosch.detekt", name = "detekt-formatting", version.ref = "detekt" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

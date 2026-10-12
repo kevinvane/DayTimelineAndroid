@@ -10,7 +10,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.kevinvane.daytimeline.library.api.ScrollMode
 import com.github.kevinvane.daytimeline.library.api.TimelineConfig
-import com.github.kevinvane.daytimeline.library.core.EventSanitizer
 import com.github.kevinvane.daytimeline.library.core.MinuteOfDay
 import com.github.kevinvane.daytimeline.library.core.TimelineEvent
 import org.junit.Assert.assertEquals

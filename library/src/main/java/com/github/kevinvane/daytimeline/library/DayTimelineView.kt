@@ -12,7 +12,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.widget.OverScroller
 import androidx.core.graphics.withTranslation
-import androidx.core.view.ViewCompat
 import java.util.Locale
 import com.github.kevinvane.daytimeline.library.api.BlockContext
 import com.github.kevinvane.daytimeline.library.api.EditDraft

@@ -52,24 +52,48 @@ tasks.register("verifyNoDeadCode") {
         check(dir.exists() && dir.listFiles()?.any { it.name.endsWith(".xml") } == true) {
             "未找到 detekt 报告：${dir.absolutePath}"
         }
-        // detekt 的 XML 报告里 finding 的 source 带规则名，直接扫规则名即可，
-        // 比解析 severity 更稳（死代码问题不应因严重级别调低而漏网）。
-        val deadCodeRules = listOf(
-            "UnusedPrivateMember", "UnusedPrivateProperty", "UnusedPrivateClass",
-            "UnusedParameter", "UnusedImports", "UnusedReturnValue",
+        // 规则 ID **逐个核实过存在且默认开启**（2026-10-12）：
+        // 往库里注入四种死代码各一个，detekt 实测四条规则全部命中。
+        //
+        //   UnusedPrivateMember / UnusedPrivateProperty / UnusedPrivateClass / UnusedParameter
+        //       —— detekt-rules-style，active 默认 true
+        //   NoUnusedImports
+        //       —— detekt 1.23 把 style 里的 UnusedImports **标记废弃并默认关闭**，
+        //          真正生效的是 formatting 规则集里的 NoUnusedImports
+        //          （需要 detektPlugins 挂 detekt-formatting，见上方 dependencies）
+        //
+        // ⚠️ 曾把 `UnusedImports` 与 `UnusedReturnValue` 写在这里，两条都是空转：
+        // 前者因废弃而永不触发（当时靠子串恰好匹配上 NoUnusedImports，纯属侥幸），
+        // 后者**在 detekt 里根本不存在**，是凭空写的名字。
+        // 一条永不触发的检查比没有检查更糟：门禁清单上写着，实际什么都不拦。
+        val deadCodeRules = setOf(
+            "UnusedPrivateMember",
+            "UnusedPrivateProperty",
+            "UnusedPrivateClass",
+            "UnusedParameter",
+            "NoUnusedImports",
         )
+
+        // 按 `source="detekt.<规则 ID>"` **精确**取规则名，而不是在整行里做子串匹配：
+        // 原来的 `any { it in line }` 会扫到文件名与消息文本，一旦路径或描述里
+        // 恰好含有这些词就误报；而规则 ID 又能被上面的子串意外命中（UnusedImports
+        // 之于 NoUnusedImports）。两者都是「靠巧合工作」。
+        val sourcePattern = Regex("""source="detekt\.([A-Za-z]+)"""")
         val hits = dir.listFiles().orEmpty()
             .filter { it.name.endsWith(".xml") }
-            .flatMap { file -> file.readLines() }
-            .filter { line -> deadCodeRules.any { it in line } }
+            .flatMap { file -> file.readLines().mapNotNull { sourcePattern.find(it)?.groupValues?.get(1) } }
+            .filter { it in deadCodeRules }
         check(hits.isEmpty()) {
             buildString {
                 appendLine("检出 ${hits.size} 处死代码候选（PRD T5 要求 0 处）：")
-                hits.take(20).forEach { appendLine("  " + it.trim().take(160)) }
+                hits.take(20).forEach { appendLine("  规则 $it") }
                 if (hits.size > 20) appendLine("  …… 其余 ${hits.size - 20} 处省略")
                 appendLine()
-                appendLine("处理方式：确属死代码则删除；确由 XML/反射/序列化用到，")
-                appendLine("则在 config/detekt/detekt.yml 的 DeadCodeExemptions 里逐条登记理由。")
+                appendLine("处理方式：确属死代码则删除。")
+                appendLine("确由 XML/反射/序列化用到而必须保留的，走 detekt 的 baseline：")
+                appendLine("  .\\gradlew.bat :library:detektBaseline")
+                appendLine("再把生成结果里的对应条目**删掉**再提交——baseline 里留下条目")
+                appendLine("等于悄悄把这条门禁关掉，与「0 处」的要求直接冲突。")
             }
         }
         logger.lifecycle("[死代码门禁] verifyNoDeadCode 通过：0 处未使用的私有成员")
@@ -125,6 +149,9 @@ android {
 }
 
 dependencies {
+    // NoUnusedImports（未用导入）随 detekt 1.23 搬到了 formatting 规则集，
+    // 必须显式挂上才会生效——见 config/detekt/detekt.yml 里的说明。
+    detektPlugins(libs.detekt.formatting)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)

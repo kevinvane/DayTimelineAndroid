@@ -65,6 +65,7 @@ android {
 }
 
 dependencies {
+    detektPlugins(libs.detekt.formatting)
     implementation(project(":library"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)

@@ -3,7 +3,6 @@ package com.github.kevinvane.daytimeline.library.internal
 import android.content.Context
 import android.content.res.TypedArray
 import android.util.AttributeSet
-import androidx.annotation.StyleableRes
 import com.github.kevinvane.daytimeline.library.R
 import com.github.kevinvane.daytimeline.library.api.ScrollMode
 import com.github.kevinvane.daytimeline.library.api.TimeFormat
