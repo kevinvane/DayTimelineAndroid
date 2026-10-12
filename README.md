@@ -355,88 +355,26 @@ timeline.setConfig(
 ### 全部配置项
 
 `TimelineConfig` 共 **55** 个字段，与 XML 属性一一对应。
+**全表见[完整能力文档](docs/DayTimeline-完整能力文档.md)** —— 那里是唯一真源，
+并且有一条测试断言「文档里的属性集合 ≡ `attrs.xml` ≡ `TimelineConfig` 字段集合」，
+新增配置项而忘记写文档会立刻失败。
 
-**布局尺寸**
+本 README 只列最常改的几项：
 
-| XML 属性 | 代码字段 | 默认值 |
-|---|---|---|
-| `dtHourHeight` | `hourHeight` | `56dp` |
-| `dtAxisWidth` | `axisWidth` | `56dp` |
-| `dtTopPadding` | `topPadding` | `8dp` |
-| `dtBottomPadding` | `bottomPadding` | `8dp` |
-| `dtEndMargin` | `endMargin` | `16dp` |
-| `dtGridLineWidth` | `gridLineWidth` | `1dp` |
-| `dtAxisLabelSize` | `axisLabelSize` | `12sp` |
-| `dtNowLabelSize` | `nowLabelSize` | `12sp` |
+| XML 属性 | 代码字段 | 默认值 | 什么时候需要改 |
+|---|---|---|---|
+| `dtHourHeight` | `hourHeight` | `56dp` | 想让一格更高、时间轴更疏 |
+| `dtScrollMode` | `scrollMode` | `self` | 页面外层已有滚动容器时改 `external` |
+| `dtShowTimeSubtitle` | `showTimeSubtitle` | `false` | 想在块内显示起止时间 |
+| `dtSnapMinutes` | `snapMinutes` | `15` | 想让吸附更细或更粗（`0` 关闭吸附） |
+| `dtAutoLocateOnFirstShow` | `autoLocateOnFirstShow` | `true` | 不希望打开即定位到当前时间 |
+| `dtBlockTextSize` | `blockTextSize` | `12sp` | 块内文字太小 |
+| `dtMinTouchTarget` | `minTouchTarget` | `48dp` | **只应调大，不应调小**（无障碍硬要求） |
 
-**日程块外观**
-
-| XML 属性 | 代码字段 | 默认值 |
-|---|---|---|
-| `dtBlockGap` | `blockGap` | `1dp` |
-| `dtBlockCorner` | `blockCorner` | `4dp` |
-| `dtBlockPaddingHorizontal` | `blockPaddingHorizontal` | `8dp` |
-| `dtBlockPaddingVertical` | `blockPaddingVertical` | `4dp` |
-| `dtBlockMinHeight` | `blockMinHeight` | `20dp` |
-| `dtBlockAccentBarWidth` | `blockAccentBarWidth` | `4dp` |
-| `dtBlockAccentBarMarginStart` | `blockAccentBarMarginStart` | `6dp` |
-| `dtBlockAccentBarMarginVertical` | `blockAccentBarMarginVertical` | `6dp` |
-| `dtBlockStrokeWidth` | `blockStrokeWidth` | `2dp` |
-| `dtBlockTextSize` | `blockTextSize` | `12sp` |
-| `dtShowTimeSubtitle` | `showTimeSubtitle` | `false` |
-
-**当前时间线**
-
-| XML 属性 | 代码字段 | 默认值 |
-|---|---|---|
-| `dtShowNowIndicator` | `showNowIndicator` | `true` |
-| `dtNowIndicatorTodayOnly` | `nowIndicatorTodayOnly` | `true` |
-| `dtNowIndicatorSkipOverlappingHourLabel` | `nowIndicatorSkipOverlappingHourLabel` | `true` |
-| `dtNowDotDiameter` | `nowDotDiameter` | `6dp` |
-| `dtNowLineWidth` | `nowLineWidth` | `2dp` |
-| `dtAutoLocateOnFirstShow` | `autoLocateOnFirstShow` | `true` |
-
-**时间行为**
-
-| XML 属性 | 代码字段 | 默认值 |
-|---|---|---|
-| `dtTimeFormat` | `timeFormat` | `system`（可选 `h24` / `h12`） |
-| `dtSnapMinutes` | `snapMinutes` | `15`（`0` 关闭吸附，仍保留时长兜底） |
-| `dtMinDurationMinutes` | `minDurationMinutes` | `5` |
-| `dtMaxDurationMinutes` | `maxDurationMinutes` | `1440` |
-| `dtDefaultNewDurationMinutes` | `defaultNewDurationMinutes` | `60` |
-
-**滚动行为**
-
-| XML 属性 | 代码字段 | 默认值 |
-|---|---|---|
-| `dtScrollMode` | `scrollMode` | `self`（可选 `external`） |
-| `dtEdgeAutoScrollEnabled` | `edgeAutoScrollEnabled` | `true` |
-| `dtEdgeScrollTriggerSize` | `edgeScrollTriggerSize` | `48dp` |
-| `dtEdgeScrollStepSize` | `edgeScrollStepSize` | `8dp` |
-| `dtDragThresholdRatio` | `dragThresholdRatio` | `0.3`（代码常量，不是资源） |
-
-**编辑交互**
-
-| XML 属性 | 代码字段 | 默认值 |
-|---|---|---|
-| `dtEditHandleVisualSize` | `editHandleVisualSize` | `6dp` |
-| `dtEditHandleTouchSize` | `editHandleTouchSize` | `48dp`（**只应调大，不应调小**） |
-| `dtMinTouchTarget` | `minTouchTarget` | `48dp` |
-
-**颜色（17 项语义色项）**
-
-`dtColorBackground`、`dtColorGridLine`、`dtColorAxisLabel`、`dtColorNow`、
-`dtColorBlockBgPast` / `Ongoing` / `Upcoming`、`dtColorBlockTextPast` / `Text`、
-`dtColorBlockAccentPast` / `Accent`、`dtColorBlockStroke`、`dtColorSelected`、
-`dtColorEditLayerBg` / `Text` / `Time`、`dtColorEditHandle`
-—— 对应 `colorBackground` … `colorEditHandle`。
-
-默认值取自 `values/colors.xml` 与 `values-night/colors.xml`，深浅色各自一套。
+**颜色**走另一条通道：17 项语义色项（`dtColorBackground` … `dtColorEditHandle`）
+默认取自 `values/colors.xml` 与 `values-night/colors.xml`，深浅色各自一套。
 **业务方换肤只需在自己的资源里覆盖同名项，勿改组件源码。**
-
-> `dragThresholdRatio` 是无量纲比值，按无障碍规范刻意放在代码常量里而**不是** `dimens.xml`。
-> 见下文《从源码构建与质量门禁》里的资源契约说明。
+逐项取值与语义见[完整能力文档](docs/DayTimeline-完整能力文档.md#27-颜色17-项语义色项)。
 
 ---
 
@@ -694,6 +632,7 @@ JVM 单测直接跑，不需要设备也不需要 Robolectric。
 |---|---|
 | [CHANGELOG.md](CHANGELOG.md) | **变更记录**：每个发布版本的功能与修复清单 |
 | [产品需求文档](docs/DayTimeline-产品与需求文档.md) | 需求、界面与交互规格、数据契约、质量要求、验收标准。**唯一需求来源** |
+| [完整能力文档](docs/DayTimeline-完整能力文档.md) | **全部 55 项配置、全部回调、四层定制、数据契约**。组件能力的唯一真源，有测试守护其与源码一致 |
 | [技术方案与实施计划](docs/DayTimeline-技术方案与实施计划.md) | 架构决策 AD-01~AD-28、任务拆解、门禁落地方案、开放问题、实施进度 |
 | [日程块表单输入方案](docs/DayTimeline-日程块表单输入方案.md) | 表单输入能力设计（AD-22） |
 | [AGENTS.md](AGENTS.md) | 面向 AI 协作者的仓库指引与硬性约束 |
