@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FC-002 换肤夹具的**深色**部分。
+
+  为什么必须单独写一份：`src/androidTest/res/values-night/` 与
+  `src/androidTest/res/values/` 是两个独立的限定符目录，谁生效取决于
+  当前 `uiMode`。只覆盖 `values/` 的话，夜间模式仍然会取到
+  `src/main/res/values-night/` 里的设计定稿值。
+
+  这正是[主题定制指南](../../docs/DayTimeline-主题定制指南.md) §1.1 第 1 条
+  说的「深浅两套都要覆盖」——本测试第一次跑就撞上了它：
+  模拟器当时处于夜间模式，夹具只覆盖了浅色，断言拿到的是深色的 `#101318`。
+
+  取值与浅色**刻意不同**（青 / 紫 / 黄），这样测试能断言「当前模式取到的是
+  哪一套」，而不只是「某个覆盖值出现了」。
+-->
+<resources>
+
+    <!-- 背景色 -->
+    <color name="day_timeline_background">#00FFFF</color>
+
+    <!-- 进行中块底色 -->
+    <color name="day_timeline_block_bg_ongoing">#6633FF</color>
+
+    <!-- 当前时间线 -->
+    <color name="day_timeline_now">#FFFF00</color>
+
+</resources>

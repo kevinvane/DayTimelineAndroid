@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  **FC-002 换肤验收的测试夹具。**
+
+  Android 的资源合并规则是「高优先级源集覆盖低优先级」，
+  `src/androidTest/res` 的取值会覆盖 `src/main/res` 的同名项——
+  这正是业务方接入时「在自己 app 里定义同名 `@color/day_timeline_*`」的机制。
+
+  所以这里做的事与业务方换肤**完全同构**：不碰组件源码，只覆盖同名资源。
+  ThemeOverrideTest 随后断言覆盖值一路贯穿到**真正画出来的像素**，
+  而不是只断言 `getColor()` 能取到值。
+
+  ## 取值刻意选得很难看
+
+  品红 / 绿 / 橙在设计定稿里都不存在，断言不可能与真实取值混淆，
+  也不会被抗锯齿混色掩盖。
+
+  ## 对本模块其他仪器测试的影响
+
+  这三项覆盖对**整个测试 APK** 生效。已确认现有用例不受影响：
+  - `ResourceContractTest.allSeventeenSemanticColorsResolve` 只断言「17 项都存在且可读」，
+    不断言具体取值；
+  - `DayTimelineViewTest` 用 `boundsOfColor` 找的是**业务色** `ACCENT`（来自
+    `TimelineEvent.color`），与主题色项不是同一条通道；
+  - `DayTimelineViewBehaviorTest` 断言「颜色种�� ≥ 3」，多出颜色只会更宽松。
+
+  不要在这里覆盖 `day_timeline_axis_width` 等尺寸项——
+  `ResourceContractTest` 与若干几何断言依赖默认尺寸。
+-->
+<resources>
+
+    <!-- 背景色 -->
+    <color name="day_timeline_background">#FF00FF</color>
+
+    <!-- 进行中块底色 -->
+    <color name="day_timeline_block_bg_ongoing">#FF6600</color>
+
+    <!-- 当前时间线 -->
+    <color name="day_timeline_now">#00FF00</color>
+
+</resources>
