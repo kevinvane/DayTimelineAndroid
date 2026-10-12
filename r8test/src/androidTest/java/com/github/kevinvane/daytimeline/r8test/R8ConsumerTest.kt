@@ -49,6 +49,26 @@ class R8ConsumerTest {
     private lateinit var recorder: ConsumerApiSmoke.RecordingListener
     private var draftOnEnter: com.github.kevinvane.daytimeline.library.api.EditDraft? = null
 
+    /**
+     * 钉住滚动位置的原因：**FI-012 首次显示自动定位是按真实时钟滚动的。**
+     *
+     * 上面那次 `view.layout(...)` 会触发 `onSizeChanged` → `autoLocateOnFirstShow()`，
+     * 把「当前时间」放到约三分之一屏处。**滚动量取决于跑测试时的墙上时间**，
+     * 于是 `tapEmptySpace()` 里那个写死的 `y = HEIGHT / 8` 就不再指向固定的时间点。
+     *
+     * 实测（本机 API 34 模拟器）：11:24 跑时 `scrollOffset = 1622`，09:00 那条日程
+     * 正好落在 y≈240，点中它 → `onEventClick` → **不进新建编辑态**，
+     * `fullEditCycleWorksAfterMinification` 报「点空白应进入编辑态」；
+     * 10:40 跑时同一份代码通过。**同一提交，今天绿、明天红。**
+     *
+     * 这里不复现 FI-012 的定位行为：本模块要验的是「混淆后对外契约是否完好」，
+     * 定位由 [com.github.kevinvane.daytimeline.library] 侧的仪器测试负责。
+     * 用 `setScrollOffset(0)` 显式钉住，是把「坐标前提」写成代码而不是留在注释里。
+     *
+     * 顺带让本类**全部**用例与时钟无关——不只出问题的这一条：
+     * 另外两条也走 [tapEmptySpace]，只是它们没提交日程，本就点不中任何块，
+     * 才侥幸没跟着变红。那种「靠数据凑巧躲开」的状态不该留着。
+     */
     @Before
     fun setUp() {
         // View 构造会创建 Handler，必须在主线程（详见 library 的 DayTimelineViewTest）
@@ -59,6 +79,11 @@ class R8ConsumerTest {
                 View.MeasureSpec.makeMeasureSpec(HEIGHT, View.MeasureSpec.EXACTLY),
             )
             view.layout(0, 0, WIDTH, HEIGHT)
+            // 把滚动位置钉死在 0——理由见下方 KDoc。
+            view.setScrollOffset(0)
+        }
+        check(view.getScrollOffset() == 0) {
+            "滚动位置未钉住，测试的坐标前提不成立（见 setUp 的 KDoc）"
         }
         draftOnEnter = null
 
@@ -249,11 +274,20 @@ class R8ConsumerTest {
         assertFalse(view.isEditing())
     }
 
+    /**
+     * 点一个**确定没有日程**的位置。
+     *
+     * `y = HEIGHT / 8` 在钉住滚动位置后对应凌晨 1 点前后（具体分钟随屏幕密度略有差异），
+     * 而本模块只放 09:00 一条日程（540~600 分钟），二者相距甚远。
+     * **这个前提由 [setUp] 里的 `setScrollOffset(0)` 保证**——
+     * 没有它，FI-012 会按真实时钟滚动，写死的坐标随时可能点中日程块。
+     *
+     * 刻意**不反射读内部 Dimens**：那是 internal 实现，混淆后本就该被改名，
+     * 业务方不该也不需要碰它——从消费端反射内部字段验证不了任何对外契约。
+     * `setScrollOffset` / `getScrollOffset` 是对外 API，用它们不违反这条。
+     */
     private fun tapEmptySpace() {
         val x = WIDTH / 2
-        // 03:00 附近；本模块只放 09:00 一条日程（540~600 分钟），不会命中它。
-        // 刻意**不反射读内部 Dimens**：那是 internal 实现，混淆后本就该被改名，
-        // 业务方不该也不需要碰它——从消费端反射内部字段验证不了任何对外契约。
         val y = HEIGHT / 8
         val down = System.currentTimeMillis()
         listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP).forEach { action ->
