@@ -12,47 +12,47 @@
 <resources>
 
     <!-- 1 背景色 -->
-    <color name="day_timeline_background">#121014</color>
+    <color name="day_timeline_background">#101318</color>
 
     <!-- 2 刻度线色：仍可见但弱于文字 -->
-    <color name="day_timeline_grid_line">#3A3740</color>
+    <color name="day_timeline_grid_line">#343A44</color>
 
     <!-- 3 轴标签文字色：提亮，保证可读 -->
-    <color name="day_timeline_axis_label">#D8D3DC</color>
+    <color name="day_timeline_axis_label">#D3DAE3</color>
 
     <!-- 4 当前时间线色：提亮，保证可读 -->
     <color name="day_timeline_now">#FF8A80</color>
 
     <!-- 5 日程块底色（已过）：弱化 -->
-    <color name="day_timeline_block_bg_past">#1E1B22</color>
+    <color name="day_timeline_block_bg_past">#1B2027</color>
     <!-- 6 日程块底色（进行中）：突出，承载白字 -->
-    <color name="day_timeline_block_bg_ongoing">#5B3FA3</color>
+    <color name="day_timeline_block_bg_ongoing">#1E4F8F</color>
     <!-- 7 日程块底色（未到）：常规 -->
-    <color name="day_timeline_block_bg_upcoming">#2A2730</color>
+    <color name="day_timeline_block_bg_upcoming">#262C35</color>
 
     <!-- 8 日程块文字色（已过）：低对比度 -->
-    <color name="day_timeline_block_text_past">#8F8994</color>
+    <color name="day_timeline_block_text_past">#8A929C</color>
     <!-- 9 日程块文字色（进行中/未到）：提亮 -->
-    <color name="day_timeline_block_text">#F0ECF2</color>
+    <color name="day_timeline_block_text">#EDF1F5</color>
 
     <!-- 10 日程块色条色（已过）：弱化 -->
-    <color name="day_timeline_block_accent_past">#4A4550</color>
+    <color name="day_timeline_block_accent_past">#454C56</color>
     <!-- 11 日程块色条色（进行中/未到）：提亮 -->
-    <color name="day_timeline_block_accent">#C9A7FF</color>
+    <color name="day_timeline_block_accent">#8AB8FF</color>
 
     <!-- 12 日程块描边色：微亮 -->
-    <color name="day_timeline_block_stroke">#4A4550</color>
+    <color name="day_timeline_block_stroke">#454C56</color>
 
     <!-- 13 选中态色 -->
-    <color name="day_timeline_selected">#D6B8FF</color>
+    <color name="day_timeline_selected">#A8CBFF</color>
 
     <!-- 14 编辑层底色：半透明 -->
-    <color name="day_timeline_edit_layer_bg">#66121014</color>
+    <color name="day_timeline_edit_layer_bg">#66101318</color>
     <!-- 15 编辑层文字色 -->
-    <color name="day_timeline_edit_layer_text">#F5F1F7</color>
+    <color name="day_timeline_edit_layer_text">#F2F5F8</color>
     <!-- 16 编辑层时间文字色：提亮 -->
-    <color name="day_timeline_edit_layer_time">#D8B8FF</color>
+    <color name="day_timeline_edit_layer_time">#A8CBFF</color>
     <!-- 17 编辑手柄色：提亮 -->
-    <color name="day_timeline_edit_handle">#D8B8FF</color>
+    <color name="day_timeline_edit_handle">#A8CBFF</color>
 
 </resources>

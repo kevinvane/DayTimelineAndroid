@@ -22,44 +22,44 @@
     <color name="day_timeline_background">#FFFFFF</color>
 
     <!-- 2 刻度线色：小时分隔线。要求弱于文字 -->
-    <color name="day_timeline_grid_line">#E8E5EA</color>
+    <color name="day_timeline_grid_line">#E4E8EE</color>
 
     <!-- 3 轴标签文字色：时间轴上的时间文字 -->
-    <color name="day_timeline_axis_label">#5A5560</color>
+    <color name="day_timeline_axis_label">#55606E</color>
 
     <!-- 4 当前时间线色：红线、圆点、当前时间文字。要求高辨识度 -->
     <color name="day_timeline_now">#D92D20</color>
 
     <!-- 5 日程块底色（已过）：弱化 -->
-    <color name="day_timeline_block_bg_past">#F3F1F4</color>
+    <color name="day_timeline_block_bg_past">#F1F4F7</color>
     <!-- 6 日程块底色（进行中）：突出 -->
-    <color name="day_timeline_block_bg_ongoing">#EDE3FF</color>
+    <color name="day_timeline_block_bg_ongoing">#DCEBFF</color>
     <!-- 7 日程块底色（未到）：常规 -->
-    <color name="day_timeline_block_bg_upcoming">#F0EEF2</color>
+    <color name="day_timeline_block_bg_upcoming">#EEF2F6</color>
 
     <!-- 8 日程块文字色（已过）：低对比度，体现已失效 -->
-    <color name="day_timeline_block_text_past">#9A949E</color>
+    <color name="day_timeline_block_text_past">#949CA6</color>
     <!-- 9 日程块文字色（进行中/未到）：正常对比度 -->
-    <color name="day_timeline_block_text">#211E24</color>
+    <color name="day_timeline_block_text">#1D232B</color>
 
     <!-- 10 日程块色条色（已过）：弱化 -->
-    <color name="day_timeline_block_accent_past">#C9C4CC</color>
+    <color name="day_timeline_block_accent_past">#C4CBD4</color>
     <!-- 11 日程块色条色（进行中/未到）：高辨识度 -->
-    <color name="day_timeline_block_accent">#7A4FD6</color>
+    <color name="day_timeline_block_accent">#2F6FED</color>
 
     <!-- 12 日程块描边色：极淡 -->
-    <color name="day_timeline_block_stroke">#ECE9EF</color>
+    <color name="day_timeline_block_stroke">#E8ECF1</color>
 
     <!-- 13 选中态色：被选中日程块的强调，要求与常规态明显可辨 -->
-    <color name="day_timeline_selected">#5B2FC9</color>
+    <color name="day_timeline_selected">#1D5FD6</color>
 
     <!-- 14 编辑层底色：编辑浮层背景。要求半透明（alpha 已含在取值内，深色适配不靠代码分支） -->
     <color name="day_timeline_edit_layer_bg">#66FFFFFF</color>
     <!-- 15 编辑层文字色：编辑浮层内容文字，与底色强对比 -->
-    <color name="day_timeline_edit_layer_text">#1F1B24</color>
+    <color name="day_timeline_edit_layer_text">#1B2129</color>
     <!-- 16 编辑层时间文字色：编辑态起止时间 -->
-    <color name="day_timeline_edit_layer_time">#6B3FD4</color>
+    <color name="day_timeline_edit_layer_time">#2A66E0</color>
     <!-- 17 编辑手柄色：上下手柄圆点。高辨识度 -->
-    <color name="day_timeline_edit_handle">#6B3FD4</color>
+    <color name="day_timeline_edit_handle">#2A66E0</color>
 
 </resources>

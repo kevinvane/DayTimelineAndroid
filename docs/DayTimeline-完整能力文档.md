@@ -154,23 +154,23 @@ XML 属性名与代码字段名的对应关系固定为：属性名 = `dt` + 首
 
 | XML 属性 | 代码字段 | 语义 | 浅色定稿 | 深色定稿 |
 |---|---|---|---|---|
-| `dtColorBackground` | `colorBackground` | 背景色 | `#FFFFFF` | `#121014` |
-| `dtColorGridLine` | `colorGridLine` | 刻度线色 | `#E8E5EA` | `#3A3740` |
-| `dtColorAxisLabel` | `colorAxisLabel` | 轴标签文字色 | `#5A5560` | `#D8D3DC` |
+| `dtColorBackground` | `colorBackground` | 背景色 | `#FFFFFF` | `#101318` |
+| `dtColorGridLine` | `colorGridLine` | 刻度线色 | `#E4E8EE` | `#343A44` |
+| `dtColorAxisLabel` | `colorAxisLabel` | 轴标签文字色 | `#55606E` | `#D3DAE3` |
 | `dtColorNow` | `colorNow` | 当前时间线色 | `#D92D20` | `#FF8A80` |
-| `dtColorBlockBgPast` | `colorBlockBgPast` | 块底色·已过 | `#F3F1F4` | `#1E1B22` |
-| `dtColorBlockBgOngoing` | `colorBlockBgOngoing` | 块底色·进行中 | `#EDE3FF` | `#5B3FA3` |
-| `dtColorBlockBgUpcoming` | `colorBlockBgUpcoming` | 块底色·未到 | `#F0EEF2` | `#2A2730` |
-| `dtColorBlockTextPast` | `colorBlockTextPast` | 块文字·已过 | `#9A949E` | `#8F8994` |
-| `dtColorBlockText` | `colorBlockText` | 块文字·进行中/未到 | `#211E24` | `#F0ECF2` |
-| `dtColorBlockAccentPast` | `colorBlockAccentPast` | 色条·已过 | `#C9C4CC` | `#4A4550` |
-| `dtColorBlockAccent` | `colorBlockAccent` | 色条·进行中/未到 | `#7A4FD6` | `#C9A7FF` |
-| `dtColorBlockStroke` | `colorBlockStroke` | 块描边色 | `#ECE9EF` | `#4A4550` |
-| `dtColorSelected` | `colorSelected` | 选中态色 | `#5B2FC9` | `#D6B8FF` |
-| `dtColorEditLayerBg` | `colorEditLayerBg` | 编辑层底色 | `#66FFFFFF` | `#66121014` |
-| `dtColorEditLayerText` | `colorEditLayerText` | 编辑层文字色 | `#1F1B24` | `#F5F1F7` |
-| `dtColorEditLayerTime` | `colorEditLayerTime` | 编辑层时间文字色 | `#6B3FD4` | `#D8B8FF` |
-| `dtColorEditHandle` | `colorEditHandle` | 编辑手柄色 | `#6B3FD4` | `#D8B8FF` |
+| `dtColorBlockBgPast` | `colorBlockBgPast` | 块底色·已过 | `#F1F4F7` | `#1B2027` |
+| `dtColorBlockBgOngoing` | `colorBlockBgOngoing` | 块底色·进行中 | `#DCEBFF` | `#1E4F8F` |
+| `dtColorBlockBgUpcoming` | `colorBlockBgUpcoming` | 块底色·未到 | `#EEF2F6` | `#262C35` |
+| `dtColorBlockTextPast` | `colorBlockTextPast` | 块文字·已过 | `#949CA6` | `#8A929C` |
+| `dtColorBlockText` | `colorBlockText` | 块文字·进行中/未到 | `#1D232B` | `#EDF1F5` |
+| `dtColorBlockAccentPast` | `colorBlockAccentPast` | 色条·已过 | `#C4CBD4` | `#454C56` |
+| `dtColorBlockAccent` | `colorBlockAccent` | 色条·进行中/未到 | `#2F6FED` | `#8AB8FF` |
+| `dtColorBlockStroke` | `colorBlockStroke` | 块描边色 | `#E8ECF1` | `#454C56` |
+| `dtColorSelected` | `colorSelected` | 选中态色 | `#1D5FD6` | `#A8CBFF` |
+| `dtColorEditLayerBg` | `colorEditLayerBg` | 编辑层底色 | `#66FFFFFF` | `#66101318` |
+| `dtColorEditLayerText` | `colorEditLayerText` | 编辑层文字色 | `#1B2129` | `#F2F5F8` |
+| `dtColorEditLayerTime` | `colorEditLayerTime` | 编辑层时间文字色 | `#2A66E0` | `#A8CBFF` |
+| `dtColorEditHandle` | `colorEditHandle` | 编辑手柄色 | `#2A66E0` | `#A8CBFF` |
 
 三条约束：
 
@@ -181,9 +181,10 @@ XML 属性名与代码字段名的对应关系固定为：属性名 = `dt` + 首
 3. `dtColorEditLayerBg` 的**透明度写进取值本身**（`66` = 40%），
    换肤时也要带上 alpha。
 
-> **已知偏差**：浅色「已过态」文字 `#9A949E` 对其底色为 **2.63:1**，低于「低对比度」
+> **已知偏差**：浅色「已过态」文字 `#949CA6` 对其底色 `#F1F4F7` 为 **2.51:1**，低于「低对比度」
 > 意图的下限。PRD §7.3 对该项只给定性要求而未给数值，故未判为不合格，
-> 已交设计复核（建议值 `#8F8994` = 3.03:1）。
+> 已交设计复核（建议值 `#868E98` = 3.00:1）。
+> 紫色系那版为 2.63:1，改蓝色系后略微更差 —— 蓝色系整体偏冷偏暗，这一项跟着底色一起暗了。
 
 > 业务**自定义色**（`TimelineEvent.color`）刻意**不并入**这 17 项：那 17 项靠
 > `values/` + `values-night/` 适配深浅色，业务方覆盖会破坏这套机制。

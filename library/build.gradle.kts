@@ -111,23 +111,23 @@ tasks.register("verifyNoDeadCode") {
  * 三者缺一，`verifyColorsFinalized` 都会失败并指出缺哪一处。
  */
 val designFinalColors: Map<String, Pair<String, String>> = mapOf(
-    "day_timeline_background" to ("#FFFFFF" to "#121014"),
-    "day_timeline_grid_line" to ("#E8E5EA" to "#3A3740"),
-    "day_timeline_axis_label" to ("#5A5560" to "#D8D3DC"),
+    "day_timeline_background" to ("#FFFFFF" to "#101318"),
+    "day_timeline_grid_line" to ("#E4E8EE" to "#343A44"),
+    "day_timeline_axis_label" to ("#55606E" to "#D3DAE3"),
     "day_timeline_now" to ("#D92D20" to "#FF8A80"),
-    "day_timeline_block_bg_past" to ("#F3F1F4" to "#1E1B22"),
-    "day_timeline_block_bg_ongoing" to ("#EDE3FF" to "#5B3FA3"),
-    "day_timeline_block_bg_upcoming" to ("#F0EEF2" to "#2A2730"),
-    "day_timeline_block_text_past" to ("#9A949E" to "#8F8994"),
-    "day_timeline_block_text" to ("#211E24" to "#F0ECF2"),
-    "day_timeline_block_accent_past" to ("#C9C4CC" to "#4A4550"),
-    "day_timeline_block_accent" to ("#7A4FD6" to "#C9A7FF"),
-    "day_timeline_block_stroke" to ("#ECE9EF" to "#4A4550"),
-    "day_timeline_selected" to ("#5B2FC9" to "#D6B8FF"),
-    "day_timeline_edit_layer_bg" to ("#66FFFFFF" to "#66121014"),
-    "day_timeline_edit_layer_text" to ("#1F1B24" to "#F5F1F7"),
-    "day_timeline_edit_layer_time" to ("#6B3FD4" to "#D8B8FF"),
-    "day_timeline_edit_handle" to ("#6B3FD4" to "#D8B8FF"),
+    "day_timeline_block_bg_past" to ("#F1F4F7" to "#1B2027"),
+    "day_timeline_block_bg_ongoing" to ("#DCEBFF" to "#1E4F8F"),
+    "day_timeline_block_bg_upcoming" to ("#EEF2F6" to "#262C35"),
+    "day_timeline_block_text_past" to ("#949CA6" to "#8A929C"),
+    "day_timeline_block_text" to ("#1D232B" to "#EDF1F5"),
+    "day_timeline_block_accent_past" to ("#C4CBD4" to "#454C56"),
+    "day_timeline_block_accent" to ("#2F6FED" to "#8AB8FF"),
+    "day_timeline_block_stroke" to ("#E8ECF1" to "#454C56"),
+    "day_timeline_selected" to ("#1D5FD6" to "#A8CBFF"),
+    "day_timeline_edit_layer_bg" to ("#66FFFFFF" to "#66101318"),
+    "day_timeline_edit_layer_text" to ("#1B2129" to "#F2F5F8"),
+    "day_timeline_edit_layer_time" to ("#2A66E0" to "#A8CBFF"),
+    "day_timeline_edit_handle" to ("#2A66E0" to "#A8CBFF"),
 )
 
 /** 解析 colors.xml，取出色名 → 取值（大写十六进制）。 */
@@ -206,10 +206,14 @@ fun compositeOver(fg: String, bg: String): String {
  * 每次运行都会照常打印出来，直到设计复核后把取值改掉为止。
  */
 val acceptedContrastDeviations = setOf(
-    // 浅色已过态 2.63:1。§7.3 只给定性要求「低对比度」而未给数值，故不判失败，
+    // 浅色已过态 2.51:1。§7.3 只给定性要求「低对比度」而未给数值，故不判失败，
     // 但每次运行都照常打印，直到设计复核后把取值改掉为止。
-    // 建议值 #8F8994（3.03:1，恰为设计为深色同一项选定的值）。
-    // 见 docs/DayTimeline-设计侧定稿交付.md 与 PRD §19.4 v1.18 第 ⑤ 条。
+    //
+    // 建议值 #868E98（3.00:1）。同色相向暗一档即可，不改色相。
+    //
+    // 沿革：紫色系那版是 2.63:1（建议值 #8F8994），改蓝色系后变为 2.51:1，
+    // 略微更差一点——蓝色系整体偏冷偏暗，这一项跟着底色一起暗了。
+    // 见 docs/DayTimeline-设计侧定稿交付.md 与 PRD §19.4 v1.20。
     "light:day_timeline_block_text_past/day_timeline_block_bg_past",
 )
 
