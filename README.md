@@ -384,7 +384,7 @@ timeline.setConfig(
 
 | 层 | 入口 | 能做什么 |
 |---|---|---|
-| 1. 参数配置 | `TimelineConfig` / `dtXxx` | 55 项尺寸、颜色、行为 |
+| 1. 参数配置 | `TimelineConfig` / XML 属性 | 55 项尺寸、颜色、行为 |
 | 2. 网格绘制 | `timeline.gridPainter` | 完全替换刻度线 / 轴标签 / 当前时间线的绘制 |
 | 3. 块内容 | `timeline.eventBlockPainter` | 完全替换日程块内部的画什么、怎么画 |
 | 4. 交互接管 | `timeline.editController` | 接管创建/编辑流程与删除二次确认 |

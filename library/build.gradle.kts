@@ -365,6 +365,24 @@ jacoco {
     toolVersion = "0.8.12"
 }
 
+/**
+ * `DocsConfigCoverageTest` 在运行时**读源文件**（attrs.xml / TimelineConfig.kt /
+ * 完整能力文档 / README）来比对集合。Gradle 默认只看 Kotlin/Java 源，
+ * 于是「只改了文档」时 `testDebugUnitTest` 会判定 UP-TO-DATE **直接跳过**——
+ * 而「新增配置项忘了写文档」恰恰就是只改文档的场景。
+ *
+ * 也就是说：不声明这些输入的话，这道守卫在最需要它的时刻不会运行。
+ * 已实测确认（改文档后任务确实被跳过），故在此显式登记输入。
+ */
+tasks.withType<Test>().configureEach {
+    inputs.files(
+        layout.projectDirectory.file("src/main/res/values/attrs.xml"),
+        layout.projectDirectory.file("src/main/java/com/github/kevinvane/daytimeline/library/api/TimelineConfig.kt"),
+        rootProject.layout.projectDirectory.file("docs/DayTimeline-完整能力文档.md"),
+        rootProject.layout.projectDirectory.file("README.md"),
+    )
+}
+
 android {
     namespace = "com.github.kevinvane.daytimeline.library"
     compileSdk {

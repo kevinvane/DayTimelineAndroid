@@ -41,21 +41,20 @@ import java.io.File
  * 不如现在直接拦住。
  */
 /**
- * 允许出现在文档里、但 `attrs.xml` 里**故意没有**的名字。
+ * 文档里出现的 `dtXxx` 名称，**必须全部**是 `attrs.xml` 里真实声明的属性。
  *
- * 三条都不是笔误，改文档前请先读清楚：
+ * 这里刻意没有任何例外名单。
  *
- * - `dtXxx` —— 四层定制表里 `TimelineConfig` / `dtXxx` 的泛指写法，是约定不是配置名。
- * - `dtShowEditActions` / `dtShowDeleteAction` —— 组件**不内置**「完成/取消/删除」按钮，
- *   PRD §7.7 要求的「可配置是否内置」至今未实现。`attrs.xml` 里有一段同义的注释
- *   说明了「暂不声明」，完整能力文档也据此提醒接入方走第四层定制。
- *   **声明一个不生效的属性只会让接入方误以为配了有效**，所以它们必须继续缺席。
+ * 一开始是有的：文档曾写出 `dtShowEditActions` / `dtShowDeleteAction`
+ * 两个**故意不声明**的属性名（组件不内置编辑按钮），为了让读者知道
+ * PRD §7.7 要求的「可配置是否内置」尚未实现。已按「删除而不是豁免」处理——
+ * 那两个名字写在文档里，读者会以为配了却没生效，
+ * 而这正是本仓库记过两次的「声明了却没有任何代码」反模式（AD-24）。
+ * 能力缺口应当以**能力**陈述，而不是以一个假属性名陈述。
  *
- * 一旦 `attrs.xml` 真的声明了这两个属性，请把对应条目从这里删掉——
- * 届时它们应当走「必须被文档覆盖」那条检查。
+ * 因此：将来若有人想在文档里提一个尚未实现的属性名，
+ * 请改成「组件不提供 X，请用 Y 接管」的说法，不要写属性名。
  */
-private val documentedButUndeclared = setOf("dtXxx", "dtShowEditActions", "dtShowDeleteAction")
-
 class DocsConfigCoverageTest {
 
     /** 定位仓库根：自当前工作目录向上找 `settings.gradle.kts`。 */
@@ -133,13 +132,13 @@ class DocsConfigCoverageTest {
             emptySet<String>(),
             attrs - documented,
         )
-        // ② 反向：文档多写的，只允许是 [documentedButUndeclared] 里登记过的
+        // ② 反向：文档里不允许出现 attrs.xml 中不存在的属性名
         assertEquals(
             "完整能力文档写了 attrs.xml 里不存在的属性。" +
-                "\n  多写：${documented - attrs - documentedButUndeclared}" +
-                "\n  （若这些是刻意不声明的，需登记到 documentedButUndeclared 并写明理由）",
+                "\n  多写：${documented - attrs}" +
+                "\n  能力缺口请以「组件不提供 X，请用 Y 接管」陈述，不要写属性名。",
             emptySet<String>(),
-            documented - attrs - documentedButUndeclared,
+            documented - attrs,
         )
     }
 
@@ -154,10 +153,9 @@ class DocsConfigCoverageTest {
             inReadme.size < all.size,
         )
         assertEquals(
-            "README 里的 dtXxx 名称有源码中不存在的项：" +
-                "${inReadme - all - documentedButUndeclared}",
+            "README 里的 dtXxx 名称有源码中不存在的项：${inReadme - all}",
             emptySet<String>(),
-            inReadme - all - documentedButUndeclared,
+            inReadme - all,
         )
     }
 }
