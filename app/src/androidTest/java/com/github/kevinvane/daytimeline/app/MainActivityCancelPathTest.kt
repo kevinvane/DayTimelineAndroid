@@ -4,11 +4,9 @@ import android.os.ParcelFileDescriptor
 import android.view.KeyEvent
 import android.view.MotionEvent
 import androidx.test.core.app.ActivityScenario
-import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.action.ViewActions.clearText
 import androidx.test.espresso.action.ViewActions.click
-import androidx.test.espresso.action.ViewActions.typeText
+import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -335,16 +333,40 @@ private fun invokeInternal(name: String, block: PlacedBlock) {
         method.invoke(timeline, block)
     }
 
-    /**
-     * 把表单标题改成 [NEW_TITLE]。
+/**
+     * 把表单标题改成 [title]。
      *
-     * 收键盘是必需的：软键盘弹出后会盖住 BottomSheet 底部的按钮，
-     * Espresso 因「可见区域不足 90%」拒绝点击——那是环境几何问题，
-     * 不是被测行为，不该让它决定用例成败。
+     * **刻意用 `replaceText` 而不是 `typeText`。** 后者靠注入 `KeyEvent` 走输入法通道，
+     * 在没有真实输入法窗口的模拟器上会**静默失效**——不抛异常，也不写入任何字符。
+     *
+     * 本仓库 2026-10-12 实测（API 34 模拟器）：`typeText("EDITED")` 之后输入框仍是空的，
+     * 且**与焦点无关**——先 `click()` 确认 `hasFocus()` 为 true 再输入，依然是空的；
+     * 同一时刻 `replaceText` 正常写入。IME 本身是装着的（`ime list -s` 有 LatinIME）。
+     *
+     * 为什么不能就这么放着：`typeText` 失效时，`submittingTheFormWritesToDataSource`
+     * 会报「数据没变」，而真正的原因是「字根本没打进去」。两者隔着
+     * 「表单 → `applyEdit` → `confirmEdit` → `onEventModified` → 数据源」五层，
+     * 排查时极易误判成组件缺陷。同组另外六条只断言「什么都没变」，字打不进去它们照样全绿——
+     * 恰好是本文件 KDoc 里说的那种「只断言了注释里那句话」的假通过。
+     *
+     * 换掉之后**没有损失覆盖率**：表单是 demo 自己的 `BottomSheetDialog` + `EditText`，
+     * 与组件零关系；这条用例要验的是「确定 → `applyEdit` → `confirmEdit` → 数据源」，
+     * 不是输入法。组件侧的真实交互另有 102 条仪器测试覆盖。
+     *
+     * 顺带修好 `cancellingTheFormChangesNothing`：它此前「先改标题再取消」实际只做到了
+     * 清空（`clearText` 生效、`typeText` 没生效），改标题这件事从没真正发生。
      */
     private fun editTitleTo(title: String) {
-        onView(withId(R.id.form_title)).perform(clearText(), typeText(title))
-        closeSoftKeyboard()
+        onView(withId(R.id.form_title)).perform(replaceText(title))
+        // 立刻回读：输入环节若再次静默失效，失败会指在这里，
+        // 而不是伪装成下游的「数据没变」。
+        onView(withId(R.id.form_title)).check { view, _ ->
+            assertEquals(
+                "标题未写进输入框（输入机制静默失效），后续断言将失去意义",
+                title,
+                view?.let { (it as android.widget.EditText).text.toString() },
+            )
+        }
         waitUntilIdle()
     }
 
@@ -428,8 +450,14 @@ private fun invokeInternal(name: String, block: PlacedBlock) {
         /**
          * 测试写入的标题。
          *
-         * 用 ASCII：Espresso 的 `typeText` 对非 ASCII 要走 `sendStringSync`，
-         * 在部分 IME 上会静默丢字符——那会让断言变成「测的是输入法」而不是「测的是组件」。
+         * 用 ASCII：当初是为了躲 `typeText` 在非 ASCII 上要走的 `sendStringSync` 路径，
+         * 那条路径在部分 IME 上会静默丢字符。现在改用 `replaceText`（见 [editTitleTo]），
+         * 已不依赖输入法，这条约束随之失效——但换成非 ASCII 只会多引入一个变量，
+         * 没有收益，故维持原样。
+         *
+         * 另：必须是**与预填值不同的非空串**。原标题是「站会」，
+         * 若这里写成空串，「清空标题」与「改了标题」就分不开了——
+         * 那正是 `submitForm` 里 `EditResult.content` 三态语义要防的同一个坑。
          */
         const val NEW_TITLE = "EDITED"
 
