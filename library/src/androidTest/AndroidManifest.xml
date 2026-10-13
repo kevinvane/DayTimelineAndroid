@@ -12,8 +12,15 @@
 
       组件库的 src/main/AndroidManifest.xml 是空的（组件不声明任何组件），
       所以这个文件是测试 APK 里唯一的 Activity 声明处。
+
+      `android:supportsRtl="true"` 不是可选项：不声明它，Android 框架会**强制 LTR**，
+      `View.setLayoutDirection(LAYOUT_DIRECTION_RTL)` 变成空操作——
+      连原生 View 读回来都是 LTR。首版 RTL 用例就是这么红的：
+      失败信息是「期望 RTL，实得 LTR」，而真正的原因是清单少了一行，
+      与组件的镜像实现无关。demo 应用声明了这一项，**接入方也必须声明**。
     -->
-    <application>
+    <application
+        android:supportsRtl="true">
         <activity
             android:name="com.github.kevinvane.daytimeline.library.TimelineTestHostActivity"
             android:exported="false"

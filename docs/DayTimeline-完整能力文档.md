@@ -401,6 +401,23 @@ t.isStrictlyAfter(other)    // 相接（e1 == s2）不算重叠
 | 第三方依赖 | **无** |
 | 混淆 | 随 AAR 打包 `consumer-rules.pro`，**接入方开启混淆后无需任何配置** |
 
+### 8.1 RTL 的接入前置条件（**必读，否则 RTL 静默失效**）
+
+```xml
+<application
+    android:supportsRtl="true">
+```
+
+**不声明这一行，Android 框架会强制 LTR**：`View.setLayoutDirection(LAYOUT_DIRECTION_RTL)`
+是空操作，组件的 RTL 镜像（时间轴区域移到右侧）永远不会被触发，**且没有任何报错或日志**。
+
+清单属于接入方，不会随 AAR 合并，因此这一行只能由接入方声明。
+组件自身无法检测接入方是否声明（读不到接入方的清单），也不会为此打印任何提示。
+
+本仓库在 2026-10-13 补 RTL 测试时踩中此坑：镜像实现一直是对的，
+但组件库自己的 androidTest 清单也没声明这一行，导致「支持 RTL」长期无人验证。
+补上声明后 `CompatibilityMatrixTest.rtlMirrorsTheAxisToTheRightSide` 即转绿。
+
 ---
 
 **相关文档**：[README](../README.md) ·

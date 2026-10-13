@@ -1,0 +1,61 @@
+#!/bin/sh
+#
+# pre-commit 钩子（仓库自维护，不引入 husky / pre-commit 等第三方框架）
+#
+# ## 怎么启用
+#
+# Git **不会**把 `.git/hooks/` 随克隆带下来，所以钩子放在仓库里，由每台机器指一次路径：
+#
+#     git config core.hooksPath .githooks
+#
+# 一次性设置，之后本机所有提交自动生效。临时不想跑：`git commit --no-verify`
+# （**CI 仍然会拦**，本钩子不是门禁的替代品）。
+#
+# ## 跑哪些、为什么是这几个
+#
+# 只跑**静态且快**的三项。覆盖率门禁与 lint 留给 CI——它们要跑编译与测试，
+# 放进钩子里只会让人养成 `--no-verify` 的习惯，而**被训练出来的忽略比没有钩子更糟**。
+#
+#   detekt               静态问题与代码风格违规
+#   verifyNoDeadCode     未使用的私有成员（依赖 detekt 报告，故放在其后）
+#   verifyNoChildViews   往时间轴视图树里加子 View（PRD §12.1 常驻元素数 = 0）
+#
+# 三项都以**阻断**方式失败：门禁靠不容忍才有意义，见 PRD §12.4。
+#
+# ## 放行的场景
+#
+# - 暂存区为空（如 `git commit --amend` 无改动）
+# - 正在 merge / rebase 中途——不搅乱历史
+# - `SKIP_HOOKS=1 git commit ...`（留逃生口，但 CI 仍会拦）
+#
+set -e
+
+if [ -z "$(git diff --cached --name-only)" ]; then
+    exit 0
+fi
+
+GIT_DIR="$(git rev-parse --git-dir)"
+if [ -f "$GIT_DIR/MERGE_HEAD" ] || [ -d "$GIT_DIR/rebase-merge" ] || [ -d "$GIT_DIR/rebase-apply" ]; then
+    echo "[pre-commit] 正在 merge / rebase，跳过本地钩子（CI 仍会执行全部检查）"
+    exit 0
+fi
+
+if [ -n "$SKIP_HOOKS" ]; then
+    echo "[pre-commit] SKIP_HOOKS 已设置，跳过"
+    exit 0
+fi
+
+# Windows 的 Git Bash 里 POSIX 版 `gradlew` 不能直接执行，改走 `cmd` 调 `.bat`；
+# 其余平台直接用包装脚本。
+if command -v cmd.exe >/dev/null 2>&1; then
+    GRADLE="cmd.exe //c gradlew.bat"
+else
+    GRADLE="./gradlew"
+fi
+
+echo "[pre-commit] 运行静态门禁：detekt -> verifyNoDeadCode -> verifyNoChildViews"
+
+# shellcheck disable=SC2086
+$GRADLE detekt :library:verifyNoDeadCode :library:verifyNoChildViews --console=plain
+
+echo "[pre-commit] 静态门禁通过"
