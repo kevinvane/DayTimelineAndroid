@@ -106,6 +106,7 @@ Windows 下用 `gradlew.bat`：
 .\gradlew.bat :library:verifyNoDeadCode       # 死代码 0 处（依赖 detekt）
 .\gradlew.bat :library:verifyNoChildViews     # 网格区常驻界面元素数 = 0（不需要设备，秒级）
 .\gradlew.bat :library:verifyColorsFinalized  # 17 项色值须为设计定稿值 + 对比度达标（依赖 detekt）
+.\gradlew.bat verifyNoHighVulns               # 依赖漏洞扫描：CVSS ≥ 7.0 的漏洞 0 个（**首次运行需下载 NVD 库，可能十几分钟**）
 .\gradlew.bat :r8test:verifyKeptSymbols       # 混淆产物构建 + 对外契约类符号核对（不需要设备）
 .\gradlew.bat connectedAndroidTest           # 需要设备/模拟器（含 :app 的 7 条 demo 用例）
 ```
@@ -148,6 +149,13 @@ Windows 下用 `gradlew.bat`：
   §12.1 九行指标里只有这 2 行 + 常驻元素数共 3 行能自动阻断，
   其余 6 行（首次显示中位数 / P95、滚动掉帧率、拖拽跟手、内存、耗电）**仍无自动化**，
   理由见 PRD §12.1 末尾——模拟器帧时序不代表真实设备。
+- **依赖漏洞门禁** `verifyNoHighVulns`（2026-10-13 新增，OWASP Dependency-Check 13.0.0，阈值 **CVSS ≥ 7.0**）：
+  CI 里是独立 job `dependency-scan`（带 NVD 漏洞库缓存、报告归档、失败时打印漏洞明细）。
+  **当前状态是「已建立门禁，尚未跑通」**——dependency-check 13.x 起只支持 NVD API 且**强制要求 key**，
+  缺 key 时连漏洞库都下载不下来，前置检查 `verifyNvdApiKeyPresent` 会直接拦下并给出申请指引
+  （免费：https://nvd.nist.gov/developers/request-an-api-key ；本机 `gradlew verifyNoHighVulns` 即为该提示）。
+  三个坑（13.x DSL 全换 / Kotlin DSL 不生成访问器 / 必须 `mustRunAfter` 接线）见技术方案 §9.4.1。
+  顺带关闭了 **OQ-2**：K10 落定为「**运行时**零非 AndroidX 第三方依赖；构建与测试期允许工具类依赖」。
 - **仪器测试宿主窗口**（`library/src/androidTest/AndroidManifest.xml` + `TimelineTestHostActivity`，
   2026-10-13 新增）：此前 102 条仪器测试**全部**是「裸 Context + `measure`/`layout`」，
   组件从未 attach 到窗口——那种 View 上的 `invalidate()` 不调度任何绘制，
@@ -160,13 +168,12 @@ Windows 下用 `gradlew.bat`：
 
 尚未建立：
 
-- **PRD §12.4 十项门禁的落地分布：六项自动阻断、两项部分落地、两项完全未落地。**
+- **PRD §12.4 十项门禁的落地分布：六项自动阻断、两项部分落地、一项已建门禁但尚未跑通、一项完全未落地。**
   部分落地的是「界面自动化冒烟」（`:app` 7 条取消链路）与「性能基准」（§12.1 九行中 3 行自动阻断）。
-  完全未落地的是「已知安全漏洞 0 个高危」「文档完整性（无遗留待办标记）」——
-  既不在 CI 也不在任何 Gradle 任务里，目前只能靠人工核对。
+  「已知安全漏洞 0 个高危」的门禁已建立（`verifyNoHighVulns`）但**一次都没真正执行过**——缺 NVD API key。
+  「文档完整性（无遗留待办标记）」**完全没有任何自动化手段**，只能人工核对。
   §12.1 余下 6 行（首次显示中位数 / P95、滚动掉帧率、拖拽跟手延迟、内存 1 小时平稳、1 小时耗电）
   同样只能人工真机走查，理由见 PRD §12.1 末尾；清单见 `docs/DayTimeline-质量报告.md` §4。
-- 无 pre-commit 钩子（当前只在 CI 里阻断）。
 - 无死代码检查工具之外的「删除前确认」类防护。
 - **`:app` demo 只覆盖了取消链路、表单提交与删除二次确认的「放弃」分支**
   （`MainActivityCancelPathTest` 7 条）。删除成功、日期切换、配置面板等业务方侧路径

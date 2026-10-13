@@ -147,6 +147,67 @@ jobs:
             app/build/reports/androidTests/**
           retention-days: 7
 
+  # 依赖漏洞扫描（PRD §12.4「已知安全漏洞 0 个高危」）。
+  # 单独一个 job：NVD 漏洞库有几百 MB，且下载有网络限速，
+  # 混进静态门禁 job 会拖慢每次 CI、甚至拖到超时。独立后互不影响。
+  dependency-scan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: 配置 Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
+      # 漏洞库缓存。首次运行要下整库（NVD 对无 key 的请求限速很严），
+      # 之后只做增量——**没有这一步，每次 CI 都要重下几百 MB**。
+      - name: 缓存 NVD 漏洞库
+        uses: actions/cache@v4
+        with:
+          path: .gradle/dependency-check-cache
+          key: nvd-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          restore-keys: |
+            nvd-${{ runner.os }}-
+
+      # NVD_API_KEY 是仓库 secret，需维护者在 Settings → Secrets 里配置一个
+      # 免费 key（https://nvd.nist.gov/developers/request-an-api-key）。
+      # **没有它这道门禁依然会跑并阻断**，只是首次同步会慢很多。
+      - name: 依赖漏洞门禁
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: ./gradlew verifyNoHighVulns --stacktrace
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: dependency-check-report
+          path: build/reports/dependency-check/**
+          retention-days: 7
+
+      - name: 失败时打印漏洞明细
+        if: failure()
+        run: |
+          report=$(find . -path '*reports/dependency-check*' -name 'dependency-check-report.json' | head -1)
+          if [ -z "$report" ]; then
+            echo "未找到漏洞报告 JSON——扫描可能未启动即失败，请看上方日志"
+          else
+            python3 -c "
+          import json, sys
+          data = json.load(open(sys.argv[1], encoding='utf-8'))
+          for dep in data.get('dependencies', []):
+          vulns = [v for v in dep.get('vulnerabilities', [])]
+          high = [v for v in vulns if float(v.get('cvssv3', {}).get('baseScore') or v.get('cvssv2', {}).get('baseScore') or 0) >= 7.0]
+          if high:
+          print('%s:%s  —— %d 个 CVSS≥7.0' % (dep.get('fileName'), dep.get('filePath'), len(high)))
+          for v in high:
+          print('    %s  %s' % (v.get('name'), (v.get('description') or '')[:200]))
+          " "$report"
+          fi
+
   # R8 / 混淆消费端验证（PRD §12.5 / T7 / 风险 R8）。
   # 单独一个 job：它验证的是「发布形态」而非源码，且耗时明显更长。
   r8-verify:

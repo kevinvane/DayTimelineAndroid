@@ -16,6 +16,11 @@ customview = "1.1.0"
 # detekt 1.23.8 是支持 Kotlin 2.0.x 的版本；1.23.0 及更早基于 Kotlin 1.9 编译，
 # 对本工程的 Kotlin 2.0.21 产物可能报编译期不兼容。
 detekt = "1.23.8"
+# OWASP Dependency-Check（依赖漏洞扫描，PRD §12.4「已知安全漏洞 0 个高危」）。
+# **只作用于构建期**：插件不进入任何模块的运行时 classpath，
+# 因此不违反「运行时零第三方依赖」——这是 OQ-2 的结论，见技术方案 §7。
+# 13.x 要求 Gradle 7.6+ / JDK 11+，本工程 Gradle 8.13 / JDK 17 满足。
+dependencyCheck = "13.0.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -40,4 +45,5 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+owasp-dependency-check = { id = "org.owasp.dependencycheck", version.ref = "dependencyCheck" }
 
