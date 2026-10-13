@@ -11,12 +11,16 @@
   `library/src/main/java/` 下的 `core/` 是**纯 Kotlin、零 `android.*` 依赖**的核心算法，
   改它必须同步补单测。
 - Git 已初始化，分支 `master`，remote 为 `git@github.com:kevinvane/DayTimelineAndroid.git`。
-- `docs/` 下有三份文档：PRD、技术方案、表单输入方案。
+- `docs/` 下共 9 份文档，分三类：**规格**（产品与需求文档、技术方案与实施计划、日程块表单输入方案、
+  色值交付清单、设计侧定稿交付）、**接入方文档**（完整能力文档 DL-04、主题定制指南 DL-05、
+  交互说明文档 DL-06）、**发布材料**（质量报告 DL-09，草案）。
+  另有两个文件在仓库根目录：`LICENSE`（DL-07）与 `CHANGELOG.md`（DL-08）。
+  **DL-03「快速上手文档」尚未交付**——写新文档前先看这条，免得重复造一份。
 
 ## 需求与技术方案来源
 
-- `docs/DayTimeline-产品与需求文档.md`（PRD，v1.14，约 1486 行，UTF-8 中文，状态：待评审）——**唯一需求来源，动手前先读它。**
-- `docs/DayTimeline-技术方案与实施计划.md`（v0.19 草案）——架构决策 AD-01~AD-28、M0–M6 任务拆解、测试与门禁落地、实施进度、开放问题。**PRD §1.2 把架构与实现方案排除在外，这两份要配套读。**
+- `docs/DayTimeline-产品与需求文档.md`（PRD，v1.21，约 1530 行，UTF-8 中文，状态：待评审）——**唯一需求来源，动手前先读它。**
+- `docs/DayTimeline-技术方案与实施计划.md`（v0.25 草案）——架构决策 AD-01~AD-29、M0–M6 任务拆解、测试与门禁落地、实施进度、开放问题。**PRD §1.2 把架构与实现方案排除在外，这两份要配套读。**
 - `docs/DayTimeline-日程块表单输入方案.md`（v0.1 草案，**已实现**）——PRD v1.3 新增的表单输入能力设计（AD-22）。**方案已定稿并已实现**。
 
 读取注意：三个文件都是 UTF-8 中文，**PowerShell 控制台会显示成乱码**——用 read 工具读，或先设 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`。
@@ -92,10 +96,11 @@ Windows 下用 `gradlew.bat`：
 .\gradlew.bat :app:installDebug             # 装到已连接设备/模拟器
 .\gradlew.bat test                          # 全部 JVM 单元测试（不需要设备）
 .\gradlew.bat :library:testDebugUnitTest --tests "com.github.kevinvane.daytimeline.library.*"
-.\gradlew.bat :library:verifyCoreCoverage   # 核心逻辑覆盖率门禁 ≥90%（实测 91.81%）
-.\gradlew.bat :library:verifyAllCoverage     # 全库可测逻辑覆盖率门禁 ≥75%（实测 88.60%，不需要设备）
+.\gradlew.bat :library:verifyCoreCoverage   # 核心逻辑覆盖率门禁 ≥90%（实测 93.34%）
+.\gradlew.bat :library:verifyAllCoverage     # 全库可测逻辑覆盖率门禁 ≥75%（实测 89.61%，不需要设备）
 .\gradlew.bat detekt                          # 静态检查 + 代码风格 0 违规
 .\gradlew.bat :library:verifyNoDeadCode       # 死代码 0 处（依赖 detekt）
+.\gradlew.bat :library:verifyNoChildViews     # 网格区常驻界面元素数 = 0（不需要设备，秒级）
 .\gradlew.bat :library:verifyColorsFinalized  # 17 项色值须为设计定稿值 + 对比度达标（依赖 detekt）
 .\gradlew.bat :r8test:verifyKeptSymbols       # 混淆产物构建 + 对外契约类符号核对（不需要设备）
 .\gradlew.bat connectedAndroidTest           # 需要设备/模拟器（含 :app 的 7 条 demo 用例）
@@ -111,11 +116,12 @@ Windows 下用 `gradlew.bat`：
 - **detekt**（`config/detekt/detekt.yml`）：静态检查 + 代码风格 0 违规。
 - **死代码门禁** `verifyNoDeadCode`：扫描未被引用的私有成员，0 处即通过。
   与 detekt 分两步跑，失败时能一眼看出是哪条红线。
-- **JaCoCo 覆盖率门禁**：`verifyCoreCoverage`（core ≥90%，实测 **91.81%**，2466/2686）与
-  `verifyAllCoverage`（core + api 可测逻辑 ≥75%，实测 **88.60%**，3310/3736）。
+- **JaCoCo 覆盖率门禁**：`verifyCoreCoverage`（core ≥90%，实测 **93.34%**，2507/2686）与
+  `verifyAllCoverage`（core + api 可测逻辑 ≥75%，实测 **89.61%**，3348/3736）。
   口径与敏感度边界见 `library/build.gradle.kts` 里 `verifyAllCoverage` 的 KDoc。
-  **数据来源**：以上是本地 `library/build/reports/jacoco/.../jacocoTestDebugReport.xml`
-  （2026-10-10 15:27，晚于全部源文件）的实测值，未重跑测试。
+  **数据来源**：2026-10-13 本机实跑 `verifyCoreCoverage` / `verifyAllCoverage` 的输出。
+  较上一版的 91.81% / 88.60% 的增量来自 `PerformanceBenchmarkTest` 走了
+  `EventSanitizer` / `EventDiff` / `TimeStateResolver` 的默认参数组合。
 - **R8 混淆消费端验证**（`:r8test` 模块）：核对对外契约类是否按 `consumer-rules.pro`
   保留，再在**混淆后的 release 变体**上跑仪器测试——这是「业务方开启混淆后功能正常」
   的唯一有效证据（library 自身不开混淆，保留规则写错也不会有任何东西报错）。
@@ -125,15 +131,37 @@ Windows 下用 `gradlew.bat`：
   （兼挡「漏配」与「改名」）、34 个取值须等于设计定稿、按 §7.3 算 WCAG 对比度。
   已回滚验证（改回 M3 占位 → 红；深色文件删色名 → 红并指名缺哪个）。
   **改色值会被这道门禁拦下，除非同步更新设计交付文档与 `build.gradle.kts` 的登记表**。
-- **仪器测试** 102 个（`:library:connectedDebugAndroidTest`，2026-10-10 实测全绿；含 AD-28 的
-  16 条 `DayTimelineViewEntryPointTest` + `DayTimelineViewSavedStateParcelTest`）+ 7 个
-  （`:app:connectedDebugAndroidTest`），R8 混淆变体 8 个。
+- **常驻界面元素门禁** `verifyNoChildViews`（2026-10-13 新增）：§12.1 的「网格区常驻界面元素数 = 0」
+  原先验证方式只写着「代码走查」——人工走查挡不住下一次改动：谁为了修命中测试或做无障碍焦点
+  而往时间轴里塞一个子 View，静态检查不报、单测全绿、真机也看不出，指标却已经破了。
+  现扫 `library/src/main` 里 12 个创建/挂载标记（`addView(` / `ViewGroup(` / inflate 等）与全部布局资源，
+  **对话框不拦**（独立 window、不常驻）。已回滚验证：注入含 `addView`/`TextView` 的子 View → 红并逐条指名；
+  KDoc 里写着禁令原文的句子不误报（先剥注释）。运行时一侧由 `RedrawConvergenceTest` 复核。
+- **性能基准（部分）** `PerformanceBenchmarkTest`（2026-10-13 新增，纯 JVM 无需设备）：
+  布局 200 条 ≤ 4ms、增量更新 100 条 ≤ 16ms，外加一条**增长形状**门禁。
+  **读这三个数字时必须知道的**：绝对耗时门禁的余量有 3.6–62 倍，实测把列分配从贪心首次适配
+  换成两两比较后真实分布涨到 1.10ms 仍**不转红**；真正转红的是形状那条（2.06 → 3.66）。
+  §12.1 九行指标里只有这 2 行 + 常驻元素数共 3 行能自动阻断，
+  其余 6 行（首次显示中位数 / P95、滚动掉帧率、拖拽跟手、内存、耗电）**仍无自动化**，
+  理由见 PRD §12.1 末尾——模拟器帧时序不代表真实设备。
+- **仪器测试宿主窗口**（`library/src/androidTest/AndroidManifest.xml` + `TimelineTestHostActivity`，
+  2026-10-13 新增）：此前 102 条仪器测试**全部**是「裸 Context + `measure`/`layout`」，
+  组件从未 attach 到窗口——那种 View 上的 `invalidate()` 不调度任何绘制，
+  `ViewTreeObserver.OnDrawListener` 一次都不会触发。**要做「有没有发生重绘」类断言，
+  必须先挂进窗口**，这是原有基础设施下原理上做不到的事。
+- **仪器测试** 108 个（`:library:connectedDebugAndroidTest`，2026-10-13 实测全绿；含 AD-28 的
+  16 条 `DayTimelineViewEntryPointTest` + `DayTimelineViewSavedStateParcelTest`、
+  AD-29 的 3 条 `RedrawConvergenceTest`）+ 7 个（`:app:connectedDebugAndroidTest`），
+  R8 混淆变体 8 个。
 
 尚未建立：
 
-- **PRD §12.4 十项门禁里有三项无任何自动化落地**：「已知安全漏洞 0 个高危」、
-  「性能基准（§12.1 全部指标）」、「文档完整性（无遗留待办标记）」——
-  三者既不在 CI 也不在任何 Gradle 任务里，目前只能靠人工核对。表格里其余七项均已自动阻断。
+- **PRD §12.4 十项门禁的落地分布：六项自动阻断、两项部分落地、两项完全未落地。**
+  部分落地的是「界面自动化冒烟」（`:app` 7 条取消链路）与「性能基准」（§12.1 九行中 3 行自动阻断）。
+  完全未落地的是「已知安全漏洞 0 个高危」「文档完整性（无遗留待办标记）」——
+  既不在 CI 也不在任何 Gradle 任务里，目前只能靠人工核对。
+  §12.1 余下 6 行（首次显示中位数 / P95、滚动掉帧率、拖拽跟手延迟、内存 1 小时平稳、1 小时耗电）
+  同样只能人工真机走查，理由见 PRD §12.1 末尾；清单见 `docs/DayTimeline-质量报告.md` §4。
 - 无 pre-commit 钩子（当前只在 CI 里阻断）。
 - 无死代码检查工具之外的「删除前确认」类防护。
 - **`:app` demo 只覆盖了取消链路、表单提交与删除二次确认的「放弃」分支**

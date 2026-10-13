@@ -101,6 +101,124 @@ tasks.register("verifyNoDeadCode") {
 }
 
 /**
+ * 「网格区常驻界面元素数 = 0」门禁（PRD §12.1 / D16 / AD-01）。
+ *
+ * §12.1 把这条列在性能表里，验证方式写的是「代码走查」——人工走查挡不住下一次改动：
+ * 任何人为了「让块能点得准 / 能做无障碍焦点」而往时间轴里塞一个子 View，
+ * 静态检查不会报错、单测全绿、真机也看不出异常，指标却已经悄悄破了。
+ * 这道门禁把它从「靠人记」变成「靠机器拦」。
+ *
+ * 拦什么：组件**自己的视图树**里出现子 View（`addView` / `ViewGroup` / 代码 new 控件 /
+ * 布局资源 / inflate）。
+ *
+ * 明确**不拦**什么：对话框。删除二次确认（[DayTimelineView] 的 AlertDialog）与
+ * 日程块表单面板都是**独立 window**，不常驻在时间轴里，也不属于「网格区常驻元素」——
+ * 表单输入方案对此已有明确结论。与其在这里猜，不如写死成一条规则：
+ * 想加对话框随便加，想往时间轴里加 View 一律先改这道门禁并在技术方案里登记理由。
+ */
+tasks.register("verifyNoChildViews") {
+    group = "verification"
+    description = "常驻界面元素门禁：组件不得往自己的视图树里加子 View（PRD §12.1 / D16）"
+    val mainDir = layout.projectDirectory.dir("src/main")
+    inputs.dir(mainDir).withPathSensitivity(PathSensitivity.RELATIVE)
+    outputs.upToDateWhen { false } // 每次都真跑：这是一条红线，不接受增量跳过
+
+    // 刻意**不给** baseline / 白名单文件。死代码门禁里已经写明这条原则：
+    // 登记表里留一条，等于把门禁悄悄关掉，而门禁清单上仍然写着「已通过」。
+    // 真的需要例外时，改这里的集合并在技术方案里写明理由，让这次例外出现在 code review 里。
+    val forbiddenTokens = listOf(
+        "addView(",
+        "ViewGroup(",
+        "LayoutInflater",
+        ".inflate(",
+        "FrameLayout(",
+        "LinearLayout(",
+        "RelativeLayout(",
+        "ConstraintLayout(",
+        "TextView(",
+        "ImageView(",
+        "RecyclerView(",
+        "ScrollView(",
+    )
+
+    // `Button(` 刻意不在表里：`setPositiveButton(` 里就含 "Button("，
+    // 用子串匹配会把删除二次确认的确认按钮误判成「创建子 View」。
+    // 同理不加 `View(`——类声明 `: View(context, attrs, defStyleAttr)` 自己就会命中。
+
+    doLast {
+        val hits = mutableListOf<String>()
+        val root = mainDir.asFile
+        check(root.isDirectory) { "未找到组件源码目录：${root.absolutePath}" }
+
+        // ---- 1. 布局资源：存在即命中 ----
+        // 有了 layout 目录就意味着「有东西可以被 inflate 进视图树」，
+        // 这条比逐个查 inflate 调用更早一步拦住。
+        root.walkTopDown().filter { it.isFile }.forEach { file ->
+            val relative = file.relativeTo(root).invariantSeparatorsPath
+            if (file.extension == "xml" &&
+                relative.substringBeforeLast('/').split('/').any { it == "layout" }
+            ) {
+                hits += "$relative —— 时间轴不含布局资源（网格区全部为自绘，见 AD-01）"
+            }
+        }
+
+        // ---- 2. 代码里创建/挂载子 View ----
+        root.walkTopDown().filter { it.isFile }.forEach { file ->
+            if (file.extension != "kt" && file.extension != "java") return@forEach
+            val relative = file.relativeTo(root).invariantSeparatorsPath
+            // 先剥注释：KDoc 里写着「不创建任何子 View」这类说明，
+            // 按原文匹配会把**文档里描述禁令的句子**判成违规。
+            val code = stripComments(file.readText())
+            code.lines().forEachIndexed { index, line ->
+                forbiddenTokens.forEach { token ->
+                    if (line.contains(token)) {
+                        hits += "$relative:${index + 1} —— 命中 `$token`"
+                    }
+                }
+            }
+        }
+
+        check(hits.isEmpty()) {
+            buildString {
+                appendLine("检出 ${hits.size} 处「向时间轴视图树添加子 View」的写法（PRD §12.1 要求 = 0）：")
+                hits.take(20).forEach { appendLine("  $it") }
+                if (hits.size > 20) appendLine("  …… 其余 ${hits.size - 20} 处省略")
+                appendLine()
+                appendLine("组件是单 View 全量自绘（AD-01），这是 §12.1 与 D16 的硬指标。")
+                appendLine("请改为在 onDraw 里绘制，或把该控件放进**独立 window**（对话框）——")
+                appendLine("对话框不受本门禁约束，它不常驻在时间轴里。")
+            }
+        }
+        logger.lifecycle(
+            "[常驻元素门禁] verifyNoChildViews 通过：网格区常驻界面元素数 = 0"
+                + "（已扫 ${forbiddenTokens.size} 个创建/挂载标记与全部布局资源）",
+        )
+    }
+}
+
+/** 剥掉 Kotlin/Java 源码的注释，保留行数以便报错时能给出正确行号。 */
+fun stripComments(source: String): String {
+    var inBlock = false
+    return source.lines().joinToString("\n") { raw ->
+        var line = raw
+        if (inBlock) {
+            val end = line.indexOf("*/")
+            if (end < 0) return@joinToString ""
+            line = line.substring(end + 2)
+            inBlock = false
+        }
+        val blockStart = line.indexOf("/*")
+        if (blockStart >= 0 && line.indexOf("*/", blockStart) < 0) {
+            line = line.substring(0, blockStart)
+            inBlock = true
+        }
+        val lineComment = line.indexOf("//")
+        if (lineComment >= 0) line = line.substring(0, lineComment)
+        line
+    }
+}
+
+/**
  * 设计侧定稿色值登记表（PRD §7.3 的 17 项 × 深浅两套 = 34 个值）。
  *
  * 唯一来源：`docs/DayTimeline-设计侧定稿交付.md`（设计侧交付，2026-10-12）。
@@ -385,6 +503,12 @@ tasks.withType<Test>().configureEach {
         rootProject.layout.projectDirectory.file("docs/DayTimeline-完整能力文档.md"),
         rootProject.layout.projectDirectory.file("README.md"),
     )
+    // 性能用例把实测耗时打到 stdout（见 PerformanceBenchmarkTest）。
+    // DL-09 质量报告要引用的就是这些数字——默认 Gradle 会把测试的标准输出吞掉，
+    // 结果就是「跑过了但没留下任何数值」，报告里只能写「达标」而没有证据。
+    testLogging {
+        showStandardStreams = true
+    }
 }
 
 android {
@@ -443,6 +567,11 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    // ActivityScenario：重绘收敛类测试必须让组件**真正挂进窗口**才能观测到绘制次数，
+    // 而它属于 androidx.test:core，此前只是 espresso 的传递依赖。
+    // 直接用到就直接声明，不靠传递——传递依赖一旦被上游去掉，编译会以
+    // 「找不到 ActivityScenario」的形式炸在无关的升级提交上。
+    androidTestImplementation(libs.androidx.test.core)
 }
 
 /**

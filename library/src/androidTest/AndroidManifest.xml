@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      仅供仪器测试使用：给 [TimelineTestHostActivity] 一个可被 ActivityScenario 启动的窗口。
+
+      为什么必须有它：既有 102 条仪器测试全部是「裸 Context + measure/layout」，
+      组件从未真正 attach 到窗口。而重绘收敛（AD-06 / D17）这类指标在
+      **未挂窗**的 View 上根本观测不到——`invalidate()` 不会调度绘制，
+      `ViewTreeObserver.OnDrawListener` 一次都不会触发。缺了宿主窗口，
+      「重绘会不会收敛」就只能靠人盯电量，而 §12.1 的耗电项正是这么丢掉的。
+
+      组件库的 src/main/AndroidManifest.xml 是空的（组件不声明任何组件），
+      所以这个文件是测试 APK 里唯一的 Activity 声明处。
+    -->
+    <application>
+        <activity
+            android:name="com.github.kevinvane.daytimeline.library.TimelineTestHostActivity"
+            android:exported="false"
+            android:label="DayTimeline 测试宿主" />
+    </application>
+
+</manifest>
