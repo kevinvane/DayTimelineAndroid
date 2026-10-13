@@ -1098,7 +1098,10 @@ AD-25 已把「退出编辑态的状态」收敛成单一出口，这次把**副
 | OQ-5 | ~~PRD §16.2 有重复段落：两次出现「排期为粗略预估…」~~ | — | **已处理**：冗余副本已删除，保留含「M0 未完成不得进入 M1」约束的完整版本（2026-10-10） | 已关闭 |
 | OQ-6 | ~~PRD §18 的 R9 仍以旧前提描述~~ | — | **已处理**（2026-10-10）：按「结论采纳后整条重写而非删除」重写为已排除并附实测证据，见 PRD v1.8 §18 | 已关闭 |
 | OQ-7 | ~~对外 API 是否需要 Java 调用方友好门面~~ | — | **已决议并实施（2026-10-10，方案 A）**：`MinuteOfDay` 由 `@JvmInline value class` 改为**普通类 + 私有构造函数 + `@JvmStatic` 工厂**，D18 编译期保证不受影响（裸 `Int` 仍赋不进去，TimeTest 有对照），Java 调用方现在可以实现 `TimelineEvent`（`:r8test` 的 `JavaBusinessEvent.java` + `javaCallerCanImplementContractAfterMinification` 守护，混淆后 7/7 真机全绿）。连带修掉 `consumer-rules.pro` 的 `MinuteOfDay` 只保类名不保成员（R8 跨 APK 边界 `NoSuchMethodError`）。**剩余小项**：Kotlin 接口默认实现未开 `-Xjvm-default=all`，Java 实现方需自写三个可选方法缺省值；是否开启该编译参数另行评估 | 已关闭 |
-| OQ-8 | L2 仪器测试的 `androidx.test` 版本当前未验证可用 | 影响 M2 起的测试排期 | M1 验证 | 低 |
+| ~~OQ-8~~ | ~~L2 仪器测试的 `androidx.test` 版本当前未验证可用~~ | — | **已关闭**（2026-10-13）：实测可用。`androidx.test:core` 1.7.0（catalog 声明 1.6.1，经 `ext:junit` 1.3.0 / `espresso-core` 3.7.0 传递解析）、`ext:junit` 1.3.0、`espresso-core` 3.7.0，`AndroidJUnitRunner` 跑通 `:library` 108 + `:app` 7 条；**`ActivityScenario` 亦可用**——2026-10-13 新增 `androidTest/AndroidManifest.xml` 与宿主 Activity 以观测重绘收敛，依赖经 catalog 显式声明（`androidx.test:core`）而非依赖传递。另注一条相关的既有缺口：仪器测试对弹窗路径是**回避**而非覆盖的——`DayTimelineViewEditTest:203` 与
+`MainActivityCancelPathTest:231` 都显式覆写 `confirmDelete` 以「避开真机上 `AlertDialog` 的时序」。
+即弹窗本身**从未在仪器测试里被断言过**。这不属 OQ-8 范围（工具可用性已验证），
+但与「界面自动化冒烟」的部分落地状态同源，登记在此备查。 | 已关闭 |
 | OQ-9 | **表单输入的四个开放点**（空标题回落、表单打开时是否仍可拖拽、冲突态 E28 下能否提交、业务色深色适配责任） | 影响 AD-22 的实现细节 | 见《日程块表单输入方案》§9 的 QF-1~QF-4，当前均已给出建议默认值 | 中 |
 
 ---

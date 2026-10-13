@@ -10,7 +10,11 @@
   `library` 有完整实现，`app` 是可运行的 demo（`:app` 已依赖 `:library`），另有第三个模块 `:r8test`（混淆消费端验证）。
   `library/src/main/java/` 下的 `core/` 是**纯 Kotlin、零 `android.*` 依赖**的核心算法，
   改它必须同步补单测。
-- Git 已初始化，分支 `master`，remote 为 `git@github.com:kevinvane/DayTimelineAndroid.git`。
+- Git 已初始化，**当前在 `dev` 分支开发**（`master` 与 `origin/master` 停在发布打 tag 的那一版），
+  remote 为 `git@github.com:kevinvane/DayTimelineAndroid.git`。
+- **本地 pre-commit 钩子需指一次路径**：`git config core.hooksPath .githooks`
+  （Git 不会把 `.git/hooks/` 随克隆带下来）。跑 detekt → verifyNoDeadCode → verifyNoChildViews 三项，
+  约 3–10 秒；`SKIP_HOOKS=1` 或 `--no-verify` 可跳过，**CI 始终会拦**。
 - `docs/` 下共 9 份文档，分三类：**规格**（产品与需求文档、技术方案与实施计划、日程块表单输入方案、
   色值交付清单、设计侧定稿交付）、**接入方文档**（完整能力文档 DL-04、主题定制指南 DL-05、
   交互说明文档 DL-06）、**发布材料**（质量报告 DL-09，草案）。
