@@ -23,11 +23,12 @@ import com.github.kevinvane.daytimeline.library.api.TimelineConfig
  * 因为 `null` 才表示「用资源默认值」，`0` 会被当成业务方显式要求取 0。
  * 因此每个字段都用 `hasValue()` 把关，**不要**改成直接 `getXxx`。
  *
- * ## 未映射的属性
+ * ## 永久不映射的属性
  *
- * `dtShowEditActions` / `dtShowDeleteAction` 已在 `attrs.xml` 中移除：
- * 内置「完成/取消/删除」按钮尚未实现（PRD §7.7），声明一个不生效的属性
- * 只会让业务方误以为配了有用。实现后再一并加回。
+ * `dtShowEditActions` / `dtShowDeleteAction` 已在 `attrs.xml` 中移除，**不会再加回**：
+ * PRD v1.22 取消了「可配置是否内置完成/取消/删除按钮」这项需求，组件恒不内置。
+ * 业务方的三个出口经第四层 `EditController` 接管实现。
+ * 声明一个永远不会生效的属性，只会让接入方误以为配了有用。
  */
 internal object ConfigFromAttrs {
 

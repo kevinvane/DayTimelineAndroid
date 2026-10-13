@@ -90,8 +90,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 「完成 / 取消 / 删除」三个出口由业务方自己的界面提供：表单（`sheet_event_form.xml`）
-        // 与详情弹窗（`popup_event_detail.xml`）里各有一套。组件不内置按钮（PRD §7.7 的
-        // 「可配置是否内置」尚未实现，见技术方案 §9.4 第 1 条）。
+        // 与详情弹窗（`popup_event_detail.xml`）里各有一套。组件不内置按钮——
+        // PRD v1.22 已把「可配置是否内置」这项需求取消，这是确定的行为，不是待补的缺口。
 
         timeline.listener = object : TimelineListener {
             /**

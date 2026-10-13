@@ -99,10 +99,11 @@ data class TimelineConfig(
     /** 拖拽触发阈值 = 系统标准阈值 × 该系数。 */
     val dragThresholdRatio: Float? = null,
 
-    // ---- 编辑交互 ----
-    // 注：内置「完成/取消/删除」按钮尚未实现，故 showEditActions / showDeleteAction
-    // 暂时不存在，避免出现声明了却无人消费的字段（违反 T5 死代码 0 处）。
-    // 实现按钮时连同 attrs.xml 中的 dtShowEditActions / dtShowDeleteAction 一并加回。
+// ---- 编辑交互 ----
+    // 注：PRD v1.22 已取消「可配置是否内置完成/取消/删除按钮」这项需求，
+    // 组件恒不内置（理由见 PRD §7.7），故 showEditActions / showDeleteAction
+    // **不存在也永远不会存在**，避免出现声明了却无人消费的字段（违反 T5 死代码 0 处）。
+    // 业务方的三个出口经第四层 EditController 接管实现。
     val editHandleVisualSize: Int? = null,
     /** 触摸热区。业务方只应调大不应调小（UF-001 下限 48dp）。 */
     val editHandleTouchSize: Int? = null,

@@ -220,6 +220,7 @@ timeline.listener = object : TimelineListener {
 ### 5. 编辑态：接入你自己的表单
 
 组件**不内置**「完成 / 取消 / 删除」按钮——它们属于你的界面，通过第四层定制接管：
+（PRD v1.22 已把「可配置是否内置」这项需求取消，这是**确定的行为**而非待补的缺口。）
 
 ```kotlin
 timeline.editController = object : DayTimelineView.EditController {
@@ -516,7 +517,7 @@ timeline.eventBlockPainter = object : EventBlockPainter {
 | 最小粒度为分钟 | 不支持秒 |
 | 不处理重复日程规则 | 业务方自行展开 |
 | 不做数据持久化 | 组件不落库、不联网 |
-| 不内置编辑按钮 | 「完成 / 取消 / 删除」需业务方通过 `EditController` 接管实现 |
+| 不内置编辑按钮 | 「完成 / 取消 / 删除」需业务方通过 `EditController` 接管实现。**PRD v1.22 已取消「可配置是否内置」这项需求**，不是待补的缺口 |
 | 不提供图形化配置界面 | 配置只经 XML / 代码 |
 | 同刻日程等宽并排 | 总列数取当天最大重叠数，不按内容长度做流式宽度 |
 | **文案暂仅有中文** | 组件内文案全部走 `strings.xml`（可被业务方覆盖），但库自身**未提供 `values-xx` 翻译**。非中文环境会显示中文，请在自己的资源里覆盖同名项 |

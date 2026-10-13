@@ -77,9 +77,11 @@
 
         <!-- ============ 编辑交互 ============ -->
         <!--
-          ⚠️ dtShowEditActions / dtShowDeleteAction 暂未声明。
-          内置「完成/取消/删除」按钮尚未实现（PRD §7.7 要求可配置是否内置），
-          声明一个不生效的属性只会让接入方误以为配了有效。实现后一并加回。
+          ⚠️ dtShowEditActions / dtShowDeleteAction **永久不声明**。
+          PRD v1.22：内置「完成/取消/删除」按钮这项需求已由产品决议取消，
+          组件恒不内置（理由见 PRD §7.7）。业务方的三个出口经第四层
+          EditController 接管实现。**不要再加回来**——
+          声明一个永远不会生效的属性，只会让接入方误以为配了有效。
         -->
         <attr name="dtEditHandleVisualSize" format="dimension" />
         <!-- 触摸热区不得小于 48dp（UF-001），业务方只应调大不应调小 -->
