@@ -30,6 +30,16 @@ val configureDependencyCheck: DependencyCheckExtension.() -> Unit = {
         nvd.apiKey.set(nvdKey)
     }
 
+    // 重试次数与间隔：默认值（5 次）对瞬时限流没有抵抗力。
+    //
+    // NVD 在匿名限速与持续访问下都会短暂返回 503，那是可恢复的、不是致命的错误，
+    // 默认的 5 次重试在连续 503 下会立刻放弃并抛 NvdApiRetryExceededException。
+    // ⚠️ **这两个值未经端到端验证**：调整后本机的运行始终没能跑完（见技术方案 §9.4.1
+    // 记录的第四轮排查），因此它们只是「更宽容」，不是「已验证有效」。
+    // `delay` 的单位是秒（客户端默认同为 8）。
+    nvd.maxRetryCount.set(20)
+    nvd.delay.set(8)
+
     // 漏洞库缓存放在仓库内以便 CI 缓存（~/.gradle 已有缓存但不覆盖这个自定义目录）
     // 注意：13.x 的 `data.directory` 是 `Property<String>`，传 File 会编译不过
     data.directory.set(rootProject.file(".gradle/dependency-check-cache").absolutePath)

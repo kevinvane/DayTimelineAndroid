@@ -1305,6 +1305,29 @@ CI 的 `instrumented` job 跑在 API 34 模拟器上，模拟器帧时序不代�
 | 2 | **Kotlin DSL 不生成访问器** | `dependencyCheck { }` 块整个不可用 | 必须 `configure<DependencyCheckExtension> { }` 显式指定类型 |
 | 3 | **13.x 强制 NVD API 且强制要 key** | `dependency-check-core` 里 `NvdDatafeedSource` **已被移除**，只剩 `NvdApiDataSource`；无 key 时客户端仍把空串发出去，服务端回「Invalid API Key, length of 0 too short」，最终抛出 **430 行 Java 堆栈** | 加 `verifyNvdApiKeyPresent` 前置检查，缺 key 就给一句能照做的指引（实测降到 **40 行、2 秒**结束）。**且必须用 `mustRunAfter` 接线**——只靠 `dependsOn` 的声明顺序时，Gradle 实测仍先跑扫描，那句人话根本没机会出现 |
 
+#### 第四轮排查：key 本身是有效的，卡住的是本机到 NVD 的链路（2026-10-13）
+
+配好 key 后连续三轮全部失败，排查结论如下（**与前三条不同，这次不是配置问题**）：
+
+| 验证 | 方法 | 结果 |
+|---|---|---|
+| key 是否有效 | 分别用 query param 与 HTTP header 请求 NVD | **query param → 404；header → 200**。且**随机伪造的 key 走 header 同样 404**，据此判定是 key 有效、而 query param 这种传法不被接受 |
+| 客户端用哪种传法 | `javap -c` 反编译 `open-vulnerability-clients` 9.0.6 的 `NvdCveClient` | 字节码为 `ldc "apiKey" → getfield apiKey → SimpleRequestBuilder.addHeader(...)`，**走 header**，与上面一致 |
+| 那为什么还失败 | 退避后重跑，观察进程状态 | 运行 44 分钟后仍在 NVD 更新阶段，**20 秒内 CPU 仅增长 0.1 秒**（即空等网络），且缓存目录始终未创建 |
+
+**结论**：配置、key、客户端三者均已确认无误；**瓶颈是本机（开发环境）到 NVD 的出口被严重限流**，
+同样的调用用 .NET 的 HTTP 栈可以拿到 200，但 dependency-check 的 Apache HttpClient 5
+在长时间运行中几乎拿不到有效响应。因此「首次全量同步」这一步**应在 CI（GitHub Actions）里完成**——
+CI 的出口与本机不同、限流计数也相互独立，且 `.gradle/dependency-check-cache` 已在 CI 配置了缓存，
+首跑之后每次都只做增量。
+
+**本次遗留两条诚实的说明**：
+
+1. `build.gradle.kts` 里把 `nvd.maxRetryCount` 调到 20、`nvd.delay` 保持 8 秒——
+   这两个值**未经端到端验证**（运行始终没跑完），只是「更宽容」，已在代码注释里标明。
+2. **「0 个高危漏洞」这个结论至今没有任何实测支撑**。在 CI 真正跑出报告之前，
+   §9.2 门禁表与《质量报告》里写的都必须是「已建立门禁，尚未跑通」。
+
 **另有一个「门禁形同虚设」的坑**，与 §9.4 第 2 条同源，不实测发现不了：
 插件若只装在根项目上，`:library` / `:app` / `:r8test` 根本没有 `dependencyCheckAnalyze` 任务；
 而即便三处都装了，`dependencyCheckAggregate` **也不会**把它们挂进任务图，它只汇总**已生成**的报告。
