@@ -41,17 +41,34 @@ class DayTimelineViewSavedStateTest {
     @Before
     fun setUp() {
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            view = DayTimelineView(context)
+            view = configuredView()
         }
+    }
+
+    /**
+     * 源视图与克隆视图**必须用同一份配置**。
+     *
+     * `SavedState` 只保存滚动位置 / 查看日期 / 选中态，**不保存配置**——
+     * 配置来自 attrs 或 `setConfig`，由业务方负责（见 §11.1）。
+     * 克隆若用默认配置，两边 `hourHeight` 就不同：同一个 `scrollOffset`
+     * 在高个子上有效、在矮个子上会被 `maxScroll` 钳掉，往返就对不上了。
+     *
+     * ## 本文件第一版正是这么错的，而且只在高密度设备上绿
+     *
+     * 第一版让克隆走 `DayTimelineView(context)` 默认配置，于是
+     * `scrollOffsetSurvivesRoundTrip` 实际在断言「两个 `hourHeight` 不同的视图
+     * 能否还原出同一个偏移」。能不能通过取决于**设备密度**：
+     *
+     * | 设备 | density | 克隆默认 `hourHeight` | 24h 内容高 | `maxScroll`（视口 1920） |
+     * |---|:--:|---:|---:|---:|
+     * | Pixel_XL_API_34 | 2.75 | 154px | 3696px | ~1776 ≥ 1104 ✅ |
+     * | Tablet API 26 | 2.0 | 112px | 2688px | **~800 < 1104 ❌** |
+     *
+     * 失败信息里的 `was:800` 正是 2688 − 1920。**测试被单台设备的密度反向固化了**。
+     */
+    private fun configuredView(): DayTimelineView = DayTimelineView(context).apply {
         // 与 DayTimelineViewBehaviorTest 用同一组配置，避免「同一行为两套基准」
-        view.setConfig(
-            TimelineConfig(
-                hourHeight = 120,
-                topPadding = 0,
-                bottomPadding = 0,
-                autoLocateOnFirstShow = false,
-            ),
-        )
+        setConfig(TEST_CONFIG)
     }
 
     /**
@@ -73,10 +90,18 @@ class DayTimelineViewSavedStateTest {
         clone.layout(0, 0, WIDTH, VIEWPORT)
     }
 
-    /** `scrollOffset` 必须原样恢复，且不被首次定位覆盖。 */
+    /**
+     * `scrollOffset` 必须原样恢复，且不被首次定位覆盖。
+     *
+     * 先 measure + layout 再滚动：视图没量过就没有高度，也就没有 `maxScroll`，
+     * 此时 `scrollToMinute` 得到的是**未经几何钳制**的值；等克隆视图一量，
+     * 立刻被钳到自己的上限，断言必然不等。
+     * 量过之后两者几何一致，钳制结果也一致。
+     */
     @Test
     fun scrollOffsetSurvivesRoundTrip() {
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            measureAndLayout(view)
             view.scrollToMinute(600, smooth = false)
             view.id = STATE_VIEW_ID
         }
@@ -84,7 +109,7 @@ class DayTimelineViewSavedStateTest {
         assertTrue("前置条件：偏移应非 0，实际 $savedOffset", savedOffset > 0)
 
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            val clone = DayTimelineView(context)
+            val clone = configuredView()
             restoreInto(clone, view)
             assertEquals("scrollOffset 必须原样恢复", savedOffset, clone.getScrollOffset())
         }
@@ -100,7 +125,7 @@ class DayTimelineViewSavedStateTest {
 
         var restored: Long? = null
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            val clone = DayTimelineView(context)
+            val clone = configuredView()
             restoreInto(clone, view)
             restored = readViewDate(clone)
         }
@@ -139,7 +164,7 @@ class DayTimelineViewSavedStateTest {
 
         var restored: String? = null
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            val clone = DayTimelineView(context)
+            val clone = configuredView()
             restoreInto(clone, view)
             restored = readSelectedId(clone)
         }
@@ -162,7 +187,7 @@ class DayTimelineViewSavedStateTest {
         var restoredDate: Long? = null
         var restoredId: String? = null
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            val clone = DayTimelineView(context)
+            val clone = configuredView()
             restoreInto(clone, view)
             restoredDate = readViewDate(clone)
             restoredId = readSelectedId(clone)
@@ -208,5 +233,19 @@ class DayTimelineViewSavedStateTest {
         const val VIEWPORT = 1920
         const val STATE_VIEW_ID = 0x7f0a00aa
         const val STUB_ID = "stub-event"
+
+        /**
+         * 源与克隆共用这一份，见 [configuredView]。
+         *
+         * `hourHeight` 取 120 是为了让 24 小时内容明显高于 [VIEWPORT]，
+         * 从而真的存在可滚动范围——否则 `maxScroll` 为 0，「往返保持偏移」就退化成
+         * 「0 往返成 0」，永远绿。
+         */
+        val TEST_CONFIG = TimelineConfig(
+            hourHeight = 120,
+            topPadding = 0,
+            bottomPadding = 0,
+            autoLocateOnFirstShow = false,
+        )
     }
 }

@@ -95,6 +95,16 @@ class CompatibilityMatrixTest {
         }
     }
 
+    /** 24 小时内容总高（px）。**从 dimens 现算**，因此随 density 变化。 */
+    private fun contentHeightPx(): Int =
+        24 * dimenPx(R.dimen.day_timeline_hour_height) +
+            dimenPx(R.dimen.day_timeline_top_padding) +
+            dimenPx(R.dimen.day_timeline_bottom_padding)
+
+    /** 给定视口高时可滚动的最大距离。 */
+    private fun maxScrollIn(viewportHeight: Int): Int =
+        (contentHeightPx() - viewportHeight).coerceAtLeast(0)
+
     /** View 的构造必须发生在主线程（会建 Handler / GestureDetector）。 */
     private fun onMain(block: () -> Unit) = instrumentation.runOnMainSync(block)
 
@@ -103,7 +113,21 @@ class CompatibilityMatrixTest {
         setNowMinute(FIXED_NOW)
     }
 
-    private fun measureAndLayout(view: DayTimelineView, width: Int, height: Int) {
+/** dp → px。 */
+    private fun dp(value: Int): Int =
+        (value * context.resources.displayMetrics.density).toInt()
+
+    /**
+     * 尺寸一律以 **dp** 传入，内部按当前 density 换算成 px。
+     *
+     * 写死 px 等于把「视口有多大」和「设备密度」绑死。一天的内容高恒为
+     * **1360dp**（24×56 + 8 + 8 top/bottom），若视口写死 1920px，那么 density
+     * 低于约 1.41 的设备上**视口比整天内容还高**，`maxScroll` 恒为 0——
+     * 「旋转后保持滚动位置」悄悄退化成「0 往返成 0」，且任何密度都绿。
+     */
+    private fun measureAndLayout(view: DayTimelineView, widthDp: Int, heightDp: Int) {
+        val width = dp(widthDp)
+        val height = dp(heightDp)
         view.measure(
             View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY),
@@ -111,7 +135,9 @@ class CompatibilityMatrixTest {
         view.layout(0, 0, width, height)
     }
 
-    private fun draw(view: DayTimelineView, width: Int, height: Int): Bitmap {
+    private fun draw(view: DayTimelineView, widthDp: Int, heightDp: Int): Bitmap {
+        val width = dp(widthDp)
+        val height = dp(heightDp)
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.drawColor(Color.WHITE)
@@ -186,12 +212,12 @@ class CompatibilityMatrixTest {
             val view = newView()
             view.gridPainter = recorder
             view.submitEvents(listOf(Ev("e", 540, 600, content = "会议")))
-            measureAndLayout(view, PORTRAIT_WIDTH, PORTRAIT_HEIGHT)
+            measureAndLayout(view, PORTRAIT_WIDTH_DP, PORTRAIT_HEIGHT_DP)
 
             view.layoutDirection = View.LAYOUT_DIRECTION_RTL
             rawAfterSet = view.layoutDirection
             rawBeforeDraw = view.layoutDirection
-            draw(view, PORTRAIT_WIDTH, PORTRAIT_HEIGHT)
+            draw(view, PORTRAIT_WIDTH_DP, PORTRAIT_HEIGHT_DP)
 
             val y = viewportYOf(540, view.getScrollOffset())
             rtlHit = view.eventAt(2f, y)?.id
@@ -273,14 +299,14 @@ class CompatibilityMatrixTest {
             val normalView = newView()
             normalView.gridPainter = normal
             normalView.submitEvents(listOf(Ev("e", 540, 600, content = longTitle)))
-            measureAndLayout(normalView, PORTRAIT_WIDTH, PORTRAIT_HEIGHT)
-            draw(normalView, PORTRAIT_WIDTH, PORTRAIT_HEIGHT)
+            measureAndLayout(normalView, PORTRAIT_WIDTH_DP, PORTRAIT_HEIGHT_DP)
+            draw(normalView, PORTRAIT_WIDTH_DP, PORTRAIT_HEIGHT_DP)
 
             val largeView = newView(scaled)
             largeView.gridPainter = large
             largeView.submitEvents(listOf(Ev("e", 540, 600, content = longTitle)))
-            measureAndLayout(largeView, PORTRAIT_WIDTH, PORTRAIT_HEIGHT)
-            val bitmap = draw(largeView, PORTRAIT_WIDTH, PORTRAIT_HEIGHT)
+            measureAndLayout(largeView, PORTRAIT_WIDTH_DP, PORTRAIT_HEIGHT_DP)
+            val bitmap = draw(largeView, PORTRAIT_WIDTH_DP, PORTRAIT_HEIGHT_DP)
             overflowInk = inkedColumnsOutsideRightEdge(bitmap, large.background, large.contentEnd)
         }
 
@@ -358,15 +384,31 @@ class CompatibilityMatrixTest {
         var landscapeScroll = -1
         var landscapeDate = -1L
         var landscapeHit: String? = "not-run"
-        var landscapeFrames = 0
+var landscapeFrames = 0
         var landscapeContentWidth = -1
+        var expectedScroll = -1
 
         onMain {
             val source = newView()
             source.id = STATE_VIEW_ID
             source.submitEvents(listOf(Ev("e", 540, 660, content = "跨小时会议")))
-            measureAndLayout(source, PORTRAIT_WIDTH, PORTRAIT_HEIGHT)
-            source.setScrollOffset(PORTRAIT_SCROLL)
+            measureAndLayout(source, PORTRAIT_WIDTH_DP, PORTRAIT_HEIGHT_DP)
+            // 滚动目标**按几何现算**，不写死像素。
+            //
+            // 第一版写死 `PORTRAIT_SCROLL = 1234`，而 `newView()` 用默认 `hourHeight`
+            // （56dp，随 density 缩放）。于是「能否滚到 1234」完全由设备密度决定：
+            //
+            // | 设备 | density | hourHeight | 24h 内容高 | 竖屏 maxScroll | 1234 可否 |
+            // |---|:--:|---:|---:|---:|:--:|
+            // | Pixel_XL_API_34 | 2.75 | 154px | 3696px | ~1776 | 可 ✅ |
+            // | Tablet API 26 | 2.0 | 112px | 2688px | ~800 | 不可，钳到 800 ❌ |
+            //
+            // 失败信息 `expected:<1234> but was:<800>` 里的 800 就是 2688 − 1920。
+            // 取竖屏可滚动范围的一半：竖屏内一定合法，横屏上限更大因而也合法。
+            source.setScrollOffset(maxScrollIn(dp(PORTRAIT_HEIGHT_DP)) / 2)
+            // 读回被几何钳制后的真值——断言的是「设了多少还回来多少」，
+            // 而不是「某个写死的数字」。
+            expectedScroll = source.getScrollOffset()
             source.setViewDate(threeDaysAgo)
             source.saveHierarchyState(container)
 
@@ -378,13 +420,13 @@ class CompatibilityMatrixTest {
             rotated.id = STATE_VIEW_ID
             rotated.submitEvents(listOf(Ev("e", 540, 660, content = "跨小时会议")))
             rotated.restoreHierarchyState(container)
-            measureAndLayout(rotated, LANDSCAPE_WIDTH, LANDSCAPE_HEIGHT)
+            measureAndLayout(rotated, LANDSCAPE_WIDTH_DP, LANDSCAPE_HEIGHT_DP)
             landscapeScroll = rotated.getScrollOffset()
             landscapeDate = readViewDate(rotated)
 
             val recorder = RecordingGridPainter()
             rotated.gridPainter = recorder
-            draw(rotated, LANDSCAPE_WIDTH, LANDSCAPE_HEIGHT)
+            draw(rotated, LANDSCAPE_WIDTH_DP, LANDSCAPE_HEIGHT_DP)
             landscapeFrames = recorder.frames
             landscapeContentWidth = recorder.contentEnd - recorder.contentStart
 
@@ -393,16 +435,19 @@ class CompatibilityMatrixTest {
             landscapeHit = rotated.eventAt(x, viewportYOf(540, rotated.getScrollOffset()))?.id
         }
 
-        assertEquals("旋转后查看日期必须保持（D12 / E9）", threeDaysAgo, landscapeDate)
+assertEquals("旋转后查看日期必须保持（D12 / E9）", threeDaysAgo, landscapeDate)
+        // 前置条件：偏移必须真的是「滚到了某个位置」，否则下面那条断言
+        // 可能靠「两边都是 0」空跑通过。
+        assertTrue("竖屏应真能滚动到某个位置（实测 $expectedScroll）", expectedScroll > 0)
         assertEquals(
-            "旋转后滚动位置必须保持（D12）：竖屏设了 $PORTRAIT_SCROLL",
-            PORTRAIT_SCROLL,
+            "旋转后滚动位置必须保持（D12）：竖屏设了 $expectedScroll",
+            expectedScroll,
             landscapeScroll,
         )
         assertTrue("旋转后应当真的绘制了网格（实测 $landscapeFrames 帧）", landscapeFrames > 0)
         assertTrue(
-            "旋转后内容区应按横屏宽度重新计算（实测 $landscapeContentWidth px，竖屏为 $PORTRAIT_WIDTH）",
-            landscapeContentWidth > PORTRAIT_WIDTH,
+"旋转后内容区应按横屏宽度重新计算（实测 $landscapeContentWidth px，竖屏为 ${dp(PORTRAIT_WIDTH_DP)}）",
+            landscapeContentWidth > dp(PORTRAIT_WIDTH_DP),
         )
         assertNotNull("横屏几何下应能命中日程", landscapeHit)
         assertEquals("横屏下命中的应是那条 09:00–11:00 的日程", "e", landscapeHit)
@@ -412,15 +457,18 @@ class CompatibilityMatrixTest {
         /** 固定「当前时间」，让三态推导不随运行时刻变化。 */
         const val FIXED_NOW = 720
 
-        const val PORTRAIT_WIDTH = 1080
-        const val PORTRAIT_HEIGHT = 1920
-        const val LANDSCAPE_WIDTH = 1920
-        const val LANDSCAPE_HEIGHT = 1080
+/**
+         * 视口尺寸以 **dp** 给出（见 [measureAndLayout] 的理由）。
+         *
+         * 取 360×640 / 640×360 这类常见手机尺寸：一天内容恒为 1360dp，
+         * 视口必须显著小于它，否则任何密度下都无从滚动。
+         */
+        const val PORTRAIT_WIDTH_DP = 360
+        const val PORTRAIT_HEIGHT_DP = 640
+        const val LANDSCAPE_WIDTH_DP = 640
+        const val LANDSCAPE_HEIGHT_DP = 360
 
-        /** 旋转前后必须保持的滚动位置（远离边界，便于察觉被夹取）。 */
-        const val PORTRAIT_SCROLL = 1234
-
-        /** §12.2 要求的系统最大字体缩放档。 */
+/** §12.2 要求的系统最大字体缩放档。 */
         const val FONT_SCALE_200 = 2.0f
 
         /** 状态容器靠 view id 配对，两个视图必须同 id。 */
