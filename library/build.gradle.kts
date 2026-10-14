@@ -6,6 +6,19 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.detekt)
+    // 依赖漏洞扫描（PRD §12.4「已知高危漏洞 0 个高危」）。
+    //
+    // 根项目的 `subprojects { apply(plugin = ...) }` 已经把它装到本模块了，
+    // 这里**再显式声明一次**不是重复，是为了两件事：
+    // ① 让「library 被扫了」这件事在本模块的构建文件里一眼可见——Android Studio 的
+    //    Gradle 侧边栏按模块列任务，只在根项目用字符串 apply 时本模块的任务树
+    //    里经常看不到 `dependencyCheckAnalyze`，容易误判成「插件没生效」；
+    // ② 走版本目录 alias 而不是裸 `apply(plugin = "org.owasp.dependencycheck")`，
+    //    版本才不会与 libs.versions.toml 脱钩。
+    // 幂等：根项目那次 apply 在插件已装上时是空操作，不会冲突。
+    // 扩展配置（阈值 / NVD key / 报告目录）统一在根项目的 configureDependencyCheck 里，
+    // 本模块不重复写——见根 build.gradle.kts 顶部的 KDoc。
+    alias(libs.plugins.owasp.dependency.check)
     jacoco
 }
 
