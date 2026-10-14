@@ -1,17 +1,27 @@
 package com.github.kevinvane.daytimeline.app
 
+import android.graphics.Rect
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.View
+import android.widget.ScrollView
 import androidx.test.core.app.ActivityScenario
+import androidx.test.espresso.Espresso
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.PerformException
+import androidx.test.espresso.UiController
+import androidx.test.espresso.ViewAction
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.replaceText
+import androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.kevinvane.daytimeline.library.DayTimelineView
 import com.github.kevinvane.daytimeline.library.core.PlacedBlock
+import org.hamcrest.Matcher
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -114,7 +124,7 @@ class MainActivityCancelPathTest {
 
         enterEditing("standup")
         editTitleTo(NEW_TITLE)
-        onView(withId(R.id.form_confirm)).perform(click())
+        clickFormButton(R.id.form_confirm)
         waitUntilIdle()
 
         assertFalse("「确定」后应退出编辑态", timeline.isEditing())
@@ -139,7 +149,7 @@ class MainActivityCancelPathTest {
         val before = dataSnapshot()
         enterEditing("standup")
         editTitleTo(NEW_TITLE)
-        onView(withId(R.id.form_cancel)).perform(click())
+        clickFormButton(R.id.form_cancel)
         waitUntilIdle()
 
         assertFalse("取消表单后必须退出编辑态", timeline.isEditing())
@@ -370,6 +380,104 @@ private fun invokeInternal(name: String, block: PlacedBlock) {
         waitUntilIdle()
     }
 
+    /** 把表单滚到底部，露出「取消 / 确定」。 */
+    private fun scrollFormToBottom() {
+        onView(withId(R.id.form_scroll)).perform(
+            object : ViewAction {
+                override fun getConstraints(): Matcher<View> = isAssignableFrom(ScrollView::class.java)
+
+                override fun getDescription(): String = "把表单滚到底部"
+
+                override fun perform(uiController: UiController, view: View) {
+                    (view as ScrollView).fullScroll(View.FOCUS_DOWN)
+                    uiController.loopMainThreadUntilIdle()
+                }
+            },
+        )
+    }
+
+    /** 目标 View 的全局可视面积占比（0f~1f）；拿不到时为 0f。 */
+    private fun visibleRatioOf(id: Int): Float {
+        var ratio = 0f
+        onView(withId(id)).perform(
+            object : ViewAction {
+                override fun getConstraints(): Matcher<View> = isAssignableFrom(View::class.java)
+
+                override fun getDescription(): String = "测量可视面积占比"
+
+                override fun perform(uiController: UiController, view: View) {
+                    val r = Rect()
+                    ratio = if (view.getGlobalVisibleRect(r) && view.width > 0 && view.height > 0) {
+                        (r.width().toFloat() * r.height()) / (view.width.toFloat() * view.height)
+                    } else {
+                        0f
+                    }
+                }
+            },
+        )
+        return ratio
+    }
+
+    /**
+     * 点表单底部的「取消 / 确定」。
+     *
+     * 直接 `click()` 在**屏幕不够高**的设备上必红，且失败点离被测的数据链路很远。
+     * 这里分三步，每一步都对应一个实测踩过的坑：
+     *
+     * 1. **先把表单滚到底部**。两个按钮装在 `sheet_event_form.xml` 的 `ScrollView` 里，
+     *    矮屏上落在折叠线以下。
+     * 2. **等按钮真正落进可视区**。`BottomSheetDialog` 升起由 `ViewDragHelper` 驱动，
+     *    Espresso 的 idling 资源不认识它，`waitUntilIdle()` 返回时可能还在往上滑。
+     * 3. **收键盘、等位置稳定、再点**。输入框刚被 `replaceText` 聚焦过，
+     *    系统输入法窗口会**间歇性**弹出抢走触摸。
+     *
+     * 不满足 Espresso 的「90% 可见」时它直接抛 `PerformException` 且**不执行点击**：
+     *
+     * ```
+     * PerformException: Error performing 'single click' on view '...form_cancel'
+     * Caused by: java.lang.RuntimeException: Action will not be performed because
+     *   the target view does not match one or more of the following constraints:
+     *   (view has effective visibility <VISIBLE> and view.getGlobalVisibleRect()
+     *    covers at least <90> percent of the view's area)
+     * ```
+     *
+     * 这条路径只在 Pixel_XL_API_34 之外暴露——本文件此前只在那一台上跑过
+     * （1080×2400，表单一屏放得下），换到 1280×800 的设备就必红。
+     *
+     * 最后重试 [CLICK_ATTEMPTS] 次：**重试的只是点击动作**，断言与数据链路一个没动。
+     */
+    private fun clickFormButton(id: Int) {
+        scrollFormToBottom()
+
+        val deadline = System.currentTimeMillis() + VISIBLE_TIMEOUT_MS
+        var ratio = visibleRatioOf(id)
+        while (ratio < VISIBLE_RATIO_THRESHOLD && System.currentTimeMillis() < deadline) {
+            waitUntilIdle()
+            SystemClock.sleep(50)
+            ratio = visibleRatioOf(id)
+        }
+        assertTrue(
+            "表单按钮没落进可视区：实测可见占比 $ratio，阈值 $VISIBLE_RATIO_THRESHOLD",
+            ratio >= VISIBLE_RATIO_THRESHOLD,
+        )
+
+        Espresso.closeSoftKeyboard()
+        waitUntilIdle()
+
+        var lastError: PerformException? = null
+        repeat(CLICK_ATTEMPTS) {
+            try {
+                onView(withId(id)).perform(click())
+                return
+            } catch (e: PerformException) {
+                lastError = e
+                waitUntilIdle()
+                SystemClock.sleep(100)
+            }
+        }
+        throw lastError!!
+    }
+
     private fun closeForm() {
         repeat(CLOSE_ATTEMPTS) {
             if (!timeline.isEditing()) return
@@ -377,7 +485,7 @@ private fun invokeInternal(name: String, block: PlacedBlock) {
                 .sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
             waitUntilIdle()
         }
-        if (timeline.isEditing()) onView(withId(R.id.form_cancel)).perform(click())
+        if (timeline.isEditing()) clickFormButton(R.id.form_cancel)
     }
 
     private fun closeDetailPopup() {
@@ -444,6 +552,15 @@ private fun invokeInternal(name: String, block: PlacedBlock) {
     }
 
     private companion object {
+        /** Espresso 要求目标至少 90% 可见，这里留一点余量。 */
+        const val VISIBLE_RATIO_THRESHOLD = 0.95f
+
+        /** 等表单落位的上限；超时即判失败，不盲点。 */
+        const val VISIBLE_TIMEOUT_MS = 5_000L
+
+        /** 点击重试次数：模拟器上点击偶发丢失，重试的是点击动作本身。 */
+        const val CLICK_ATTEMPTS = 3
+
         /** 「怎么关掉弹窗」在真机上因设备而异，循环若干次直到收尾发生。 */
         const val CLOSE_ATTEMPTS = 4
 

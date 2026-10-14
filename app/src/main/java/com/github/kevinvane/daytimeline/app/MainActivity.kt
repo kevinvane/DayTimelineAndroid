@@ -15,6 +15,7 @@ import com.github.kevinvane.daytimeline.library.api.TimelineListener
 import com.github.kevinvane.daytimeline.library.core.DataIssue
 import com.github.kevinvane.daytimeline.library.core.MinuteOfDay
 import com.github.kevinvane.daytimeline.library.core.TimelineEvent
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 
 /**
@@ -227,6 +228,15 @@ fun onDetailEditFailed(eventId: String) {
         }
 
         dialog.show()
+
+        // **必须强制展开。** BottomSheet 的默认行为在内容放不下时（矮屏 / 横屏 /
+        // 大字体）会停在 collapsed 中间态，只露出顶部一条，实测在 1280×800 的
+        // 横屏设备上整张表单只显示约 128px——底部的「取消 / 确定」整排落在屏幕外，
+        // **用户根本点不到**（仪器测试报「可见面积占比 0.0」）。
+        //
+        // 表单本身已是 `ScrollView`，内容再高也能滚，所以让它一路展开即可。
+        dialog.behavior.skipCollapsed = true
+        dialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED
     }
 
     private fun submitForm(

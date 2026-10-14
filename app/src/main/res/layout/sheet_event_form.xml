@@ -9,10 +9,16 @@
     表单「确定」→ timeline.applyEdit(EditResult(...)) → timeline.confirmEdit()
     表单「取消」→ timeline.cancelEdit()
 
-  其中「备注」字段刻意**不会**传给组件——它只存在于 DemoEvent 自己的数据类里，
+其中「备注」字段刻意**不会**传给组件——它只存在于 DemoEvent 自己的数据类里，
   组件既不接收也不感知（PRD §7.7.1 职责边界）。
+
+  `form_scroll` 这个 id 是给仪器测试用的：矮屏上「取消 / 确定」会落在折叠线以下，
+  测试要先滚到底部才点得到（见 `MainActivityCancelPathTest.scrollFormToBottom`）。
+  注意**按钮够不到的根本原因不是这里的高度写法**，而是 `BottomSheetDialog` 停在
+  collapsed 中间态——那个已在 `MainActivity.showForm` 里强制展开修掉。
 -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/form_scroll"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:padding="20dp">
