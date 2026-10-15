@@ -144,7 +144,36 @@ class DayTimelineView @JvmOverloads constructor(
      */
     private var editDraft: EditDraft? = null
     private val gestureArbiter = GestureArbiter(dragThresholdPx = 48)
-    private val hitTester = HitTester(minTouchTarget = 48, handleTouchSize = 48)
+        /**
+     * 触摸热区尺寸**必须来自 [Dimens]**，不得写死像素值。
+     *
+     * ## 为什么曾经写死过，且没人发现
+     *
+     * 这里一度是 `HitTester(minTouchTarget = 48, handleTouchSize = 48)`——
+     * 两个 `48` 被当成了**像素**。而 [Dimens] 早已按 density 换算好：
+     * `handleTouchSize = maxOf(126px, 126px)`（48dp @ density 2.625）。
+     *
+     * 后果是热区只有应有值的约 1/2.6：density 2.625 的设备上只有 18.3dp，
+     * density 1.0 的设备上才碰巧等于 48dp（**一个 bug 恰好在低密度机型上是对的**）。
+     * PRD §7.2 / UF-001 要求的「热区 ≥ 48dp、视觉可更小」在绝大多数现代机型上没达成。
+     *
+     * ## 为什么既有测试没抓到
+     *
+     * `DayTimelineViewTest` 断言的是 `readDimensInt(view, "handleTouchSize") >= 48dp`
+     * ——读的是 **[Dimens]** 的值（正确），**从没查 [HitTester] 实际收进了什么**。
+     * 声明与用法之间隔着一个构造函数参数：静态检查看不见，
+     * 覆盖率也只管「这行执行到了」而不管「参数对不对」。
+     * 这是本仓库「声明了却没有代码」那类缺陷的**镜像版**——
+     * 声明是对的，用错了地方，而测试守住了声明。
+     *
+     * 现由 `HandleHotZoneBoundaryTest` 逐像素探测热区真实边界来守住。
+     */
+    private var hitTester = newHitTester()
+
+    private fun newHitTester() = HitTester(
+        minTouchTarget = dimens.minTouchTarget,
+        handleTouchSize = dimens.handleTouchSize,
+    )
     private var grabbedHandle = 0
     private var edgeScrollScheduled = false
     private var blockTops = IntArray(0)
@@ -267,6 +296,8 @@ class DayTimelineView @JvmOverloads constructor(
     /** 依据当前 [config] 重算 dimens / paints / colors / 布局。 */
     private fun rebindDerivedState() {
         dimens = Dimens.resolve(context, config)
+        // 热区尺寸随 dimens 走，必须同步重建——写死像素那次就是因为它是构造期的一次性 val
+        hitTester = newHitTester()
         paints = buildPaints()
         colors = dimens.theme.toPublicColors()
         gridPaints = GridPainter.Paints(
