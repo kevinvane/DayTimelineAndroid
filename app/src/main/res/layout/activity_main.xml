@@ -16,6 +16,13 @@
       FI-012 首次定位**默认开启**，因此这里没有显式写 app:dtAutoLocateOnFirstShow——
       打开页面时会自动定位到当前时间上方三分之一屏（PRD §8.5）。
       如需停在 00:00 顶部，加 app:dtAutoLocateOnFirstShow="false" 即可。
+
+      **app:dtSnapMinutes="5" 是一个「看不出来」的取值**（2026-10-14 真机走查实测）：
+      格高 64dp 下 5 分钟只相当于 5.33dp，在 density 2.6 的真机上约 14px，
+      人工拖拽时**完全察觉不到吸附发生过**，一度被当成缺陷上报。
+      实测把步长临时改成 60（整点，约 340px）后吸附一目了然，确认接线本身没问题。
+      库内默认值是 15 分钟（`day_timeline_snap_minutes`），约 42px，是可感知的——
+      想让 demo 演示出吸附效果，建议改用 15 或更大。
     -->
     <com.github.kevinvane.daytimeline.library.DayTimelineView
         android:id="@+id/timeline"
