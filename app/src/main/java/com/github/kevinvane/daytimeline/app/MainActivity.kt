@@ -90,17 +90,17 @@ class MainActivity : AppCompatActivity() {
         // ── 第四层：接管编辑层，弹出本 demo 自己的表单（AD-22）──
         timeline.editController = object : DayTimelineView.EditController {
             override fun onEnterEditing(draft: EditDraft): Boolean {
-                // 采集 §12.1「P4 拖拽跟手延迟」时用 `am start --ez no_edit_form true` 打开。
+                // **默认不接管**：长按直接进组件的拖拽手柄态（FI-004）。
                 //
-                // 长按进编辑态会立刻弹出表单，那是**模态窗口**，盖住时间轴后
-                // 拖拽手势根本发不出去——而「手指真实拖动时组件跟不跟手」
-                // 恰恰是只能用**真手指**测的那一项（`adb input` 注入不了连续手势）。
-                //
-                // 用显式开关而不是注释掉 `showForm`，是为了避免「测完忘了还原」——
-                // 返回 false 后组件自己管编辑态，FI-010 的语义会跟着变，
-                // demo 的接管链路（AD-22）依赖 `true`。
-                if (intent?.getBooleanExtra(EXTRA_NO_EDIT_FORM, false) == true) {
-                    android.util.Log.i(TAG, "【P4 采集】不接管编辑层，让组件自身进拖拽态")
+                // 这是产品/demo 侧的取舍，不是组件缺陷——`showForm = false` 时
+                // 组件自己管编辑态，于是：
+                //   - FI-010「点外部区域视为取消」生效（接管时它被关掉）；
+                //   - **没有任何确认入口**：PRD v1.22 已取消组件内置的
+                //     「完成/取消/删除」按钮，拖完松手等于放弃。
+                // 想看 AD-22 的接管链路（业务方弹自己的表单）用
+                // `am start --ez show_edit_form true`。
+                if (intent?.getBooleanExtra(EXTRA_SHOW_EDIT_FORM, false) != true) {
+                    android.util.Log.i(TAG, "不接管编辑层，长按直接进拖拽手柄态")
                     return false
                 }
                 showForm(draft)
@@ -366,13 +366,21 @@ fun onDetailEditFailed(eventId: String) {
         const val EXTRA_FIRST_FRAME_MS = "first_frame_ms"
 
         /**
-         * `--ez no_edit_form true`：长按**不**弹表单，让组件自身进拖拽态。
+         * `--ez show_edit_form true`：长按**弹出**业务方自己的表单（AD-22 接管链路）。
          *
-         * 仅供采集 §12.1「P4 拖拽跟手延迟」时用**真手指**拖动——
-         * 那个手势 `adb input` 注入不出来，只能人上手。
-         * 正常使用**不带这个参数**，行为与之前完全一致。
+         * **默认 `false`**：长按直接进组件的拖拽手柄态（FI-004）。
+         * 取这个默认值是因为长按最常用的意图就是**拖动**，
+         * 而表单一弹出来就是模态窗口，拖拽手势根本发不出去。
+         *
+         * 代价（写在这里，别让下一个人以为是 bug）：
+         * `false` 时组件自己管编辑态，于是 **FI-010「点外部区域视为取消」生效**，
+         * 且 PRD v1.22 已取消组件内置的「完成/取消/删除」按钮——
+         * **拖完松手等于放弃，没有任何确认入口**。
+         *
+         * `MainActivityCancelPathTest` 那 7 条正是靠 `true` 测取消链路的
+         * （D3 / PRD Q1），因此它们启动时会显式带上这个 extra。
          */
-        const val EXTRA_NO_EDIT_FORM = "no_edit_form"
+        const val EXTRA_SHOW_EDIT_FORM = "show_edit_form"
     }
 }
 

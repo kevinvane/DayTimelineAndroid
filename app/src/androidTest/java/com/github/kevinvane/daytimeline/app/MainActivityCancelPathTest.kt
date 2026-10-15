@@ -1,6 +1,7 @@
 package com.github.kevinvane.daytimeline.app
 
 import android.graphics.Rect
+import android.content.Intent
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.view.KeyEvent
@@ -80,7 +81,15 @@ class MainActivityCancelPathTest {
         // CI 的模拟器默认关好了动画，本地真机未必——**在测试里自己关**，
         // 而不是让人记得先改系统设置：靠环境配合的测试，换台机器就红。
         disableAnimations()
-        scenario = ActivityScenario.launch(MainActivity::class.java)
+        // **必须显式带上 `EXTRA_SHOW_EDIT_FORM`**：demo 的默认行为是
+        // 「长按直接进组件的拖拽手柄态」（产品取舍，见 MainActivity 里该常量的 KDoc）。
+        // 而本文件这 7 条测的正是 AD-22 的**接管链路**——业务方弹自己的表单、
+        // 表单的确定/取消/被关掉都要收尾。不带这个 extra 长按就不会弹表单，7 条全红。
+        val intent = Intent(
+            InstrumentationRegistry.getInstrumentation().targetContext,
+            MainActivity::class.java,
+        ).putExtra(MainActivity.EXTRA_SHOW_EDIT_FORM, true)
+        scenario = ActivityScenario.launch<MainActivity>(intent)
         scenario.onActivity { activityRef = it }
         waitUntilIdle()
     }
