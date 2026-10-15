@@ -69,6 +69,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 采集 §12.1 性能指标时用的数据量；默认 0 = 沿用手工挑选的 11 条。
+        val requested = intent?.getIntExtra(EXTRA_EVENT_COUNT, 0) ?: 0
+        if (requested > events.size) {
+            events.addAll(SampleEvents.generated(requested - events.size))
+        }
         setContentView(R.layout.activity_main)
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -163,6 +168,40 @@ class MainActivity : AppCompatActivity() {
             }
         }
         timeline.submitEvents(events)
+        scheduleFirstFrameProbe()
+    }
+
+    /**
+     * 记录「`onCreate` 起点 → 时间轴首帧绘制完成」的耗时（PRD §12.1 首次显示耗时）。
+     *
+     * **刻意从 `onCreate` 起算，而不是用 `am start -W`。** §12.1 写的是
+     * 「不含 App 自身启动」——`am start -W` 的 `ThisTime` 把进程创建、
+     * `Application.onCreate`、类加载全算进去了，那不是组件的耗时。
+     * 这里从 `Activity.onCreate` 第一行起算，天然排除了进程与 Application 阶段。
+     *
+     * 用 `OnPreDrawListener` 而不是 `post{}`：`post` 排在消息队列末尾，
+     * 量到的是「这一帧画完之后」而不是「这一帧开始画」；`OnPreDraw` 更贴近
+     * 「首帧呈现」的定义，且**只触发一次**（首帧 draw 之后立刻摘掉监听）。
+     *
+     * 仅在传入 `--ez first_frame_ms true` 时输出，正常使用不留任何日志。
+     */
+    private fun scheduleFirstFrameProbe() {
+        if (!intent?.getBooleanExtra(EXTRA_FIRST_FRAME_MS, false)!!) return
+        val startNanos = System.nanoTime()
+        val view = timeline
+        view.viewTreeObserver.addOnPreDrawListener(
+            object : android.view.ViewTreeObserver.OnPreDrawListener {
+                override fun onPreDraw(): Boolean {
+                    val elapsedMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLI
+                    view.viewTreeObserver.removeOnPreDrawListener(this)
+                    android.util.Log.i(
+                        TAG,
+                        "FIRST_FRAME_MS=$elapsedMs event_count=${events.size}",
+                    )
+                    return true
+                }
+            },
+        )
     }
 
     // ---- 业务方自建的表单（组件零参与）----
@@ -294,6 +333,24 @@ fun onDetailEditFailed(eventId: String) {
 
     companion object {
         private const val TAG = "DayTimelineDemo"
+
+        /**
+         * `--ei event_count 200`：把 demo 的日程数扩到指定条数（PRD §12.1 的基准数据量）。
+         *
+         * **为什么要这个入口**：demo 原本写死 11 条，每一条都在刻意覆盖一条布局规则
+         * （重叠 / 包含 / 相邻 / 极短 / 跨全天），因而**没有**数量入口。
+         * 而 §12.1 的「首次显示耗时」「滚动流畅度」都以**单日 200 条**为基准——
+         * 拿 11 条去测，数字再好看也不构成验收证据。
+         *
+         * 手写的 11 条**始终保留**（含 `standup`，仪器测试依赖它），补足的部分由
+         * [SampleEvents.generated] 按固定种子生成，所以失败可原样复现。
+         */
+        const val EXTRA_EVENT_COUNT = "event_count"
+
+        /** `--ez first_frame_ms true`：输出首帧耗时日志，见 [scheduleFirstFrameProbe]。 */
+        const val NANOS_PER_MILLI = 1_000_000.0
+
+        const val EXTRA_FIRST_FRAME_MS = "first_frame_ms"
     }
 }
 
@@ -329,6 +386,52 @@ private object SampleEvents {
      * demo 数据要一眼看出「几点到几点」，写成分钟数反而更难核对。
      */
     private fun at(hour: Int, minute: Int = 0): Int = hour * 60 + minute
+
+    /**
+     * 生成 [count] 条日程，补足到 §12.1 的基准数据量。
+     *
+     * ## 为什么要自己写 LCG
+     *
+     * 刻意**不用 `kotlin.random`**：真机采性能数据要能复现，
+     * 种子固定的 LCG 保证「同一台设备上隔一天再采，布局完全一致」。
+     * 这与 `PerformanceBenchmarkTest` 的做法一致。
+     *
+     * ## 分布
+     *
+     * §12.1 要求「覆盖从稀疏到密集的典型区间」，因此按**时段**分层而不是均匀撒：
+     * 上午与下午各放一段密集区（制造真实的多列重叠），中午与夜间稀疏。
+     * 时长 15–120 分钟，避免全部等长导致分栏结果退化。
+     *
+     * 全部落在当天 00:00–23:59 内且 `from < to`，不制造非法数据——
+     * 组件对脏数据是「容错 + 事件上抛」，在这里造脏数据只会让
+     * 性能数据失真（组件要多走一遍容错分支）。
+     */
+    fun generated(count: Int): List<DemoEvent> {
+        if (count <= 0) return emptyList()
+        var seed = 20261014L
+        fun next(bound: Int): Int {
+            seed = seed * 25214903917L + 11L
+            val v = (seed ushr 16) and 0x7FFFFFFF
+            return (v % bound).toInt()
+        }
+
+        val out = ArrayList<DemoEvent>(count)
+        repeat(count) { i ->
+            // 时段：0-59 与 720-1079 分钟（上午 / 下午）各占 40%，其余平摊到全天
+            val start = when (next(100)) {
+                in 0..39 -> next(4 * 60)
+                in 40..79 -> 720 + next(4 * 60)
+                else -> next(24 * 60)
+            }
+            val duration = 15 + next(105)
+            val end = (start + duration).coerceAtMost(24 * 60 - 1)
+            // start 必定 < end：start 最大 1439，而 duration ≥ 15 时若越界已被上面夹到 1439，
+            // 这里再兜一次底，确保不存在 from >= to 的非法数据。
+            val safeStart = start.coerceAtMost((end - 1).coerceAtLeast(0))
+            out += DemoEvent("gen_$i", safeStart, end, "生成日程 $i")
+        }
+        return out
+    }
 
     fun today(): List<DemoEvent> = listOf(
         DemoEvent("standup", at(9), at(9, 30), "站会"),
