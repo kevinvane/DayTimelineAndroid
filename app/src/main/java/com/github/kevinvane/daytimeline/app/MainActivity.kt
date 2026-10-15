@@ -90,6 +90,19 @@ class MainActivity : AppCompatActivity() {
         // ── 第四层：接管编辑层，弹出本 demo 自己的表单（AD-22）──
         timeline.editController = object : DayTimelineView.EditController {
             override fun onEnterEditing(draft: EditDraft): Boolean {
+                // 采集 §12.1「P4 拖拽跟手延迟」时用 `am start --ez no_edit_form true` 打开。
+                //
+                // 长按进编辑态会立刻弹出表单，那是**模态窗口**，盖住时间轴后
+                // 拖拽手势根本发不出去——而「手指真实拖动时组件跟不跟手」
+                // 恰恰是只能用**真手指**测的那一项（`adb input` 注入不了连续手势）。
+                //
+                // 用显式开关而不是注释掉 `showForm`，是为了避免「测完忘了还原」——
+                // 返回 false 后组件自己管编辑态，FI-010 的语义会跟着变，
+                // demo 的接管链路（AD-22）依赖 `true`。
+                if (intent?.getBooleanExtra(EXTRA_NO_EDIT_FORM, false) == true) {
+                    android.util.Log.i(TAG, "【P4 采集】不接管编辑层，让组件自身进拖拽态")
+                    return false
+                }
                 showForm(draft)
                 return true // 接管：组件不再响应 FI-010，退出路径交给我们
             }
@@ -351,6 +364,15 @@ fun onDetailEditFailed(eventId: String) {
         const val NANOS_PER_MILLI = 1_000_000.0
 
         const val EXTRA_FIRST_FRAME_MS = "first_frame_ms"
+
+        /**
+         * `--ez no_edit_form true`：长按**不**弹表单，让组件自身进拖拽态。
+         *
+         * 仅供采集 §12.1「P4 拖拽跟手延迟」时用**真手指**拖动——
+         * 那个手势 `adb input` 注入不出来，只能人上手。
+         * 正常使用**不带这个参数**，行为与之前完全一致。
+         */
+        const val EXTRA_NO_EDIT_FORM = "no_edit_form"
     }
 }
 
