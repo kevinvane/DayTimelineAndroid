@@ -96,18 +96,42 @@ class DocsConfigCoverageTest {
     /** 既定换算：字段名 → XML 属性名（`hourHeight` → `dtHourHeight`）。 */
     private fun attrNameOf(field: String) = "dt" + field.replaceFirstChar { it.uppercase() }
 
-    /** 完整能力文档里作为表格首列出现的属性名。 */
-    private fun documentedAttrNames(): Set<String> =
-        Regex("""`((?:dt)\w+)`""")
-            .findAll(read("docs/DayTimeline-完整能力文档.md"))
-            .map { it.groupValues[1] }
-            .toSet()
+    /**
+     * 抽出一篇文档里出现的全部 `dt` 属性名。
+     *
+     * ## 为什么必须同时匹配两种写法
+     *
+     * 第一版只认反引号包裹的 `` `dtXxx` ``，于是**代码块里的属性名全部漏网**——
+     * 而代码块恰恰是接入方唯一会**复制粘贴**的地方：
+     * `app:dtScrollModeTypo="external"` 写在 XML 示例里，照抄进项目就编译不过。
+     * 补上 `app:dtXxx` 这一路之后，当场就把快速上手文档里一处真实笔误抓了出来。
+     *
+     * 两路都要，是因为反引号那路覆盖正文里对属性的讨论，
+     * `app:` 那路覆盖会被复制的代码片段。
+     */
+    private fun attrNamesIn(relativePath: String): Set<String> {
+        val text = read(relativePath)
+        val backticked = Regex("""`((?:dt)\w+)`""").findAll(text).map { it.groupValues[1] }
+        val inCode = Regex("""\bapp:(dt\w+)\s*=""").findAll(text).map { it.groupValues[1] }
+        return (backticked + inCode).toSet()
+    }
 
-    private fun readmeAttrNames(): Set<String> =
-        Regex("""`((?:dt)\w+)`""")
-            .findAll(read("README.md"))
-            .map { it.groupValues[1] }
-            .toSet()
+    /** 完整能力文档里作为表格首列出现的属性名。 */
+    private fun documentedAttrNames(): Set<String> = attrNamesIn("docs/DayTimeline-完整能力文档.md")
+
+    private fun readmeAttrNames(): Set<String> = attrNamesIn("README.md")
+
+    /**
+     * 快速上手文档（DL-03）里出现的 `dt` 属性名。
+     *
+     * ## 为什么把它也纳入扫描
+     *
+     * DL-03 交付后就有**第三份**会写属性名的文档，而它是最容易被复制粘贴的一份。
+     *
+     * 只做**反向**校验（不许写不存在的），不要求它覆盖全部 55 项：
+     * 快速上手的价值就在于短，覆盖全表反而违背它自己的定位。
+     */
+    private fun quickStartAttrNames(): Set<String> = attrNamesIn("docs/DayTimeline-快速上手.md")
 
     @Test
     fun timelineConfigFieldsMapOneToOneOntoAttrs() {
@@ -144,6 +168,26 @@ class DocsConfigCoverageTest {
                 "\n  能力缺口请以「组件不提供 X，请用 Y 接管」陈述，不要写属性名。",
             emptySet<String>(),
             documented - attrs,
+        )
+    }
+
+    @Test
+    fun quickStartOnlyMentionsRealAttributes() {
+        val all = attrsXmlNames()
+        val inQuickStart = quickStartAttrNames()
+
+        assertEquals(
+            "快速上手文档写了 attrs.xml 里不存在的属性：${inQuickStart - all}" +
+                "\n  这份文档会被直接复制粘贴，错误会扩散到接入方项目里。" +
+                "\n  能力缺口请以「组件不提供 X，请用 Y 接管」陈述，不要写属性名。",
+            emptySet<String>(),
+            inQuickStart - all,
+        )
+        assertTrue(
+            "快速上手文档又抄了一遍配置全表（覆盖 ${inQuickStart.size}/${all.size} 项）。" +
+                "\n全表只在 docs/DayTimeline-完整能力文档.md 维护；" +
+                "\nDL-03 的定位是「5 分钟跑通第一条链路」，长即失效。",
+            inQuickStart.size < all.size,
         )
     }
 
