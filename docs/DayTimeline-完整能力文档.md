@@ -412,6 +412,57 @@ t.isStrictlyAfter(other)    // 相接（e1 == s2）不算重叠
 **不声明这一行，Android 框架会强制 LTR**：`View.setLayoutDirection(LAYOUT_DIRECTION_RTL)`
 是空操作，组件的 RTL 镜像（时间轴区域移到右侧）永远不会被触发，**且没有任何报错或日志**。
 
+### 8.2 屏幕缺口与窗口避让（**接入方必须自行处理**）
+
+组件**不消费 `WindowInsets`**——它不知道宿主窗口的形态，也不该替宿主决定边距。
+这是接入方的责任，写在这里以免踩坑。
+
+```kotlin
+// 取 systemBars 与 displayCutout 的**较大者**，四边都要
+ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+    val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+    val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+    v.setPadding(
+        maxOf(bars.left, cutout.left),
+        maxOf(bars.top, cutout.top),
+        maxOf(bars.right, cutout.right),
+        maxOf(bars.bottom, cutout.bottom),
+    )
+    insets
+}
+```
+
+> **只取 `systemBars()` 是不够的**：`systemBars()` 按契约**不含缺口**。
+> 竖屏时缺口在顶部、状态栏 inset 恰好盖住它，**看不出问题**；
+> 横屏时缺口移到侧边（`insets=Rect(110, 0 - 0, 0)`），状态栏盖不住，
+> 时间轴左侧的**小时刻度标签会整列画进缺口区**、被摄像头挡住。
+> 本项目 `:app` demo 曾踩过这个坑，现已修复并有回归测试
+> （`MainActivityWindowInsetsTest`，含横屏侧边缺口的精确复现用例）。
+
+### 8.3 多窗口（分屏）：**请在你的目标设备上自行验证**
+
+`targetSdk = 36` 时 `android:resizeableActivity` 默认为 `true`，
+组件会在窗口尺寸变化时走 `onSizeChanged → relayout()` 重排，
+滚动位置与选中态由 `onSaveInstanceState` / `onRestoreInstanceState` 保留
+（`scrollOffset` / `viewDate` / `selectedId`）——**进程不会因 resize 而重建**。
+
+这一条已用缩窗方式验证过（窗口 resize、进程 pid 不变、状态保留）。
+
+**但「真分屏」的多任务会话本项目未能验证**：研发侧可用的系统镜像均**不声明
+`android.software.multiwindow` feature**，模拟器做不出实际分屏布局
+（已试 3 台 AVD / 2 个 Android 大版本，含手机形态，均失败）。
+因此以下三段**没有实测覆盖**，请接入方在自己的目标设备上确认：
+
+| 未验证项 | 建议怎么查 |
+|---|---|
+| 分屏下的任务栈分槽与焦点切换 | 在目标设备开分屏，把组件放进半屏后反复切换焦点 |
+| 与其他应用并存的内存与生命周期 | 分屏状态下长时间驻留，观察 `onSaveInstanceState` 恢复 |
+| 大屏（600dp+）设备的表现 | 平板与折叠屏展开态下确认重叠日程的分栏宽度 |
+
+> **不依赖多窗口的自建场景**：若宿主用外部滚动模式（`scrollMode = EXTERNAL`），
+> 组件高度等于全天内容高度、不自行滚动，分屏下由外层容器负责滚动——这条路径的
+> resize 行为与上述一致。
+
 清单属于接入方，不会随 AAR 合并，因此这一行只能由接入方声明。
 组件自身无法检测接入方是否声明（读不到接入方的清单），也不会为此打印任何提示。
 
