@@ -794,10 +794,30 @@ private val hitTester = HitTester(minTouchTarget = 48, handleTouchSize = 48)
 > | 模拟器 API 26（平板） | 320 | 2720 > 1920 → 可滚 ✅ | 放得下 → 不标记 ❌ | 1 条挂 | **1 条挂** |
 > | API 23 平板真机 | 160 | 1360 < 1920 → 不可滚 ❌ | 放得下 → 不标记 ❌ | 3 条挂 | **3 条挂** |
 >
-> **第 4 条（`:app` 的 `submittingTheFormWritesToDataSource`）是 flaky**，复跑 4 次过 3 挂 1。
-> `waitUntilIdle()` 只调一次 `waitForIdleSync()`——它只等「当前主队列空闲」，
-> 而「点确定 → `dismiss()` → `onDismiss` → `cancelEdit()`」的回调是异步投递的，
-> 慢设备上尚未送达就断言。同文件已有 `CLOSE_ATTEMPTS` 轮询模式处理同类问题，这条用例没用上。
+> **第 4 条（`:app` 的 `submittingTheFormWritesToDataSource`）曾是 flaky，已于 2026-10-16 修复。**
+> 根因：`waitUntilIdle()` 只调一次 `waitForIdleSync()`——它只等「**当前**主队列空闲」，
+> 而「点确定 → `dismiss()` → `onDismiss` → `cancelEdit()`」的回调是**异步投递**的，
+> 慢设备上尚未送达就断言。复跑 4 次过 3 挂 1，且出现过两种不同症状
+> （「应退出编辑态」断言失败、Espresso `RootViewWithoutFocusException`）——
+> 症状不同正说明它是**时序竞态**而非确定性缺陷。
+>
+> **修法**：新增 `assertEditingExited(message)`——**有上限地等**编辑态退出（3s，轮询 25ms），
+> 上限耗尽**照常失败**并把已等待时长写进失败信息。文件内 6 处「单次等待后断言退出编辑态」
+> 全部改用它（不只这一条——它们是同源暴露）。
+>
+> **关键边界**：这**不是「重试到通过」**。把断言改成轮询到成功，等于让真缺陷静默通过，
+> 与本仓库「新测试全绿只证明没有测到变化」的纪律直接冲突。**有上限地等是消除竞态，
+> 无限地等是掩盖缺陷。**
+>
+> **回滚验证**（证明助手仍咬得住，且 demo 业务代码零改动）：
+>
+> | 破坏什么 | 转红 |
+> |---|---|
+> | `onDismiss` 里不调 `cancelEdit()` | `cancellingTheFormChangesNothing`、`dismissingTheFormWithoutSubmittingChangesNothing` |
+> | 不调 `confirmEdit()` | `submittingTheFormWritesToDataSource` |
+>
+> 失败信息形如「取消表单后必须退出编辑态（**已等待 3000ms**）」——等满上限后转红，
+> 不是等到成功。修复后连跑 5 次全过。
 >
 > **结论**：组件在 API 23 + 平板上**能跑通、能渲染、能交互**，无崩溃、无 ANR（`:app` 7 条用时 135s）。
 >
@@ -1091,6 +1111,7 @@ adb -s $d shell dumpsys battery                # 确认供电状态
 | v1.5 | 2026-10-16 | **漏洞扫描从发布阻断项降级为「可选增强」，阻断项 3 → 2。** 原第 3 项「§12.4「已知安全漏洞 0 个高危」的门禁已建但从未执行」不再阻塞发版，依据：① 该项**在发版前无法完成**——本机到 NVD 出口被严重限流，**单次全量同步最长跑到 5 小时未完成下载**（官方口径 30–45 分钟），**多次重试累计放弃约 10 小时**；② 瓶颈在仓库可控范围外（外部服务限流 + 需要 CI 出口）；③ 组件为 View 体系、**运行时零第三方依赖**（OQ-2），第三方 CVE 暴露面本身很小。**这不是「已确认 0 个高危」——至今无任何实测支撑，文档一律写「未跑通」。** 同步在 `docs/依赖漏洞扫描操作手册.md` 顶部加了显著警告块（**不要在本地跑，要跑走 CI**），并把原 §2 标题「本地跑（推荐路径）」改为「本地跑（**不推荐**，仅用于读报错）」——原标题与新政策直接冲突 |
 | v1.6 | 2026-10-16 | **P6 耗电从发布阻断项降级为「可选增强」，阻断项 2 → 1。** 原第 1 项「§12.1 六项性能指标：P6 采集条件不具备」不再阻塞发版。降级理由：① 采集条件在仓库可控范围外（唯一真机电池损坏，拔电即关机）；② **耗电暴露面经代码走查确认极小**——`library/src/main` 24 个文件对 Service / WakeLock / AlarmManager / WorkManager / 网络库 / 图片加载库 / 线程池**全部零命中**；唯一周期动作是 30 秒一次的当前时间线刷新，且 `onVisibilityChanged` 在非 VISIBLE 时 `removeCallbacks`、**不可见时完全不跑**，`onDetachedFromWindow` 同样移除；30 秒到点后若状态未变，渲染签名去重直接返回、**不产生重绘**。**但必须说清：以上证明的是「暴露面小」，不是「实测耗电达标」——本项目至今没有任何实测数据，文档一律写「未实测」** |
 | v1.7 | 2026-10-16 | **分屏阻断项的归因更正：真多窗口做不出来的根因不是「大屏禁用」，而是镜像缺 feature。** 另起 Pixel_XL_API_34（API 34，411dp **手机**形态）专门攻这一点——手机形态本不应受 Android 16+ 大屏策略影响，`--windowingMode 3/4` 也确实被接受（任务拿到 `mode=3`/`mode=4`），**但仍不实际分屏**：该镜像 93 个 feature 中**没有 `android.software.multiwindow`**。试过 `emulator -feature MultiWindow`（加不上）、`enable_freeform_support` / `force_resizable_activities`（无效）、mode 5 FREEFORM（无效）；Pixel_7_API_26 则因 `am --windowingMode` 自 API 28 才存在而连 flag 都设不了。**早先只记「大屏禁用」是错的**——那会让下一个人换手机模拟器后一头雾水。同时新增一个设备数据点：API 34 手机形态 AVD 上 `:library` **115 条全绿** |
+| v1.8 | 2026-10-16 | **修掉 `:app` 唯一一条 flaky 用例**（`submittingTheFormWritesToDataSource`，复跑 4 次过 3 挂 1，出现过「应退出编辑态」与 Espresso `RootViewWithoutFocusException` 两种症状——症状不同说明是时序竞态而非确定性缺陷）。根因：`waitUntilIdle()` 只调一次 `waitForIdleSync()`，只等「**当前**主队列空闲」，而「点确定 → `dismiss()` → `onDismiss` → `cancelEdit()`」的回调异步投递。**修法不是重试点击，而是有上限地等编辑态退出**（3s / 轮询 25ms），上限耗尽照常失败并把等待时长写进失败信息；文件内 6 处同源暴露一并改用。**边界写进 KDoc**：有上限地等是消除竞态，无限地等是掩盖缺陷——后者会让真缺陷静默通过。**回滚验证**：`onDismiss` 不调 `cancelEdit()` → 2 条转红；不调 `confirmEdit()` → 该条转红，失败信息均为「（已等待 3000ms）」，即等满即红而非等到成功。修复后连跑 5 次全过，`app/src/main` 零改动 |
 
 ---
 

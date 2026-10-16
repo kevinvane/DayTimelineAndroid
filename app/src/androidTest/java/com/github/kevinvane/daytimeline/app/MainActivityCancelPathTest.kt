@@ -136,7 +136,7 @@ class MainActivityCancelPathTest {
         clickFormButton(R.id.form_confirm)
         waitUntilIdle()
 
-        assertFalse("「确定」后应退出编辑态", timeline.isEditing())
+        assertEditingExited("「确定」后应退出编辑态")
         assertTrue(
             "「确定」必须真的改到数据源，否则取消用例是假通过",
             dataSnapshot().any { it.startsWith("standup@") && it.endsWith("#$NEW_TITLE") },
@@ -161,7 +161,7 @@ class MainActivityCancelPathTest {
         clickFormButton(R.id.form_cancel)
         waitUntilIdle()
 
-        assertFalse("取消表单后必须退出编辑态", timeline.isEditing())
+        assertEditingExited("取消表单后必须退出编辑态")
         assertEquals("取消表单不得改动任何业务数据，改过的标题也不得落库", before, dataSnapshot())
     }
 
@@ -180,7 +180,7 @@ class MainActivityCancelPathTest {
         closeForm()
         waitUntilIdle()
 
-        assertFalse("表单被关掉后必须退出编辑态（草稿不得残留）", timeline.isEditing())
+        assertEditingExited("表单被关掉后必须退出编辑态（草稿不得残留）")
         assertEquals("表单被关掉不得改动任何业务数据", before, dataSnapshot())
     }
 
@@ -203,7 +203,7 @@ class MainActivityCancelPathTest {
         onView(withId(R.id.detail_cancel)).perform(click())
         waitUntilIdle()
 
-        assertFalse("详情里取消后必须退出编辑态", timeline.isEditing())
+        assertEditingExited("详情里取消后必须退出编辑态")
         assertEquals("详情里取消不得改动任何业务数据", before, dataSnapshot())
     }
 
@@ -223,7 +223,7 @@ class MainActivityCancelPathTest {
         onView(withId(R.id.detail_done)).perform(click())
         waitUntilIdle()
 
-        assertFalse("「完成」后不得停在编辑态", timeline.isEditing())
+        assertEditingExited("「完成」后不得停在编辑态")
     }
 
     /**
@@ -240,7 +240,7 @@ class MainActivityCancelPathTest {
         closeDetailPopup()
         waitUntilIdle()
 
-        assertFalse("详情弹窗关闭后不得残留编辑态", timeline.isEditing())
+        assertEditingExited("详情弹窗关闭后不得残留编辑态")
         assertEquals("只是看了详情就关掉，不得改动业务数据", before, dataSnapshot())
     }
 
@@ -560,12 +560,48 @@ private fun invokeInternal(name: String, block: PlacedBlock) {
         InstrumentationRegistry.getInstrumentation().waitForIdleSync()
     }
 
+    /**
+     * 断言编辑态已退出，**允许收尾链异步送达**，但不给它无限时间。
+     *
+     * ## 为什么需要它
+     *
+     * 「点确定 → `dismiss()` → `onDismiss` → `cancelEdit()`」这条收尾链是**异步投递**的。
+     * `waitForIdleSync()` 只等「**当前**主队列空闲」——回调尚未入队时它立刻返回，
+     * 慢设备上偶发失败（实测约 1/4，在 API 23 平板真机上复现过两次不同症状：
+     * 一次是「应退出编辑态」断言失败，一次是 Espresso 的 `RootViewWithoutFocusException`）。
+     *
+     * ## 边界：这不是「重试到通过」
+     *
+     * 上限耗尽仍在编辑态就**照常失败**，并把已等待时长写进失败信息。
+     * 这一点必须守住——把断言改成「轮询到成功」，等于让真缺陷静默通过，
+     * 与本仓库另一条纪律（「新测试全绿只证明没有测到变化」）直接冲突。
+     * **有上限地等**是消除竞态，**无限地等**是掩盖缺陷。
+     */
+    private fun assertEditingExited(message: String) {
+        val deadline = SystemClock.uptimeMillis() + EDITING_EXIT_TIMEOUT_MS
+        while (timeline.isEditing() && SystemClock.uptimeMillis() < deadline) {
+            waitUntilIdle()
+            if (!timeline.isEditing()) break
+            SystemClock.sleep(EDITING_EXIT_POLL_MS)
+        }
+        assertFalse("$message（已等待 ${EDITING_EXIT_TIMEOUT_MS}ms）", timeline.isEditing())
+    }
+
     private companion object {
         /** Espresso 要求目标至少 90% 可见，这里留一点余量。 */
         const val VISIBLE_RATIO_THRESHOLD = 0.95f
 
         /** 等表单落位的上限；超时即判失败，不盲点。 */
         const val VISIBLE_TIMEOUT_MS = 5_000L
+
+        /**
+         * 等编辑态退出的上限。收尾链要过 `dismiss` → `onDismiss` 两跳，
+         * 慢设备上需要余量；取 3s 远大于实测所需，但仍是有界的。
+         */
+        const val EDITING_EXIT_TIMEOUT_MS = 3_000L
+
+        /** 编辑态退出的轮询间隔。 */
+        const val EDITING_EXIT_POLL_MS = 25L
 
         /** 点击重试次数：模拟器上点击偶发丢失，重试的是点击动作本身。 */
         const val CLICK_ATTEMPTS = 3
