@@ -765,7 +765,34 @@ private val hitTester = HitTester(minTouchTarget = 48, handleTouchSize = 48)
 > 慢设备上尚未送达就断言。同文件已有 `CLOSE_ATTEMPTS` 轮询模式处理同类问题，这条用例没用上。
 >
 > **结论**：组件在 API 23 + 平板上**能跑通、能渲染、能交互**，无崩溃、无 ANR（`:app` 7 条用时 135s）。
-> 待修的是**测试套件的隐含前提**——它默认「设备是 420dpi 高密度手机」。
+>
+> **2026-10-16 已修**：4 条失败**全部是测试套件的隐含前提**，不是产品缺陷。
+> `DayTimelineViewBehaviorTest` 把 `HOUR_HEIGHT = 200px` / `HEIGHT = 1920px` / `VIEWPORT = 800px`
+> 全部写死，而产品的 `hourHeight` 来自 `56dp`、`textSize` 来自 `12sp`——**都随密度缩放**。
+> 这些常量隐含了一个从未写出的前提：**「设备是 420dpi 的高密度手机」**。
+> 已改为**从真实资源推导**（`getDimensionPixelSize(R.dimen.day_timeline_hour_height)`），
+> 视口按 `12 × hourHeight`（半日）与 `5 × hourHeight` 给出，于是：
+> - `contentHeight > 视口` 的滚动前提在任何密度下都成立；
+> - 20 / 40 分钟块的「放不放得下两行」变成**与密度无关的 dp 比值**
+>   （20 分钟：18.67dp 去 padding 后 10.67dp < 两行约 28.8dp → 放不下；
+>   40 分钟：37.33dp 去 padding 后 29.33dp ≥ 28.8dp → 放得下）。
+>
+> 另有两处写死的像素值一并改为推导：`setScrollOffset(1200)` 改为取合法范围中点
+> （写死值在低密度设备上会越界被钳到 max）、`scrollToMinute(300)` 的 `≤ 1000` 改为 `≤ 5 × hourHeight`。
+>
+> **修后实测**：320dpi 模拟器与 160dpi 真机**两档密度各 115 条全绿**。
+> **组件代码零改动**（`library/src/main` 无 diff）——这正说明是测试的锅。
+>
+> **回滚验证（三条改动的用例逐条确认仍咬得住）**：
+>
+> | 破坏什么 | 转红的用例 |
+> |---|---|
+> | `tooShortForText = blockH < minTextHeight` → 恒 `false` | `shortEventIsFlaggedTooShort...`（`ping=false`） |
+> | `scrollToMinute` 非 smooth 分支不赋值 | 3 条：`scrollToMinuteMovesContentAndStaysInRange`、`restoredScrollPositionIsNotOverwrittenByAutoLocate`、`selfScrollModeAllowsScrollingBeyondViewport` |
+> | `startScroll` 位移目标改为 0 | `smoothScrollDoesNotSnapBack` |
+>
+> 失败信息逐条对应缺陷症状。**改几何最容易出的事故是「测试变绿但已经不测东西了」**，
+> 所以这三条回滚不是走形式——它们证明新几何下的断言仍然有效。
 >
 > **2026-10-16 折叠屏 / 分屏 / 缺口屏三项实测——查出并修复一处真实缺陷（缺口未避让）。**
 >

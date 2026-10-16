@@ -60,9 +60,9 @@ class DayTimelineViewBehaviorTest {
             view.setConfig(TimelineConfig(autoLocateOnFirstShow = false))
             view.measure(
                 View.MeasureSpec.makeMeasureSpec(WIDTH, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(HEIGHT, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(viewportHalfDay, View.MeasureSpec.EXACTLY),
             )
-            view.layout(0, 0, WIDTH, HEIGHT)
+            view.layout(0, 0, WIDTH, viewportHalfDay)
         }
     }
 
@@ -152,7 +152,7 @@ class DayTimelineViewBehaviorTest {
         val v = createView {
             setConfig(
                 TimelineConfig(
-                    hourHeight = HOUR_HEIGHT,
+                    hourHeight = hourHeight,
                     topPadding = 0,
                     bottomPadding = 0,
                     showTimeSubtitle = true,
@@ -161,9 +161,10 @@ class DayTimelineViewBehaviorTest {
                 ),
             )
             eventBlockPainter = recorder
-            // 视口只有 VIEWPORT=800px（0–240 分钟），事件必须落在其中才会被绘制。
-            // HOUR_HEIGHT=200px：2 分钟 ≈ 6.7px（被兜底到 20dp）；20 分钟 ≈ 66px（高于兜底
-            // 高度，但放不下两行）；40 分钟 ≈ 133px（够两行）；60 分钟高度充足。
+            // 视口只有 5 小时（0–300 分钟），事件必须落在其中才会被绘制。
+            // hourHeight 取真实 56dp：2 分钟 ≈ 1.9dp（被兜底到 20dp）；20 分钟 ≈ 18.7dp
+            // （高于兜底高度，但放不下两行）；40 分钟 ≈ 37.3dp（够两行）；60 分钟高度充足。
+            // 这些**比值**与密度无关，见 [hourHeight] 的 KDoc。
             submitEvents(
                 listOf(
                     Ev("ping", 10, 12, "提醒"),
@@ -174,7 +175,7 @@ class DayTimelineViewBehaviorTest {
             )
         }
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            v.draw(Canvas(Bitmap.createBitmap(WIDTH, VIEWPORT, Bitmap.Config.ARGB_8888)))
+            v.draw(Canvas(Bitmap.createBitmap(WIDTH, viewportFiveHours, Bitmap.Config.ARGB_8888)))
         }
 
         assertEquals(
@@ -227,8 +228,8 @@ class DayTimelineViewBehaviorTest {
         val after = readScrollOffset()
 
         assertTrue(
-            "全天内容高度应大于视口，否则无从滚动（contentHeight=${readInt("contentHeight")}, height=$HEIGHT）",
-            readInt("contentHeight") > HEIGHT,
+            "全天内容高度应大于视口，否则无从滚动（contentHeight=${readInt("contentHeight")}, 视口=$viewportHalfDay）",
+            readInt("contentHeight") > viewportHalfDay,
         )
         assertTrue("滚动到 10:00 后偏移应大于 0，实际 $after", after > top)
         assertTrue("偏移应被钳制在合法范围内", after in 0..readInt("contentHeight"))
@@ -237,7 +238,7 @@ class DayTimelineViewBehaviorTest {
     @Test
     fun scrollOffsetIsClampedToContent() {
         view.setScrollOffset(Int.MAX_VALUE)
-        val max = readInt("contentHeight") - HEIGHT
+        val max = readInt("contentHeight") - viewportHalfDay
         assertEquals(max.coerceAtLeast(0), readScrollOffset())
 
         view.setScrollOffset(Int.MIN_VALUE)
@@ -250,7 +251,7 @@ class DayTimelineViewBehaviorTest {
         assertEquals(0, readScrollOffset())
 
         view.scrollToMinute(1440, smooth = false)
-        val max = (readInt("contentHeight") - HEIGHT).coerceAtLeast(0)
+        val max = (readInt("contentHeight") - viewportHalfDay).coerceAtLeast(0)
         assertEquals(max, readScrollOffset())
     }
 
@@ -281,16 +282,16 @@ class DayTimelineViewBehaviorTest {
         )
         view.measure(
             View.MeasureSpec.makeMeasureSpec(WIDTH, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(HEIGHT, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(viewportHalfDay, View.MeasureSpec.EXACTLY),
         )
-        view.layout(0, 0, WIDTH, HEIGHT)
+        view.layout(0, 0, WIDTH, viewportHalfDay)
 
-        val bmp = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
+        val bmp = Bitmap.createBitmap(WIDTH, viewportHalfDay, Bitmap.Config.ARGB_8888)
         view.draw(Canvas(bmp))
 
         val colors = HashSet<Int>()
         for (x in 0 until WIDTH step 3) {
-            for (y in 0 until HEIGHT step 3) {
+            for (y in 0 until viewportHalfDay step 3) {
                 colors += bmp.getPixel(x, y)
             }
         }
@@ -316,10 +317,10 @@ class DayTimelineViewBehaviorTest {
         )
         view.measure(
             View.MeasureSpec.makeMeasureSpec(WIDTH, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(HEIGHT, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(viewportHalfDay, View.MeasureSpec.EXACTLY),
         )
-        view.layout(0, 0, WIDTH, HEIGHT)
-        val bmp = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
+        view.layout(0, 0, WIDTH, viewportHalfDay)
+        val bmp = Bitmap.createBitmap(WIDTH, viewportHalfDay, Bitmap.Config.ARGB_8888)
         view.draw(Canvas(bmp)) // 不应抛异常
 
         assertTrue("脏数据应产生数据异常事件，实际 ${issues.size} 条", issues.isNotEmpty())
@@ -360,7 +361,7 @@ class DayTimelineViewBehaviorTest {
         assertTrue("动画帧数为 0，说明 startScroll 根本没启动", frames > 0)
         assertFalse("动画应在帧数上限内跑完", isScrollerRunning())
 
-        val max = (readInt("contentHeight") - HEIGHT).coerceAtLeast(0)
+        val max = (readInt("contentHeight") - viewportHalfDay).coerceAtLeast(0)
         assertTrue("最终偏移应离开起点，实际 $previous == $start", previous != start)
         assertTrue("最终偏移应在合法范围内", previous in 0..max)
     }
@@ -368,7 +369,8 @@ class DayTimelineViewBehaviorTest {
     /** 惯性 fling 结束后偏移必须稳定在终点，不能每帧归零。 */
     @Test
     fun scrollOffsetStaysPutAfterGesture() {
-        view.setScrollOffset(800)
+        // 取合法范围的中点而非写死像素值——写死的 800 在 mdpi 下会越界被钳到 max。
+        view.setScrollOffset((readInt("contentHeight") - viewportHalfDay).coerceAtLeast(0) / 2)
         view.computeScroll()
         val afterFirst = readScrollOffset()
         // 连续多次调用 computeScroll 不应改变一个已经稳定的偏移
@@ -397,7 +399,7 @@ class DayTimelineViewBehaviorTest {
      * 配置必须赶在那之前（这本身也是接入方应有的顺序）。
      */
     private fun createView(
-        viewportHeight: Int = VIEWPORT,
+        viewportHeight: Int = viewportFiveHours,
         configure: DayTimelineView.() -> Unit = {},
     ): DayTimelineView {
         var created: DayTimelineView? = null
@@ -405,7 +407,7 @@ class DayTimelineViewBehaviorTest {
             val v = DayTimelineView(context)
             v.setConfig(
                 TimelineConfig(
-                    hourHeight = HOUR_HEIGHT,
+                    hourHeight = hourHeight,
                     topPadding = 0,
                     bottomPadding = 0,
                 ),
@@ -431,8 +433,8 @@ class DayTimelineViewBehaviorTest {
     @Test
     fun firstShowAutoLocatesToOneThirdViewport() {
         val v = createView()
-        val nowContentY = NOW_MINUTE / 60f * HOUR_HEIGHT
-        assertEquals(VIEWPORT / 3, nowContentY.toInt() - v.getScrollOffset())
+        val nowContentY = NOW_MINUTE / 60f * hourHeight
+        assertEquals(viewportFiveHours / 3, nowContentY.toInt() - v.getScrollOffset())
     }
 
     /**
@@ -444,8 +446,8 @@ class DayTimelineViewBehaviorTest {
     @Test
     fun firstShowAutoLocatesEvenWithoutEvents() {
         val v = createView(configure = {})
-        val nowContentY = NOW_MINUTE / 60f * HOUR_HEIGHT
-        assertEquals(VIEWPORT / 3, nowContentY.toInt() - v.getScrollOffset())
+        val nowContentY = NOW_MINUTE / 60f * hourHeight
+        assertEquals(viewportFiveHours / 3, nowContentY.toInt() - v.getScrollOffset())
     }
 
     /** FI-012 验收标准「可配置关闭」：关掉后必须停在 00:00 顶部。 */
@@ -454,7 +456,7 @@ class DayTimelineViewBehaviorTest {
         val v = createView {
             setConfig(
                 TimelineConfig(
-                    hourHeight = HOUR_HEIGHT,
+                    hourHeight = hourHeight,
                     topPadding = 0,
                     bottomPadding = 0,
                     autoLocateOnFirstShow = false,
@@ -472,17 +474,21 @@ class DayTimelineViewBehaviorTest {
      */
     @Test
     fun explicitScrollPositionWinsOverAutoLocate() {
-        val v = createView { setScrollOffset(1200) }
-        assertEquals(1200, v.getScrollOffset())
+        // 取合法范围的中点，而不是写死某个像素值——写死的值在低密度设备上会越界被钳到 max。
+        val max = (readInt("contentHeight") - viewportFiveHours).coerceAtLeast(0)
+        val target = max / 2
+        val v = createView { setScrollOffset(target) }
+        assertEquals(target, v.getScrollOffset())
     }
 
     @Test
     fun explicitScrollToMinuteWinsOverAutoLocate() {
         val v = createView { scrollToMinute(300, smooth = false) }
-        // 05:00 的内容坐标是 1000；自动定位的结果（2134）必然大于它
+        // 05:00 的内容坐标是 5 × hourHeight；自动定位的结果（12 点处）必然大于它。
+        // 原断言写死 1000px，那是「hourHeight=200」时代的数字，换密度后不再成立。
         assertTrue(
             "显式跳转的位置被自动定位覆盖了，实际 ${v.getScrollOffset()}",
-            v.getScrollOffset() <= 1000,
+            v.getScrollOffset() <= 5 * hourHeight,
         )
     }
 
@@ -510,7 +516,7 @@ class DayTimelineViewBehaviorTest {
             val v = DayTimelineView(context)
             v.setConfig(
                 TimelineConfig(
-                    hourHeight = HOUR_HEIGHT,
+                    hourHeight = hourHeight,
                     topPadding = 0,
                     bottomPadding = 0,
                     scrollMode = ScrollMode.EXTERNAL,
@@ -526,7 +532,7 @@ class DayTimelineViewBehaviorTest {
             created = v
         }
         val v = checkNotNull(created) { "runOnMainSync 未执行，测试本身失效" }
-        assertEquals("外部滚动模式高度应等于全天内容高度", 24 * HOUR_HEIGHT, v.height)
+        assertEquals("外部滚动模式高度应等于全天内容高度", 24 * hourHeight, v.height)
         assertEquals("外部滚动模式首次定位不应产生位移", 0, v.getScrollOffset())
     }
 
@@ -542,9 +548,9 @@ class DayTimelineViewBehaviorTest {
 
         v.measure(
             View.MeasureSpec.makeMeasureSpec(WIDTH, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(VIEWPORT, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(viewportFiveHours, View.MeasureSpec.EXACTLY),
         )
-        v.layout(0, 0, WIDTH, VIEWPORT)
+        v.layout(0, 0, WIDTH, viewportFiveHours)
         assertEquals("重新布局不应重新定位", afterUserJump, v.getScrollOffset())
     }
 
@@ -569,15 +575,15 @@ class DayTimelineViewBehaviorTest {
             val v = DayTimelineView(context)
             v.id = STATE_VIEW_ID
             v.setConfig(
-                TimelineConfig(hourHeight = HOUR_HEIGHT, topPadding = 0, bottomPadding = 0),
+                TimelineConfig(hourHeight = hourHeight, topPadding = 0, bottomPadding = 0),
             )
             v.setNowMinute(NOW_MINUTE)
             v.restoreHierarchyState(container)
             v.measure(
                 View.MeasureSpec.makeMeasureSpec(WIDTH, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(VIEWPORT, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(viewportFiveHours, View.MeasureSpec.EXACTLY),
             )
-            v.layout(0, 0, WIDTH, VIEWPORT)
+            v.layout(0, 0, WIDTH, viewportFiveHours)
             rotated = v
         }
         val v = checkNotNull(rotated) { "runOnMainSync 未执行，测试本身失效" }
@@ -600,15 +606,51 @@ class DayTimelineViewBehaviorTest {
         return (getter.invoke(d) as Number).toInt()
     }
 
+    /**
+     * 每小时格高（px）——**读真实资源推导，不写死**。
+     *
+     * ## 为什么不能写死
+     *
+     * 此前本类把 `hourHeight = 200px`、`viewportHalfDay = 1920px`、`viewportFiveHours = 800px`
+     * 全部写死，而产品的 `hourHeight` 来自 `56dp` 资源、`textSize` 来自 `12sp` 资源
+     * ——**两者都随设备密度缩放**。于是这些常量隐含了一个从未写出的前提：
+     * **「设备是 420dpi 的高密度手机」**。
+     *
+     * 在 mdpi(160dpi) 真机上该前提不成立，实测后果（2026-10-16）：
+     * - `contentHeight = 24 × 56 × 160/160 = 1360px` **小于写死的 1920px 视口**
+     *   → 整天比视口矮 → `selfScrollModeAllowsScrollingBeyondViewport` 与
+     *   `smoothScrollDoesNotSnapBack` 两条转红；
+     * - 块高写死 200px 而字号随密度缩放，160dpi 下 12sp = 12px、两行约 28.8px
+     *   **小于** 20 分钟块的 66px → 放得下 → `shortEventIsFlaggedTooShort...` 转红。
+     *
+     * **测试红了，但产品行为是对的。** 改成读真实资源后，下面三者的**比值关系**
+     * 与密度无关，任何 dpi 都成立：
+     * - 20 分钟块高 `56/3 = 18.67dp`，去上下 padding 后 10.67dp < 两行 12sp 文字约 28.8dp → **放不下**
+     * - 40 分钟块高 37.33dp，去 padding 后 29.33dp ≥ 28.8dp → **放得下**
+     */
+    private val hourHeight: Int by lazy {
+        context.resources.getDimensionPixelSize(R.dimen.day_timeline_hour_height)
+    }
+
+    /**
+     * 主用例的视口高度（px）——**半日**。
+     *
+     * 取 `12 × hourHeight` 而非写死：全天内容恒为 `24 × hourHeight`，
+     * 于是 `contentHeight > 视口` 这个**滚动前提在任何密度下都成立**。
+     */
+    private val viewportHalfDay: Int get() = hourHeight * 12
+
+    /**
+     * 覆盖 0–300 分钟的视口（px）——供需要画到 05:00 的用例使用。
+     *
+     * 取 `5 × hourHeight` 覆盖事件分钟区间上界（原写死 800px 恰好也是这个意图，
+     * 只是换成了与密度绑死的数字）。
+     */
+    private val viewportFiveHours: Int get() = hourHeight * 5
+
     private companion object {
         const val WIDTH = 1080
-        const val HEIGHT = 1920
 
-        // ---- FI-012 用：把 dp→px 换算排除在断言之外 ----
-        /** 每小时格高（px 整数），24 小时共 4800px。 */
-        const val HOUR_HEIGHT = 200
-        /** 首次定位测试用的视口高度（px 整数）。 */
-        const val VIEWPORT = 800
         /** 指定「当前时间」为 12:00，使定位结果完全确定（FD-006）。 */
         const val NOW_MINUTE = 720
         const val DAY_MILLIS = 24L * 60 * 60 * 1000
