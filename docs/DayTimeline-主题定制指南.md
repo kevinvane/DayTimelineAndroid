@@ -200,7 +200,7 @@ timeline.eventBlockPainter = object : EventBlockPainter {
 | `accentColor` | 左侧色条颜色（来自 `TimelineEvent.color`，为 `null` 时用组件默认） |
 | `startText` `endText` | **组件已格式化好**的时间文本，可直接用作副标题与读屏描述 |
 | `showTimeSubtitle` | 是否应展示时间副标题 |
-| `tooShortForText` | 块太矮放不下两行文字 |
+| `tooShortForText` | 块太矮放不下块内要画的文字行数（含时间副标题时两行，否则一行） |
 
 ### 3.2 三个容易踩的坑
 
