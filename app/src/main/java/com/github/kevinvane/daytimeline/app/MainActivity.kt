@@ -77,7 +77,13 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+            v.setPadding(
+                maxOf(bars.left, cutout.left),
+                maxOf(bars.top, cutout.top),
+                maxOf(bars.right, cutout.right),
+                maxOf(bars.bottom, cutout.bottom),
+            )
             insets
         }
 
