@@ -95,9 +95,24 @@ object Geometry {
         hourHeightPx: Int,
         minBlockHeightPx: Int,
     ): Int {
+        // 格高非法时返回 0，**不再兜底到最小高度**——否则「格高为 0」会画出一根最小高度的色条。
         if (hourHeightPx <= 0) return 0
-        val raw = minuteToOffset((endMinute - startMinute).toFloat(), hourHeightPx).toInt()
-        return raw.coerceAtLeast(minBlockHeightPx.coerceAtLeast(0))
+        return naturalBlockHeight(startMinute, endMinute, hourHeightPx)
+            .coerceAtLeast(minBlockHeightPx.coerceAtLeast(0))
+    }
+
+    /**
+     * 未做最小高度兜底的**原始**块高（像素），即日程时长换算出的真实高度。
+     *
+     * 与 [blockHeight] 只差一个 `coerceAtLeast`。调用方据此判定「极短日程」——
+     * PRD §7.2「日程块最小显示高度 20dp：**低于此值无法显示内容**」：原始高度低于
+     * 兜底值的块被抬到最小高度绘制，但块内文字应降级为「只读屏不显示」，
+     * 否则文字会溢出块外。判定只能看原始高度——被兜底后的高度恒 ≥ 最小高度，
+     * 拿它去比最小高度会得到恒 false 的死条件。
+     */
+    fun naturalBlockHeight(startMinute: Int, endMinute: Int, hourHeightPx: Int): Int {
+        if (hourHeightPx <= 0) return 0
+        return minuteToOffset((endMinute - startMinute).toFloat(), hourHeightPx).toInt()
     }
 
     /** 判断一个纵向区间 [blockTop, blockTop + blockHeight) 是否与视口相交。 */

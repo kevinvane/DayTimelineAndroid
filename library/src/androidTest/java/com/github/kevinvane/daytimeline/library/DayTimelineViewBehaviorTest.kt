@@ -3,17 +3,24 @@ package com.github.kevinvane.daytimeline.library
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.os.Parcelable
 import android.util.SparseArray
 import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.github.kevinvane.daytimeline.library.api.BlockContext
+import com.github.kevinvane.daytimeline.library.api.EventBlockPainter
 import com.github.kevinvane.daytimeline.library.api.ScrollMode
+import com.github.kevinvane.daytimeline.library.api.TimelineColors
 import com.github.kevinvane.daytimeline.library.api.TimelineConfig
 import com.github.kevinvane.daytimeline.library.core.MinuteOfDay
 import com.github.kevinvane.daytimeline.library.core.TimelineEvent
+import com.github.kevinvane.daytimeline.library.paint.TimelineTypeface
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -88,6 +95,98 @@ class DayTimelineViewBehaviorTest {
         assertTrue("未找到任何文字 Paint，测试本身失效", textSized.isNotEmpty())
         textSized.forEach { (name, size) ->
             assertTrue("$name 的 textSize=$size 小于 8px，几乎不可见", size >= 8f)
+        }
+    }
+
+    /**
+     * 回归 3（M0-3 字体规格）：三支文字笔的字族 / 字重必须等于设计定稿。
+     *
+     * 依据 `docs/DayTimeline-交互标注与字体资源交付清单-设计回复.md`：
+     * 轴标签 `sans-serif` / Regular，当前时间线时间 `sans-serif-medium` / Medium；
+     * 日程块标题**默认 Regular**——PRD §7.4 只有选中态才「轻微加粗」到 Medium，
+     * 设计回复 #3 把默认写成 Medium 与该条冲突，已按 §7.4 语义取默认 Regular。
+     */
+    @Test
+    fun textPaintsUseFinalizedTypefaces() {
+        val paints = DayTimelineView::class.java.getDeclaredField("paints")
+            .apply { isAccessible = true }
+            .get(view)!!
+
+        fun typefaceOf(fieldName: String): Typeface {
+            val field = paints.javaClass.getDeclaredField(fieldName).apply { isAccessible = true }
+            return (field.get(paints) as Paint).typeface
+        }
+
+        assertSame(
+            "轴标签应为 sans-serif / Regular（M0-3 #1）",
+            TimelineTypeface.regular, typefaceOf("axisLabel"),
+        )
+        assertSame(
+            "当前时间线时间应为 sans-serif-medium / Medium（M0-3 #2）",
+            TimelineTypeface.medium, typefaceOf("nowLabel"),
+        )
+        assertSame(
+            "块标题默认应为 Regular——选中态才加粗（§7.4 / M0-3 #6）",
+            TimelineTypeface.regular, typefaceOf("blockText"),
+        )
+    }
+
+    /**
+     * 极短日程（2 分钟）必须被标记为「放不下文字」，否则副标题会溢出块外。
+     *
+     * 真机截图发现的缺陷：`19:00–19:02` 的块只有兜底高度，块内只放得下标题一行，
+     * 第二行「提醒」画到了块外。根因是判据写成 `blockH < blockMinHeight`——
+     * `blockH` 已被 `Geometry.blockHeight` 抬到最小高度，该条件**恒为 false**，
+     * 文档承诺的「块高不足以显示两行文字时只读屏不显示文字」从未触发。
+     *
+     * 回滚验证：把判据改回 `blockH < dimens.blockMinHeight`，`ping` 一栏立刻
+     * 由 true 变 false，本用例转红。
+     */
+    @Test
+    fun shortEventIsFlaggedTooShortForTextInsteadOfOverflowingTheBlock() {
+        val recorder = RecordingBlockPainter()
+        val v = createView {
+            setConfig(
+                TimelineConfig(
+                    hourHeight = HOUR_HEIGHT,
+                    topPadding = 0,
+                    bottomPadding = 0,
+                    showTimeSubtitle = true,
+                    // 关掉首次定位，否则视口停到 12:00，下面这两条清晨的日程根本画不到。
+                    autoLocateOnFirstShow = false,
+                ),
+            )
+            eventBlockPainter = recorder
+            // 10–12 分钟原始高度仅 ≈ 6.7px，远低于 20dp 兜底高度；60 分钟则高度充足。
+            submitEvents(listOf(Ev("ping", 10, 12, "提醒"), Ev("long", 60, 120, "长日程")))
+        }
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            v.draw(Canvas(Bitmap.createBitmap(WIDTH, VIEWPORT, Bitmap.Config.ARGB_8888)))
+        }
+
+        assertEquals(
+            "2 分钟日程被抬到最小高度绘制，但原始高度低于最小显示高度，必须标记放不下文字" +
+                "（否则文字溢出块外），实际记录：${recorder.tooShort}",
+            true,
+            recorder.tooShort["ping"],
+        )
+        assertEquals(
+            "60 分钟日程高度充足，不应被标记为极短，实际记录：${recorder.tooShort}",
+            false,
+            recorder.tooShort["long"],
+        )
+    }
+
+    /** 记录每个块拿到的 `tooShortForText`（`BlockContext` 是复用对象，必须当场拷值，AD-14）。 */
+    private class RecordingBlockPainter : EventBlockPainter {
+        val tooShort = HashMap<String, Boolean>()
+        override fun paint(
+            canvas: Canvas,
+            context: BlockContext,
+            colors: TimelineColors,
+            defaultPaints: EventBlockPainter.Paints,
+        ) {
+            tooShort[context.event.id] = context.tooShortForText
         }
     }
 

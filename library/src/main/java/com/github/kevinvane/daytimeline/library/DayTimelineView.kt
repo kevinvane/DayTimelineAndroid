@@ -550,7 +550,10 @@ class DayTimelineView @JvmOverloads constructor(
                 startText = b.event.start.toString()
                 endText = b.event.end.toString()
                 showTimeSubtitle = showSubtitle
-                tooShortForText = blockH < dimens.blockMinHeight
+                // 极短日程判据必须用**未兜底**的原始高度：blockH 已被 Geometry.blockHeight
+                // 抬到 blockMinHeight 以上，拿它比最小高度是恒 false 的死条件——那样
+                // 「块高不足以显示文字时只读屏」永远不会触发，文字会溢出块外（真机实测过）。
+                tooShortForText = Geometry.naturalBlockHeight(startMin, endMin, hourHeight) < dimens.blockMinHeight
             }
             painter.paint(canvas, blockContext, colors, blockPaints)
         }

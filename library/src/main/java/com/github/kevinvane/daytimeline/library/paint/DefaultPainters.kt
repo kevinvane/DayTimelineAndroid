@@ -145,8 +145,13 @@ internal object DefaultGridPainter : GridPainter {
     }
 }
 
-/** 时间副标题相对首行基线的行距倍数（首行与副标题之间留 20% 行高）。 */
-private const val SUBTITLE_LINE_SPACING = 1.2f
+/**
+ * 时间副标题相对首行基线的行距倍数。
+ *
+ * M0-3 设计定稿的行高为 **16sp**、块文字字号为 12sp（PRD §7.2），
+ * 故倍数为 16 / 12。用比值而非绝对值可随 density / fontScale 一起缩放。
+ */
+private const val SUBTITLE_LINE_SPACING = 16f / 12f
 
 /**
  * 日程块默认绘制：底色 + 左侧色条 + 内容 + 可选时间副标题，选中态额外加描边。
@@ -222,13 +227,20 @@ internal object DefaultEventBlockPainter : EventBlockPainter {
         val content = context.event.content
         defaultPaints.text.color = colors.blockText(context.state)
 
+        // 标题字重：常规态 Regular，选中态 Medium（PRD §7.4「轻微加粗」/ M0-3 #6）。
+        val titleTypeface = if (context.selected) TimelineTypeface.medium else TimelineTypeface.regular
+        defaultPaints.text.typeface = titleTypeface
+
         val topPaddingPx = context.paddingVertical
         val contentTop = top + topPaddingPx
         val baseline = contentTop - defaultPaints.text.fontMetrics.ascent
 
         if (context.showTimeSubtitle) {
+            // 副标题恒为常规字重（M0-3 #4），不随选中态加粗。
+            defaultPaints.text.typeface = TimelineTypeface.regular
             val subtitle = ellipsize("${context.startText} - ${context.endText}", maxTextWidth, defaultPaints.text)
             canvas.drawText(subtitle, textLeft, baseline, defaultPaints.text)
+            defaultPaints.text.typeface = titleTypeface
             canvas.drawText(
                 ellipsize(content?.toString() ?: "", maxTextWidth, defaultPaints.text),
                 textLeft,
@@ -243,6 +255,9 @@ internal object DefaultEventBlockPainter : EventBlockPainter {
                 defaultPaints.text,
             )
         }
+
+        // 还原常规字重，避免影响下一个块（defaultPaints 为跨块复用的对象）。
+        defaultPaints.text.typeface = TimelineTypeface.regular
     }
 
     /**

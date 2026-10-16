@@ -1,8 +1,24 @@
 package com.github.kevinvane.daytimeline.library.paint
 
 import android.graphics.Paint
+import android.graphics.Typeface
 import androidx.annotation.ColorInt
 import com.github.kevinvane.daytimeline.library.core.EventState
+
+/**
+ * 字体规格（M0-3 设计定稿，见 `docs/DayTimeline-交互标注与字体资源交付清单-设计回复.md`）。
+ *
+ * 字号仍由 PRD §7.2 承担（12sp），此处只定**字族 + 字重**：
+ * - [regular]：轴标签、日程块标题默认态、时间副标题；
+ * - [medium]：当前时间线时间、编辑态起止时间，以及**选中态**的日程块标题
+ *   （PRD §7.4「选中态色 + 轻微加粗」——常规态 Regular，选中态 Medium）。
+ *
+ * 优先用系统字族名，不引入第三方字体库（K10）。
+ */
+internal object TimelineTypeface {
+    val regular: Typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+    val medium: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+}
 
 /**
  * 17 项语义色项的解析结果（PRD §7.3）。
@@ -63,9 +79,11 @@ internal data class Theme(
         val axisLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = Paint.Align.RIGHT
             textSize = dimens.axisLabelSize.toFloat()
+            typeface = TimelineTypeface.regular
         }
         val nowLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = dimens.nowLabelSize.toFloat()
+            typeface = TimelineTypeface.medium
         }
         val nowLine = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
         val nowDot = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -81,6 +99,8 @@ internal data class Theme(
          */
         val blockText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = dimens.blockTextSize.toFloat()
+            // 常规态字重；选中态会在绘制时临时切到 medium（§7.4「轻微加粗」）。
+            typeface = TimelineTypeface.regular
         }
         val blockAccent = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         val blockStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
