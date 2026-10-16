@@ -167,7 +167,13 @@ class BlockContext {
     /** 是否显示时间副标题。 */
     var showTimeSubtitle = false
 
-    /** 块高是否不足以容纳两行文字（极短日程）。 */
+    /**
+     * 块高是否不足以容纳块内要显示的文字行数（极短日程）。
+     *
+     * 显示时间副标题（[showTimeSubtitle]）时按两行判定，否则按一行。为 true 时
+     * 默认绘制会整体跳过块内文字，只保留读屏描述（接入方文档「块高不足以显示
+     * 两行文字时自动降级，只读屏不显示文字」）。
+     */
     var tooShortForText = false
 }
 

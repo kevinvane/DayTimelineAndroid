@@ -146,14 +146,6 @@ internal object DefaultGridPainter : GridPainter {
 }
 
 /**
- * 时间副标题相对首行基线的行距倍数。
- *
- * M0-3 设计定稿的行高为 **16sp**、块文字字号为 12sp（PRD §7.2），
- * 故倍数为 16 / 12。用比值而非绝对值可随 density / fontScale 一起缩放。
- */
-private const val SUBTITLE_LINE_SPACING = 16f / 12f
-
-/**
  * 日程块默认绘制：底色 + 左侧色条 + 内容 + 可选时间副标题，选中态额外加描边。
  *
  * 三态样式由 [TimelineColors] 按状态取色实现（§9.4 样式选择），
@@ -244,7 +236,7 @@ internal object DefaultEventBlockPainter : EventBlockPainter {
             canvas.drawText(
                 ellipsize(content?.toString() ?: "", maxTextWidth, defaultPaints.text),
                 textLeft,
-                baseline + defaultPaints.text.textSize * SUBTITLE_LINE_SPACING,
+                baseline + defaultPaints.text.textSize * BlockTextFitting.SUBTITLE_LINE_SPACING,
                 defaultPaints.text,
             )
         } else {

@@ -132,15 +132,19 @@ class DayTimelineViewBehaviorTest {
     }
 
     /**
-     * 极短日程（2 分钟）必须被标记为「放不下文字」，否则副标题会溢出块外。
+     * 块内文字放不下时必须被标记为「放不下文字」，否则副标题会溢出块外。
      *
-     * 真机截图发现的缺陷：`19:00–19:02` 的块只有兜底高度，块内只放得下标题一行，
-     * 第二行「提醒」画到了块外。根因是判据写成 `blockH < blockMinHeight`——
-     * `blockH` 已被 `Geometry.blockHeight` 抬到最小高度，该条件**恒为 false**，
-     * 文档承诺的「块高不足以显示两行文字时只读屏不显示文字」从未触发。
+     * 真机截图发现过两次同类缺陷：
+     * - `19:00–19:02`（2 分钟）只有兜底高度，第二行「提醒」画到块外；
+     * - `16:40–17:00`（20 分钟）原始高度 20dp+ 高于兜底高度，但**放不下两行**，
+     *   副标题「并行任务 C」同样画到了块背景外。
      *
-     * 回滚验证：把判据改回 `blockH < dimens.blockMinHeight`，`ping` 一栏立刻
-     * 由 true 变 false，本用例转红。
+     * 根因是判据写成 `blockH < blockMinHeight`——`blockH` 已被 `Geometry.blockHeight`
+     * 抬到兜底高度以上，该条件**恒为 false**，文档承诺的「块高不足以显示两行文字时
+     * 只读屏不显示文字」从未触发。现按文字 Paint 实测的所需高度判定。
+     *
+     * 回滚验证：把判据改回 `blockH < dimens.blockMinHeight`，`ping` 与 `c20` 两栏
+     * 立刻由 true 变 false，本用例转红。
      */
     @Test
     fun shortEventIsFlaggedTooShortForTextInsteadOfOverflowingTheBlock() {
@@ -152,23 +156,43 @@ class DayTimelineViewBehaviorTest {
                     topPadding = 0,
                     bottomPadding = 0,
                     showTimeSubtitle = true,
-                    // 关掉首次定位，否则视口停到 12:00，下面这两条清晨的日程根本画不到。
+                    // 关掉首次定位，否则视口停到 12:00，下面这些清晨的日程根本画不到。
                     autoLocateOnFirstShow = false,
                 ),
             )
             eventBlockPainter = recorder
-            // 10–12 分钟原始高度仅 ≈ 6.7px，远低于 20dp 兜底高度；60 分钟则高度充足。
-            submitEvents(listOf(Ev("ping", 10, 12, "提醒"), Ev("long", 60, 120, "长日程")))
+            // 视口只有 VIEWPORT=800px（0–240 分钟），事件必须落在其中才会被绘制。
+            // HOUR_HEIGHT=200px：2 分钟 ≈ 6.7px（被兜底到 20dp）；20 分钟 ≈ 66px（高于兜底
+            // 高度，但放不下两行）；40 分钟 ≈ 133px（够两行）；60 分钟高度充足。
+            submitEvents(
+                listOf(
+                    Ev("ping", 10, 12, "提醒"),
+                    Ev("c20", 140, 160, "并行任务 C"),
+                    Ev("b40", 200, 240, "并行任务 B"),
+                    Ev("long", 60, 120, "长日程"),
+                ),
+            )
         }
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             v.draw(Canvas(Bitmap.createBitmap(WIDTH, VIEWPORT, Bitmap.Config.ARGB_8888)))
         }
 
         assertEquals(
-            "2 分钟日程被抬到最小高度绘制，但原始高度低于最小显示高度，必须标记放不下文字" +
+            "2 分钟日程被抬到兜底高度绘制，放不下两行，必须标记放不下文字" +
                 "（否则文字溢出块外），实际记录：${recorder.tooShort}",
             true,
             recorder.tooShort["ping"],
+        )
+        assertEquals(
+            "20 分钟日程原始高度高于兜底高度，但仍放不下两行，必须标记放不下文字" +
+                "（真机实测副标题溢出块外），实际记录：${recorder.tooShort}",
+            true,
+            recorder.tooShort["c20"],
+        )
+        assertEquals(
+            "40 分钟日程够放两行，不应被标记为极短，实际记录：${recorder.tooShort}",
+            false,
+            recorder.tooShort["b40"],
         )
         assertEquals(
             "60 分钟日程高度充足，不应被标记为极短，实际记录：${recorder.tooShort}",

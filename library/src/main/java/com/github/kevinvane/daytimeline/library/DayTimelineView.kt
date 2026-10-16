@@ -40,6 +40,7 @@ import com.github.kevinvane.daytimeline.library.core.TimelineEvent
 import com.github.kevinvane.daytimeline.library.internal.ConfigFromAttrs
 import com.github.kevinvane.daytimeline.library.paint.InstallAccessibility
 import com.github.kevinvane.daytimeline.library.internal.Dimens
+import com.github.kevinvane.daytimeline.library.paint.BlockTextFitting
 import com.github.kevinvane.daytimeline.library.paint.DefaultEventBlockPainter
 import com.github.kevinvane.daytimeline.library.paint.DefaultGridPainter
 import com.github.kevinvane.daytimeline.library.paint.Theme
@@ -521,6 +522,13 @@ class DayTimelineView @JvmOverloads constructor(
         val hourHeight = dimens.effectiveHourHeight
         val timeFmt = config.resolvedTimeFormat()
         val showSubtitle = config.showTimeSubtitle ?: false
+        // 块内文字放得下所需的最小块高：显示副标题时为两行，否则一行。
+        // 只算一次（同一支文字笔，所有块一致），避免在逐块循环里反复取 fontMetrics。
+        val minTextHeight = BlockTextFitting.requiredHeightPx(
+            blockPaints.text,
+            if (showSubtitle) 2 else 1,
+            dimens.blockPaddingVertical,
+        )
         for (b in blocks) {
             val startMin = b.event.start.minuteOfDay
             val endMin = b.event.end.minuteOfDay
@@ -550,10 +558,12 @@ class DayTimelineView @JvmOverloads constructor(
                 startText = b.event.start.toString()
                 endText = b.event.end.toString()
                 showTimeSubtitle = showSubtitle
-                // 极短日程判据必须用**未兜底**的原始高度：blockH 已被 Geometry.blockHeight
-                // 抬到 blockMinHeight 以上，拿它比最小高度是恒 false 的死条件——那样
-                // 「块高不足以显示文字时只读屏」永远不会触发，文字会溢出块外（真机实测过）。
-                tooShortForText = Geometry.naturalBlockHeight(startMin, endMin, hourHeight) < dimens.blockMinHeight
+                // 极短日程判据：「这块高度放不放得下块内要画的文字行数」。
+                // 曾写成 blockH < blockMinHeight——blockH 已被 Geometry.blockHeight 抬到
+                // 兜底高度以上，该条件恒为 false，「块高不足则只读屏不显示文字」从没触发，
+                // 文字溢出块外（真机实测：20 分钟块的副标题画到了块背景外）。
+                // 现按文字 Paint 实测所需高度判定，与默认绘制共用同一口径。
+                tooShortForText = blockH < minTextHeight
             }
             painter.paint(canvas, blockContext, colors, blockPaints)
         }
