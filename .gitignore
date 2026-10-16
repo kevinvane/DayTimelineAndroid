@@ -14,3 +14,7 @@ local.properties
 # 否则新增模块时 `git add -A` 会把 APK、DEX、kotlin 缓存全提交进去
 # （踩过一次：r8test/build/ 下数千个文件被误提交）。
 **/build/
+
+# opencode 运行时缓存（loop 锁等），不追踪。行首 `/` 锚定仓库根目录，
+# 只忽略根下这一处，不会命中任何同名子目录。整个 cache 目录都是可再生的运行时产物。
+/.opencode/cache/

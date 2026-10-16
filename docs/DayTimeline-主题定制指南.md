@@ -187,7 +187,7 @@ timeline.eventBlockPainter = object : EventBlockPainter {
 ```
 
 > `Paints` 只有四支：`background` / `text` / `accent` / `stroke`。
-> 它们**已经按配置设好 `textSize`**，可以直接用；字体仍需自己设（见 §3.3）。
+> 它们**已经按配置设好 `textSize` 与 `typeface`**，可以直接用；要换字族见 §3.3。
 
 ### 3.1 `BlockContext` 常用字段
 
@@ -220,8 +220,9 @@ RTL 镜像、色条内缩都已由组件算好，直接用 `context.left` 等字
 
 ### 3.3 想改文字排版
 
-`defaultPaints` 里带了几支已按配置设好 `textSize` 的笔，
-但**字体**要自己设（组件当前使用系统默认字体，M0-3 切图与字体资源尚未交付）：
+`defaultPaints` 里带了几支已按配置设好 `textSize` 与 `typeface` 的笔
+（组件自 M0-3 起默认用 `sans-serif` 作正文、`sans-serif-medium` 作当前时间线与选中态标题）。
+要换字族，覆盖对应 `paint.typeface` 即可：
 
 ```kotlin
 paint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
