@@ -791,6 +791,25 @@ private val hitTester = HitTester(minTouchTarget = 48, handleTouchSize = 48)
 > | 事件块起始 | x=160 | **x=268**（右移 108px） |
 >
 > 右移量**精确等于缺口 inset**，根因坐实。修复后 `:library` 115 + `:app` 7 全绿，无回归。
+**该修复已补回归测试** `MainActivityWindowInsetsTest`（4 条，见下）。
+>
+> **修复的回归测试** `MainActivityWindowInsetsTest`（`:app` 仪器测试，4 条，
+> `@SdkSuppress(minSdkVersion = 30)`——构造 insets 需要 `WindowInsetsCompat.toWindowInsets()`）：
+>
+> | 用例 | 断言 |
+> |---|---|
+> | `sideCutoutIsAvoidedEvenWhenSystemBarsAreEmpty` | 横屏侧边缺口 110px + 系统栏全 0 → `paddingLeft == 110`（**原缺陷的精确复现条件**） |
+> | `cutoutWinsOverSystemBarWhenCutoutIsLarger` | 缺口大于系统栏时四边取缺口，反之回落到系统栏 |
+> | `fourEdgesAreAvoidedNotJustTheLeft` | 四边都避让，不只左边 |
+> | `systemBarWinsWhenItIsLargerThanCutout` | **对照组**：系统栏本就够大时应保持不变 |
+>
+> **测试直接合成 insets 喂给根视图**，不依赖方向、也不依赖设备是否真有缺口——
+> 谁把 `displayCutout()` 删掉就会转红。断言对象是**最终 padding**而非「调了哪个方法」，
+> 中间换了写法（`maxOf` / `union`）不该让测试变红。
+>
+> **回滚验证**：把修复还原成只取 `systemBars()` → **4 条中 3 条转红**，失败信息逐条对应症状：
+> `expected:<110> but was:<0>`、`expected:<110> but was:<20>`（即系统栏的值）、`expected:<10> but was:<0>`。
+> 第 4 条（对照组）仍绿——符合预期，它验证的是系统栏够大时的行为，原实现本来就满足。
 >
 > **分屏这条要如实标注方法学局限**：Pixel Fold AVD（Android 17）**拒绝了真多窗口**——
 > `am start --windowingMode 3`（MULTI_WINDOW）与 `--windowingMode 5`（FREEFORM）均被忽略，
