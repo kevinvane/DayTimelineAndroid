@@ -61,7 +61,7 @@
 
 | # | 阻断项 | 依据 | 状态 |
 |:--:|---|---|:--:|
-| 1 | **§12.2 兼容性矩阵**：2026-10-16 补上三项剩余空白——**折叠屏**（Pixel Fold AVD 展开/折叠两种几何各 115 条全绿）、**缺口屏**（查出并**已修复**一处真实缺陷：横屏下轴标签整列落在缺口区内，根因是 inset 只取 `systemBars()` 未并入 `displayCutout()`，像素级验证右移量精确等于 110px 缺口 inset）、**分屏**（`wm size` 缩窗，进程未重建、状态保留）。**方法学局限如实标注**：分屏用的是缩窗而非真多窗口——Pixel Fold AVD（Android 17）以 `--windowingMode 3/5` 启动均被平台忽略（大屏默认禁用多窗口），故任务栈与焦点切换这一段未覆盖。附带修掉测试套件对 420dpi 的隐含假设（改从真实资源推导几何），320dpi 与 160dpi 两档密度各 115 条全绿 | PRD §12.2 | **基本完成**（详见 §4.3，含上述局限） |
+| 1 | **§12.2 兼容性矩阵**：2026-10-16 补上三项剩余空白——**折叠屏**（Pixel Fold AVD 展开/折叠两种几何各 115 条全绿）、**缺口屏**（查出并**已修复**一处真实缺陷：横屏下轴标签整列落在缺口区内，根因是 inset 只取 `systemBars()` 未并入 `displayCutout()`，像素级验证右移量精确等于 110px 缺口 inset）、**分屏**（`wm size` 缩窗，进程未重建、状态保留）。**方法学局限如实标注**：真多窗口在**本机模拟器上做不出来**——已试遍 3 台 AVD / 2 个大版本并定位根因：**可用的系统镜像都不声明 `android.software.multiwindow`** feature（手机形态的 Pixel_XL_API_34 同样分不了屏，`emulator -feature MultiWindow` 也补不上；API 26 则因 `am --windowingMode` 尚未存在而无法设置）。当前以 `wm size` 缩窗替代，覆盖窗口尺寸变化下的重排与状态保持，**任务栈分槽 / 焦点切换 / 跨应用并存三段未覆盖**，详见 §4.3。附带修掉测试套件对 420dpi 的隐含假设（改从真实资源推导几何），320dpi 与 160dpi 两档密度各 115 条全绿；另在 API 34 手机形态 AVD 上首跑 `:library` **115 条全绿** | PRD §12.2 | **基本完成**（详见 §4.3，含上述局限） |
 
 > **2026-10-16 原第 1 项（P6 耗电）已降级为「非阻断」**：PRD §12.1 的「长时间运行：界面停留 1 小时后
 > 耗电无明显上升」**至今没有任何实测支撑**，采集条件始终不具备——唯一真机电池已损坏，拔电即关机。
@@ -751,7 +751,7 @@ private val hitTester = HitTester(minTouchTarget = 48, handleTouchSize = 48)
 
 | 维度 | §12.2 要求 | 自动化证据 | 状态 |
 |---|---|---|:--:|
-| 最低系统版本 | Android 6.0（API 23） | **2026-10-16 真机实测**：一台 Android 6.0.1 / API 23 平板真机 / mdpi(160dpi) / `ro.build.characteristics=tablet` —— 一台设备同时覆盖「API 23」与「平板」两个维度。115 条仪器测试跑完，**3 失败 1 跳过**（均为测试自身的密度假设，见下方说明） | **已实测** |
+| 最低系统版本 | Android 6.0（API 23） | **2026-10-16 真机实测**：一台 Android 6.0.1 / API 23 平板真机 / mdpi(160dpi) / `ro.build.characteristics=tablet` —— 一台设备同时覆盖「API 23」与「平板」两个维度。115 条仪器测试跑完，**3 失败 1 跳过**（均为测试自身的密度假设，见下方说明）；**修复后在 160dpi 上复跑 115 条全绿** | **已实测** |
 | 目标系统版本 | 最新正式版 | Pixel Fold AVD（Android 17 / API 37 > targetSdk 36）跑通 `:library` 115 + `:app` 7 | **已实测** |
 | 屏幕形态 | 常规手机 / 平板 / 分屏 / 折叠屏展开与折叠 | **平板**已实测（API 23 真机，`characteristics=tablet`）；**常规手机**已在 Pixel API 28 验证；**折叠屏展开/折叠**已在 Pixel Fold AVD 两种几何实测（2208×1840 / 1080×2092，115 条全绿）；**分屏**见下方说明（用 `wm size` 缩窗模拟，非真多窗口） | **四项全部已实测** |
 | 屏幕缺口与手势条 | 正确避让，不被遮挡 | `cmd overlay ... cutout.emulation.tall` 模拟 110px 缺口。**查出并已修复一处真实缺陷**，见下方说明 | **已修复并实测** |
@@ -873,12 +873,29 @@ private val hitTester = HitTester(minTouchTarget = 48, handleTouchSize = 48)
 > `expected:<110> but was:<0>`、`expected:<110> but was:<20>`（即系统栏的值）、`expected:<10> but was:<0>`。
 > 第 4 条（对照组）仍绿——符合预期，它验证的是系统栏够大时的行为，原实现本来就满足。
 >
-> **分屏这条要如实标注方法学局限**：Pixel Fold AVD（Android 17）**拒绝了真多窗口**——
-> `am start --windowingMode 3`（MULTI_WINDOW）与 `--windowingMode 5`（FREEFORM）均被忽略，
-> 窗口始终全屏。原因是展开态 841dp 宽度属大屏（large screen），
-> Android 16+ 默认禁止大屏设备进多窗口；折叠态 411dp（compact）下同样无效。
-> 因此改用 `wm size` 缩窗——它触发的正是分屏所走的同一条 `onSizeChanged → relayout` 路径，
-> **但它不等价于真多窗口**（真多窗口还涉及任务栈与焦点切换，本项未覆盖）。
+> **分屏这条要如实标注方法学局限——真多窗口在本机模拟器上做不出来，已试遍并定位根因。**
+>
+> 本轮共试了 **3 台 AVD / 2 个 Android 大版本**，结论如下：
+>
+> | AVD | 形态 | `--windowingMode 3/5` | 实际结果 | 根因 |
+> |---|---|---|---|---|
+> | Pixel_Fold（Android 17 / API 37） | 折叠屏，展开态 841dp（大屏） | 被忽略 | 窗口始终全屏 | 841dp 属大屏，Android 16+ 默认禁止大屏进多窗口 |
+> | **Pixel_XL_API_34（API 34）** | **手机，411dp（compact）** | **flag 被接受**（任务确实拿到 `mode=3` / `mode=4`） | **仍不实际分屏** | **镜像 93 个 feature 中没有 `android.software.multiwindow`**，平台不铺分屏布局 |
+> | Pixel_7_API_26（API 26） | 手机 | `am` 直接报错 | 无法设置 | `am --windowingMode` 自 **API 28** 才存在 |
+>
+> **这修正了早先的归因错误**：先前只记了「大屏禁用」，但**手机形态本不应受该策略影响**，
+> 实测同样分不了屏——真正的原因是**可用的系统镜像都不声明 `android.software.multiwindow`**。
+> 试过用模拟器层开关补：`emulator -feature MultiWindow` **加不上**（feature 仍为无）。
+> 另试 `enable_freeform_support` / `force_resizable_activities` 全局开关与 mode 5（FREEFORM），
+> 同样无效。
+>
+> 因此仍以 `wm size` 缩窗作为替代——它触发的正是分屏所走的同一条
+> `onSizeChanged → relayout` 路径，能验证**窗口尺寸变化下的重排与状态保持**；
+> **但它不等价于真多窗口**：任务栈分槽、焦点切换、跨应用并存这三段仍未覆盖。
+>
+> **要清掉这一项需要什么**：一台**真机**（系统自带 multiwindow feature），
+> 或一份**声明了 `android.software.multiwindow` 的系统镜像**。
+> 换模拟器形态、换 flag、调全局开关都试过了，无效。
 >
 > **2026-10-13 更新：本节三行原为「零覆盖」，现已补上自动化，但过程中查出一处真实缺陷。**
 >
@@ -1073,6 +1090,7 @@ adb -s $d shell dumpsys battery                # 确认供电状态
 | v1.4 | 2026-10-16 | **对比度阻断项闭环，阻断项 4 → 3。** 设计复核选定 **A + C**：浅色 `day_timeline_block_text_past` `#949CA6` → `#858D96`（**3.04:1**，研发独立验算确认，设计报 3.05），深色 `#8A929C` 不动；并把 §7.3「低对比度」正式定为**不得低于 3.0 : 1**。`acceptedContrastDeviations` 中该项移除、登记位留空。**三处同步一处都不能少**——研发首轮改值时漏了 `build.gradle.kts` 的 `designFinalColors` 登记表，门禁立刻报「浅色文件=#858D96 设计定稿=#949CA6 色值与设计定稿不一致」并转红，正是 KDoc 承诺的行为。另：本次在 API 26 Tablet 模拟器上复跑仪器测试，`:app` 7 条因 `NoActivityResumedException`（该 AVD 起不了 demo Activity）与 `:library` 1 条文字容纳断言（20 分钟块，设备字体度量差异）失败——**回滚色值改动后同样失败，已证实与本次改动无关**，证据基线仍为 API 28 Pixel |
 | v1.5 | 2026-10-16 | **漏洞扫描从发布阻断项降级为「可选增强」，阻断项 3 → 2。** 原第 3 项「§12.4「已知安全漏洞 0 个高危」的门禁已建但从未执行」不再阻塞发版，依据：① 该项**在发版前无法完成**——本机到 NVD 出口被严重限流，**单次全量同步最长跑到 5 小时未完成下载**（官方口径 30–45 分钟），**多次重试累计放弃约 10 小时**；② 瓶颈在仓库可控范围外（外部服务限流 + 需要 CI 出口）；③ 组件为 View 体系、**运行时零第三方依赖**（OQ-2），第三方 CVE 暴露面本身很小。**这不是「已确认 0 个高危」——至今无任何实测支撑，文档一律写「未跑通」。** 同步在 `docs/依赖漏洞扫描操作手册.md` 顶部加了显著警告块（**不要在本地跑，要跑走 CI**），并把原 §2 标题「本地跑（推荐路径）」改为「本地跑（**不推荐**，仅用于读报错）」——原标题与新政策直接冲突 |
 | v1.6 | 2026-10-16 | **P6 耗电从发布阻断项降级为「可选增强」，阻断项 2 → 1。** 原第 1 项「§12.1 六项性能指标：P6 采集条件不具备」不再阻塞发版。降级理由：① 采集条件在仓库可控范围外（唯一真机电池损坏，拔电即关机）；② **耗电暴露面经代码走查确认极小**——`library/src/main` 24 个文件对 Service / WakeLock / AlarmManager / WorkManager / 网络库 / 图片加载库 / 线程池**全部零命中**；唯一周期动作是 30 秒一次的当前时间线刷新，且 `onVisibilityChanged` 在非 VISIBLE 时 `removeCallbacks`、**不可见时完全不跑**，`onDetachedFromWindow` 同样移除；30 秒到点后若状态未变，渲染签名去重直接返回、**不产生重绘**。**但必须说清：以上证明的是「暴露面小」，不是「实测耗电达标」——本项目至今没有任何实测数据，文档一律写「未实测」** |
+| v1.7 | 2026-10-16 | **分屏阻断项的归因更正：真多窗口做不出来的根因不是「大屏禁用」，而是镜像缺 feature。** 另起 Pixel_XL_API_34（API 34，411dp **手机**形态）专门攻这一点——手机形态本不应受 Android 16+ 大屏策略影响，`--windowingMode 3/4` 也确实被接受（任务拿到 `mode=3`/`mode=4`），**但仍不实际分屏**：该镜像 93 个 feature 中**没有 `android.software.multiwindow`**。试过 `emulator -feature MultiWindow`（加不上）、`enable_freeform_support` / `force_resizable_activities`（无效）、mode 5 FREEFORM（无效）；Pixel_7_API_26 则因 `am --windowingMode` 自 API 28 才存在而连 flag 都设不了。**早先只记「大屏禁用」是错的**——那会让下一个人换手机模拟器后一头雾水。同时新增一个设备数据点：API 34 手机形态 AVD 上 `:library` **115 条全绿** |
 
 ---
 
