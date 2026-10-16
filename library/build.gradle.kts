@@ -249,7 +249,7 @@ val designFinalColors: Map<String, Pair<String, String>> = mapOf(
     "day_timeline_block_bg_past" to ("#F1F4F7" to "#1B2027"),
     "day_timeline_block_bg_ongoing" to ("#DCEBFF" to "#1E4F8F"),
     "day_timeline_block_bg_upcoming" to ("#EEF2F6" to "#262C35"),
-    "day_timeline_block_text_past" to ("#949CA6" to "#8A929C"),
+    "day_timeline_block_text_past" to ("#858D96" to "#8A929C"),
     "day_timeline_block_text" to ("#1D232B" to "#EDF1F5"),
     "day_timeline_block_accent_past" to ("#C4CBD4" to "#454C56"),
     "day_timeline_block_accent" to ("#2F6FED" to "#8AB8FF"),
@@ -331,22 +331,16 @@ fun compositeOver(fg: String, bg: String): String {
  *
  * ## 已知偏差的处理
  *
- * 浅色「已过态」文字 `#9A949E` 对底色 `#F3F1F4` 为 2.63:1，低于下述 3.0 的下限。
- * §7.3 对该项只给定性要求（「低对比度」）而未给数值，故**不判为不合格**，
- * 但也不能装作没看见：它登记在 [acceptedContrastDeviations] 里，
- * 每次运行都会照常打印出来，直到设计复核后把取值改掉为止。
+ * 设计还没给出数值门槛时，一项「偏低但可能是有意为之」的取值**判不了对错**——
+ * 判失败是无据，研发自行调色是绕开设计评审。它登记在 [acceptedContrastDeviations] 里，
+ * 每次运行都照常打印，直到设计复核完成为止。
+ *
+ * **该登记位用过一次，现已清空**（2026-10-16 设计复核，选项 A + C）：
+ * 浅色「已过态」文字 `#949CA6` 对底色 `#F1F4F7` 为 2.51:1，低于 3.0 的下限。
+ * 设计定案：改为 `#858D96`（**3.04:1**，研发独立验算确认），
+ * 并把 §7.3「低对比度」正式定为**不得低于 3.0 : 1**——**门槛一明确，就不必再挂待办**。
  */
-val acceptedContrastDeviations = setOf(
-    // 浅色已过态 2.51:1。§7.3 只给定性要求「低对比度」而未给数值，故不判失败，
-    // 但每次运行都照常打印，直到设计复核后把取值改掉为止。
-    //
-    // 建议值 #868E98（3.00:1）。同色相向暗一档即可，不改色相。
-    //
-    // 沿革：紫色系那版是 2.63:1（建议值 #8F8994），改蓝色系后变为 2.51:1，
-    // 略微更差一点——蓝色系整体偏冷偏暗，这一项跟着底色一起暗了。
-    // 见 docs/DayTimeline-设计侧定稿交付.md 与 PRD §19.4 v1.20。
-    "light:day_timeline_block_text_past/day_timeline_block_bg_past",
-)
+val acceptedContrastDeviations = emptySet<String>()
 
 tasks.register("verifyColorsFinalized") {
     group = "verification"

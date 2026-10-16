@@ -22,7 +22,7 @@
 | 5 | `day_timeline_block_bg_past` | `#F1F4F7` | `#1B2027` | 已过块背景弱化，浅色蓝灰白，深色比背景略亮但低饱和。 |
 | 6 | `day_timeline_block_bg_ongoing` | `#DCEBFF` | `#1E4F8F` | 进行中块背景突出，浅色淡蓝；深色中深蓝承载白字。 |
 | 7 | `day_timeline_block_bg_upcoming` | `#EEF2F6` | `#262C35` | 未到块常规中性，浅色浅蓝灰，深色深蓝灰。 |
-| 8 | `day_timeline_block_text_past` | `#949CA6` | `#8A929C` | 已过块文字低对比，体现失效；深浅都明显弱于常规文字。 |
+| 8 | `day_timeline_block_text_past` | `#858D96` | `#8A929C` | 已过块文字低对比，体现失效；深浅都明显弱于常规文字。浅色值 2026-10-16 由 `#949CA6` 上调（原 2.51:1 → 现 3.04:1，满足 §7.3 的「不得低于 3.0:1」）。 |
 | 9 | `day_timeline_block_text` | `#1D232B` | `#EDF1F5` | 进行中/未到常规文字；深色提亮到近白。 |
 | 10 | `day_timeline_block_accent_past` | `#C4CBD4` | `#454C56` | 已过色条弱化，浅色蓝灰，深色灰蓝。 |
 | 11 | `day_timeline_block_accent` | `#2F6FED` | `#8AB8FF` | 进行中/未到色条高辨识；浅色品牌蓝，深色提亮淡蓝。 |
@@ -47,7 +47,7 @@
 <color name="day_timeline_block_bg_past">#F1F4F7</color>
 <color name="day_timeline_block_bg_ongoing">#DCEBFF</color>
 <color name="day_timeline_block_bg_upcoming">#EEF2F6</color>
-<color name="day_timeline_block_text_past">#949CA6</color>
+<color name="day_timeline_block_text_past">#858D96</color>
 <color name="day_timeline_block_text">#1D232B</color>
 <color name="day_timeline_block_accent_past">#C4CBD4</color>
 <color name="day_timeline_block_accent">#2F6FED</color>

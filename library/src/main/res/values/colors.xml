@@ -38,7 +38,7 @@
     <color name="day_timeline_block_bg_upcoming">#EEF2F6</color>
 
     <!-- 8 日程块文字色（已过）：低对比度，体现已失效 -->
-    <color name="day_timeline_block_text_past">#949CA6</color>
+    <color name="day_timeline_block_text_past">#858D96</color>
     <!-- 9 日程块文字色（进行中/未到）：正常对比度 -->
     <color name="day_timeline_block_text">#1D232B</color>
 
