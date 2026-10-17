@@ -24,6 +24,21 @@ val configureDependencyCheck: DependencyCheckExtension.() -> Unit = {
     // 第三方问题卡住发布。
     failBuildOnCVSS.set(7.0f)
 
+    // 只扫「会进入发布物/运行时」的 classpath（OQ-2：运行时零非 AndroidX 第三方依赖）。
+    //
+    // 不设这一项时插件会扫**所有可解析且非测试**的配置，于是三类构建期工具链被一并纳入
+    // （2026-10-17 CI 首次跑通后逐配置实测确认）：
+    // ① AGP 的 `_internal-unified-test-platform-*`——名字里的 `-test-` 两侧是连字符，
+    //    匹配不上插件的 test 正则，因此没被默认的 `skipTestGroups` 挡掉 → grpc / netty / protobuf；
+    // ② Kotlin 插件的 `kotlinCompilerClasspath` / `kotlinBuildToolsApiClasspath` /
+    //    `kotlinKlibCommonizerClasspath` 与 detekt 的 `detekt` → kotlin-compiler-embeddable。
+    // 这些都不进 AAR、不进 APK，属于 OQ-2 里「构建/测试期允许的工具类依赖」；
+    // 拿它们的 CVE 去阻断发布，等于把上游工具的问题算到发布物头上。
+    //
+    // 用白名单而非 `skipConfigurations` 黑名单：新出现的工具链配置默认不扫，
+    // 免得每次升级 AGP / Kotlin 都要重新枚举一遍。两个名字在三个模块上都存在（实测）。
+    scanConfigurations.set(listOf("debugRuntimeClasspath", "releaseRuntimeClasspath"))
+
     // NVD API key：有则用（限速从 5/30s 放宽到 50/30s，首次同步快一个数量级）
     val nvdKey = providers.environmentVariable("NVD_API_KEY").orNull
     if (!nvdKey.isNullOrBlank()) {
@@ -34,8 +49,9 @@ val configureDependencyCheck: DependencyCheckExtension.() -> Unit = {
     //
     // NVD 在匿名限速与持续访问下都会短暂返回 503，那是可恢复的、不是致命的错误，
     // 默认的 5 次重试在连续 503 下会立刻放弃并抛 NvdApiRetryExceededException。
-    // ⚠️ **这两个值未经端到端验证**：调整后本机的运行始终没能跑完（见技术方案 §9.4.1
-    // 记录的第四轮排查），因此它们只是「更宽容」，不是「已验证有效」。
+    // 2026-10-17 门禁在 **CI** 首次跑通并产出报告（漏洞库同步完整走完），
+    // 这组重试参数在 CI 出口下已被实际使用过；但**本机**到 NVD 出口被限流是另一回事，
+    // 本地运行至今没跑完（见技术方案 §9.4.1 第四轮排查）。
     // `delay` 的单位是秒（客户端默认同为 8）。
     nvd.maxRetryCount.set(20)
     nvd.delay.set(8)
@@ -149,14 +165,14 @@ tasks.named("dependencyCheckAggregate") {
  */
 tasks.register("verifyNoHighVulns") {
     group = "verification"
-    description = "依赖漏洞门禁：已知高危漏洞 0 个（PRD §12.4），首次运行需下载 NVD 漏洞库"
+    description = "依赖漏洞门禁：运行时 classpath 高危漏洞 0 个（PRD §12.4），首次运行需下载 NVD 漏洞库"
     dependsOn(requireNvdApiKey)
     dependsOn(perProjectScans)
     // Aggregate 而非 Analyze：它把三个模块的报告汇总成一份
     dependsOn("dependencyCheckAggregate")
     doLast {
         logger.lifecycle(
-            "[漏洞门禁] verifyNoHighVulns 通过：未发现 CVSS ≥ 7.0 的漏洞。" +
+            "[漏洞门禁] verifyNoHighVulns 通过：运行时 classpath 未发现 CVSS ≥ 7.0 的漏洞。" +
                 "报告见 build/reports/dependency-check/",
         )
     }

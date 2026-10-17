@@ -957,7 +957,7 @@ AD-25 已把「退出编辑态的状态」收敛成单一出口，这次把**副
 
 ### 5.3 CI
 
-仓库已有 CI（`.github/workflows/ci.yml`），无 pre-commit 钩子。CI 已覆盖：`detekt` → `verifyNoDeadCode` → `assembleDebug` → `test`（L1）→ 覆盖率阈值（核心 + 可测逻辑）→ `lint`，另有仪器测试与 R8 混淆验证两个独立 job。**仍未接入**：pre-commit 钩子、依赖漏洞扫描、文档待办标记检查。
+仓库已有 CI（`.github/workflows/ci.yml`）并有 pre-commit 钩子（`.githooks/pre-commit`，需先 `git config core.hooksPath .githooks`）。CI 已覆盖：`detekt` → `verifyNoDeadCode` → `assembleDebug` → `test`（L1）→ 覆盖率阈值（核心 + 可测逻辑）→ `lint`，另有仪器测试、R8 混淆验证、依赖漏洞扫描（`dependency-scan`）三个独立 job。**仍未接入**：文档待办标记检查。
 
 ---
 
@@ -1150,6 +1150,7 @@ estoreHierarchyState，回滚测试显示 93 条全绿、测试根本没咬住�
 | v0.29 | 2026-10-15 | **M0-2 / M0-3 交付，M0 设计定稿三项齐备**（对齐 PRD v1.23）。① 设计侧交付交互标注与切图/字体资源（`docs/DayTimeline-交互标注与字体资源交付清单-设计回复.md`）。② **M0-2** 交互标注经核对与现有实现一致、**组件代码无改动**；设计回复对「选中态字重」的表述与 PRD §7.4 有疑义（#3 称标题默认 Medium，#6 称选中态 Regular→Medium），按 §7.4「选中态色 + 轻微加粗」定为**常规 Regular、选中 Medium**。③ **M0-3** 字体规格落地 `Theme.kt`：新增内部 `TimelineTypeface`（`sans-serif` / `sans-serif-medium`），`axisLabel`→Regular、`nowLabel`→Medium、块标题默认 Regular（选中态临时切 Medium）、副标题恒 Regular，副标题行高由 1.2× 改为 16sp/12sp；新增仪器测试 `textPaintsUseFinalizedTypefaces` 锁住字族映射，**回滚验证会转红**。切图判定「无位图需求」，组件维持全自绘。④ §6 M0 章节、§9.1 M0 行、AD-12 遗留栏、§9.4 第 4 条同步更新；《质量报告》§1.2 发布阻断项由 5 → 4。⑤ **不降低任何验收标准** | — |
 | v0.30 | 2026-10-15 | **修掉极短日程块内文字溢出块外的绘制缺陷**（**对外签名一行未动**，但新增内部方法 `Geometry.naturalBlockHeight` 且行为有变，故记入）。背景：`:app` demo 的 19:00–19:02「提醒」在真机上文字溢出到块外。**根因**：`DayTimelineView` 的 `tooShortForText` 判据写成 `blockH < dimens.blockMinHeight`，而 `blockH` 早已被 `Geometry.blockHeight` 用 `coerceAtLeast(minBlockHeight)` 抬到最小值，条件恒 false——「块高不足则跳过文字」这条降级路径**从未生效**，接入方文档（DL-04 / DL-06）声称的行为与实现不符，属「声明了却没有代码」（教训第五条）的又一实例。① **修法**：`Geometry` 新增 `fun naturalBlockHeight(startMinute, endMinute, hourHeightPx): Int` 返回**未兜底**的原始高度，`blockHeight` 重构为 `naturalBlockHeight(...).coerceAtLeast(min)`（**`hourHeightPx <= 0` 的 early return 必须保留**，否则 `GeometryTest`「格高为 0 时不崩溃」会失败——已踩过并修复）；`tooShortForText` 改用 `naturalBlockHeight(startMin, endMin, hourHeight) < dimens.blockMinHeight`，与 PRD §7.2「最小显示高度 20dp：低于此值无法显示内容」一致。② **回滚验证**：改回旧判据 → 新增仪器测试 `shortEventIsFlaggedTooShortForTextInsteadOfOverflowingTheBlock` 转红（记录 `{ping=false, long=false}`），已还原。③ **真机复核**（Pixel / Android 9）：19:00–19:02 块现只绘色条与强调边、文字不再溢出。④ **未采用 `Paint.fontMetrics`「两行是否放得下」判据**——会在 font_scale 200% 下让 1 小时块也丢文字，与《质量报告》§4.2.2「200% 下 66 分钟块文字完整未溢出」的手工记录冲突。⑤ **不改任何对外签名 / 验收标准** | — |
 | v0.31 | 2026-10-15 | **订正 v0.30：极短日程判据改用「块高是否放得下块内要画的文字行数」**（**对外签名未动**）。v0.30 把判据从死条件 `blockH < blockMinHeight` 改为 `naturalBlockHeight < blockMinHeight`，只覆盖了 < 20dp 的块；真机复查（Pixel / demo 的 `16:40–17:00` 20 分钟块）发现**高于 20dp、仍放不下两行的块照样溢出**——20 分钟块原始高度 21.3dp（64dp 格高）越过 20dp，但要画「时间 + 标题」两行塞不进 56px，副标题「并行任务 C」画到了块背景外。① **新增 `paint/BlockTextFitting`**：用块文字 `Paint` 的 `fontMetrics` 算第 n 行基线，`requiredHeightPx = paddingVertical - ascent + (n - 1) * 行距`；`DayTimelineView` 据此设 `tooShortForText`（显示副标题按两行、否则一行），与默认绘制共用同一支 `Paint`，杜绝两处各算一套后漂移。② **判据口径的取舍**：只保证**最后一行基线落在块内**（不再额外留 descender）——Pixel 实测 30 分钟块（84px）第二行基线正好落在块内、视觉完好，算上整段 descender 会把它误判为放不下。③ **回滚验证**：判据改回 `blockH < dimens.blockMinHeight`，新增断言 `c20`（20 分钟块）与 `ping` 立刻由 true 变 false，用例转红（记录 `{c20=false, ping=false, long=false, b40=false}`）。④ **真机全时段扫描**（Pixel / Android 9）：30/40/45/60 分钟块两行均在块内，20/5/2 分钟块无文字，无溢出、无回归。⑤ 接入方文档（DL-04 / DL-06 / 主题定制指南）的「两行文字」措辞同步改为「要画的文字行数」。**不改任何对外签名 / 验收标准** | — |
+| v0.32 | 2026-10-17 | **漏洞门禁首次在 CI 执行完成，并据此收窄扫描范围（对齐 PRD v1.24）**（`build.gradle.kts` 加一行 `scanConfigurations`，对外签名一行未动）。① **首次跑出报告**（OWASP Dependency-Check 13.0.0，NVD 数据 2026-10-17 06:31Z，`project ':app'` 305 个依赖）：命中 **70 个 CVE、51 个 CVSS ≥ 7.0**，任务失败、报告靠 CI `if: always()` 归档。② **逐条核对后全部命中落在构建期工具链**——AGP 的 `_internal-unified-test-platform-*`（grpc / netty / protobuf）与 Kotlin/detekt 的 `kotlinCompilerClasspath` 等（`kotlin-compiler-embeddable`），**运行时依赖 0 命中**。这些坐标不在 `gradle/libs.versions.toml`、也不进 AAR/APK（OQ-2 的「构建/测试期允许工具类依赖」）。③ **据此刻意设 `scanConfigurations = [debugRuntimeClasspath, releaseRuntimeClasspath]`**（白名单，非 `skipConfigurations` 黑名单）；本机验证收窄后扫描集（:app 60 / :library 58 / :r8test 58 个文件）0 个工具链命中。**§9.4.1 由此新增第 4 个坑**：AGP 那批配置名里的 `-test-` 两侧是连字符，匹配不上插件的 test 正则，默认 `skipTestGroups` 挡不住它。④ **收窄后的「0 个高危」仍待 CI 重跑确认**（本机到 NVD 出口限流，不能在本机复跑）。⑤ 同步 §9.1 门禁表、§9.2、§9.4、§9.4.1，《质量报告》§1.2 / §4.4 / §6 / §8 与操作手册。**不放宽任何验收标准**（§12.4 仍要求 0 个高危） | — |
 
 ---
 
@@ -1180,7 +1181,7 @@ estoreHierarchyState，回滚测试显示 93 条全绿、测试根本没咬住�
 | 仪器测试（L2） | **达成** | `:library:connectedDebugAndroidTest` **108/108 全绿**（Pixel_XL_API_34 / Android 14，2026-10-13）。含 AD-25 的 5 条 E20 用例、AD-26 的 3 条 `ACTION_CANCEL` 用例、3 条外部滚动模式取消用例、2 条「接管态下完成事件互斥」用例、AD-27 的 5 条、AD-28 的 16 条、**以及 AD-29 的 3 条**（`RedrawConvergenceTest`，2026-10-13 新增，见 §9.2.2） |
 | 示例应用仪器测试 | **达成** | `:app:connectedDebugAndroidTest` **7/7 全绿**（`MainActivityCancelPathTest`）。**2026-10-10 新建，此前 `app/src/` 只有 `main`**——demo 侧两条取消收尾只靠注释自证；已接入 CI |
 | 全库覆盖率 ≥ 75% | **达成（口径已修订）** | `:library:verifyAllCoverage` 实测 **89.61%**（3348/3736，2026-10-13；此前 88.60% / 3310/3736）。**口径与 PRD 原文不同**，见下方说明 |
-| 已知安全漏洞 0 个高危 | **已建立门禁，尚未跑通** | `verifyNoHighVulns`（OWASP Dependency-Check 13.0.0，阈值 CVSS ≥ 7.0，`dependencyCheckAggregate` 汇总 `:library` / `:app` / `:r8test` 三模块）+ CI 独立 job `dependency-scan`（带 NVD 漏洞库缓存、报告归档、失败时打印漏洞明细）。**尚未配置 NVD API key，因此门禁一次都没真正执行过**——13.x 起 dependency-check 只支持 NVD API 且强制要求 key，缺 key 时前置检查会直接拦下并给出申请指引 |
+| 已知安全漏洞 0 个高危 | **2026-10-17 CI 首次执行完成，已收窄到运行时 classpath** | `verifyNoHighVulns`（OWASP Dependency-Check 13.0.0，阈值 CVSS ≥ 7.0，`dependencyCheckAggregate` 汇总 `:library` / `:app` / `:r8test` 三模块）+ CI 独立 job `dependency-scan`（带 NVD 漏洞库缓存、报告归档、失败时打印漏洞明细）。**2026-10-17 首次在 CI 跑出报告**：未收窄范围时命中 70 个 CVE（51 个 ≥ 7.0）**全部落在构建期工具链**（AGP 的 `_internal-unified-test-platform-*`、Kotlin/detekt 的 `kotlinCompilerClasspath` 等），运行时依赖 0 命中。据此设 `scanConfigurations = [debugRuntimeClasspath, releaseRuntimeClasspath]`（OQ-2 口径）。**收窄后的「0 个高危」仍待 CI 重跑确认**（本机到 NVD 出口限流，不能在本机复跑） |
 | 性能基准（§12.1 全部指标） | **部分落地（较 v0.19 有实质推进）** | §12.1 九行指标中 **3 行已自动阻断**：全量布局 200 条 ≤ 4ms、列表增量更新 100 条 ≤ 16ms、网格区常驻界面元素数 = 0（源码扫描 + 运行时双侧）；另有两道相邻守卫——布局增长形状（§12.1 原文没有，防复杂度回退）、D17 刷新收敛（3 条仪器测试，需设备）。**仍只能人工真机走查的 6 项**：首次显示中位数 / P95、滚动掉帧率 ≤ 3%、拖拽跟手 ≤ 1 帧、内存 1 小时平稳、1 小时耗电——它们都必须真机 + 真滚动才能测，模拟器帧时序不代表任何真实设备。详见 §9.2.2 |
 | 文档完整性（无遗留待办标记） | **未落地** | PRD §12.4 要求，但无任何工具或 CI 步骤扫描文档中的待办标记，只能人工核对 |
 | 界面自动化冒烟 | **部分落地** | `:app` 已有 7 条取消链路仪器测试（v0.12 起接入 CI）；表单提交、日期切换、配置面板、删除成功路径仍无自动化，见 §9.4 第 7 条 |
@@ -1279,10 +1280,12 @@ CI 的 `instrumented` job 跑在 API 34 模拟器上，模拟器帧时序不代�
    - ~~完成后重跑 **Q7 深色对比度走查（UF-004）** 与 **FC-002 换肤验收**~~ **已重跑**：Q7 随 M0-1 定稿色值走查（含 1 项登记偏差——浅色已过态 2.51:1），FC-002 随新色值同步重走。
 5. ~~**pre-commit 钩子**~~ **已完成 2026-10-13**（`.githooks/pre-commit`，detekt → verifyNoDeadCode → verifyNoChildViews，本机指一次 `git config core.hooksPath .githooks` 即生效）。
 
-   **依赖漏洞扫描：已建立门禁，尚缺 NVD API key**——`:verifyNoHighVulns`（OWASP Dependency-Check 13.0.0，CVSS ≥ 7.0）与 CI 的 `dependency-scan` job 都已就位，
-   **但门禁一次都没真正执行过**：13.x 起 dependency-check 只支持 NVD API、而 NVD API 强制要求 key。
-   免费申请地址 https://nvd.nist.gov/developers/request-an-api-key，配成环境变量 `NVD_API_KEY`（CI 配成 secret）后即可首次运行。
-   本次为此踩到并已记下的三个坑见 §9.2.3。
+   **依赖漏洞扫描：门禁已于 2026-10-17 在 CI 首次执行完成，并据此收窄了扫描范围**——`:verifyNoHighVulns`
+   （OWASP Dependency-Check 13.0.0，CVSS ≥ 7.0）与 CI 的 `dependency-scan` job 均已就位。
+   首次执行命中 70 个 CVE（51 个 ≥ 7.0），**全部落在构建期工具链**（AGP 的 `_internal-unified-test-platform-*`、
+   Kotlin/detekt 的 `kotlinCompilerClasspath` 等），运行时依赖 0 命中；据此设
+   `scanConfigurations = [debugRuntimeClasspath, releaseRuntimeClasspath]`。**收窄后的「0 个高危」仍待 CI 重跑确认**
+   （本机到 NVD 出口限流，不能在本机复跑）。三个坑与本次新增的第 4 个坑见 §9.4.1。
 
    **文档完整性扫描仍然没有任何自动化手段**——无工具、无 CI 步骤，暂只能人工核对。
 6. ~~`ACTION_CANCEL` 落入点击 / 长按分派~~ —— **已于 v0.12 修复**（AD-26），并补 3 条仪器测试锁住。
@@ -1298,7 +1301,7 @@ CI 的 `instrumented` job 跑在 API 34 模拟器上，模拟器帧时序不代�
    采样次数、通过判据），否则「人工核对」会退化成「看一眼觉得没问题」——
    这正是 §12.4 里「文档完整性」那项至今只能靠人工的原因（漏洞扫描项已由第 5 条接手）。
 
-### 9.4.1 依赖漏洞门禁的三个坑（AD-30，2026-10-13，均本机实测）
+### 9.4.1 依赖漏洞门禁的四个坑（AD-30，前三个 2026-10-13 本机实测，第 4 个 2026-10-17 CI 实测）
 
 新增 `:verifyNoHighVulns` 时踩到的，**照旧文档抄必然再踩一次**：
 
@@ -1307,6 +1310,7 @@ CI 的 `instrumented` job 跑在 API 34 模拟器上，模拟器帧时序不代�
 | 1 | **13.x 的 DSL 全换了** | `failOnSeverity` / `nvdApiKey` / `cacheDirectory` / `reportsDir` 全部 `Unresolved reference` | 改用 `failBuildOnCVSS.set(7.0f)` / `nvd.apiKey` / `data.directory`（是 `Property<String>`，**传 File 编译不过**）/ `outputDirectory`。**`failOnSeverity` 换成了 CVSS 分值**——PRD 的「高危」在 CVSS v3 里是 7.0–8.9，故阈值取 7.0（含严重级） |
 | 2 | **Kotlin DSL 不生成访问器** | `dependencyCheck { }` 块整个不可用 | 必须 `configure<DependencyCheckExtension> { }` 显式指定类型 |
 | 3 | **13.x 强制 NVD API 且强制要 key** | `dependency-check-core` 里 `NvdDatafeedSource` **已被移除**，只剩 `NvdApiDataSource`；无 key 时客户端仍把空串发出去，服务端回「Invalid API Key, length of 0 too short」，最终抛出 **430 行 Java 堆栈** | 加 `verifyNvdApiKeyPresent` 前置检查，缺 key 就给一句能照做的指引（实测降到 **40 行、2 秒**结束）。**且必须用 `mustRunAfter` 接线**——只靠 `dependsOn` 的声明顺序时，Gradle 实测仍先跑扫描，那句人话根本没机会出现 |
+| 4 | **默认扫描范围把构建工具链也算进「发布物漏洞」**（2026-10-17 CI 首次跑通后才暴露） | 不设 `scanConfigurations` 时插件扫**所有可解析且非测试**的配置，于是 AGP 的 `_internal-unified-test-platform-*`（grpc / netty / protobuf）与 `kotlinCompilerClasspath` / `kotlinBuildToolsApiClasspath` / `kotlinKlibCommonizerClasspath` / `detekt`（`kotlin-compiler-embeddable`）一并纳入，报告 70 个 CVE 全是这些工具，任务直接红——而运行时依赖 0 命中 | 设 `scanConfigurations = [debugRuntimeClasspath, releaseRuntimeClasspath]`（OQ-2 的「运行时」口径）。**用白名单而非 `skipConfigurations` 黑名单**：新出现的工具链配置默认不扫。注意 `-test-` 两侧是连字符时匹配不上插件的 test 正则，`skipTestGroups` 挡不住它 |
 
 #### 第四轮排查：key 本身是有效的，卡住的是本机到 NVD 的链路（2026-10-13）
 
@@ -1328,8 +1332,9 @@ CI 的出口与本机不同、限流计数也相互独立，且 `.gradle/depende
 
 1. `build.gradle.kts` 里把 `nvd.maxRetryCount` 调到 20、`nvd.delay` 保持 8 秒——
    这两个值**未经端到端验证**（运行始终没跑完），只是「更宽容」，已在代码注释里标明。
-2. **「0 个高危漏洞」这个结论至今没有任何实测支撑**。在 CI 真正跑出报告之前，
-   §9.2 门禁表与《质量报告》里写的都必须是「已建立门禁，尚未跑通」。
+2. **「0 个高危漏洞」这个结论仍待 CI 确认**。2026-10-17 门禁首次在 CI 跑出报告——
+   未收窄范围时命中 70 个 CVE 但**全在构建期工具链**，据此已把扫描收窄到运行时 classpath；
+   收窄后的结果需 CI 重跑才能定论（本机到 NVD 出口限流，不能在本机复跑）。
 
 **另有一个「门禁形同虚设」的坑**，与 §9.4 第 2 条同源，不实测发现不了：
 插件若只装在根项目上，`:library` / `:app` / `:r8test` 根本没有 `dependencyCheckAnalyze` 任务；
