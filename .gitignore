@@ -18,3 +18,5 @@ local.properties
 # opencode 运行时缓存（loop 锁等），不追踪。行首 `/` 锚定仓库根目录，
 # 只忽略根下这一处，不会命中任何同名子目录。整个 cache 目录都是可再生的运行时产物。
 /.opencode/cache/
+.kotlin
+*.savlive
