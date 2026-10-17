@@ -1057,6 +1057,30 @@ private val hitTester = HitTester(minTouchTarget = 48, handleTouchSize = 48)
 
 ## 7. 复现命令与数据来源
 
+### 7.0 `1.0.0` 产物核对（2026-10-17）
+
+下载 `https://jitpack.io/com/github/kevinvane/DayTimelineAndroid/1.0.0/DayTimelineAndroid-1.0.0.aar`
+（164.7 KB）解包核对，**不只看 JitPack 的 `ok` 状态**：
+
+| 核对项 | 结果 |
+|---|---|
+| `EditDraft` / `EditResult` / `EventDetail` / `EventDetailKt` / `EditDraftKt` 五个类 | ✅ 全部存在 |
+| `detailOf(String)` / `eventAt(float,float)` / `enterEditMode(String)` / `enterEditModeAndNotify(String)` / `clearSelection()` / `refreshNow()` 六个方法 | ✅ 全部存在 |
+| `MinuteOfDay` 为普通类 | ✅ 只有 `MinuteOfDay.class` + `MinuteOfDay$Companion.class`，**无 `boxed-impl`**，Java 接入方可用 |
+| `proguard.txt` 保留规则数与仓库 `consumer-rules.pro` 一致 | ✅ 均为 **16** 条 |
+| 17 项语义色 × 深浅两套 = 34 个取值 | ✅ 与[设计侧定稿交付](DayTimeline-设计侧定稿交付.md)**逐项一致，零偏差** |
+
+**产物新鲜度判别**（本次新增，回应「会不会拿到旧缓存」）：
+AAR 的 `res/values/values.xml` 中已过态文字取值为 **`#858D96`**，
+**不含** rc1 的 `#949CA6`。该色值由提交 `517b2d2` 引入、属 `1.0.0` tag 范围
+（tag = `6276a6c`）——据此**确认产物构建自 1.0.0 提交，不是 rc1 的缓存**。
+
+> 类与方法的存在性检查**无法区分 rc1 与 1.0.0**（rc1 已包含全部十一项），
+> 因此「产物是哪个版本构建的」必须另找判别依据。色值是本次找到的有效判别点。
+
+> 另记一条实测事实：**AAR 内不含 `LICENSE`**（AGP 与 JitPack 都不附带），
+> 重新分发的接入方需自行附带。
+
 ```powershell
 # 离线门禁（不需要设备）
 .\gradlew.bat detekt
