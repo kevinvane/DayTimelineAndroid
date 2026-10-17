@@ -152,6 +152,28 @@ class GeometryTest {
         // 视口高度为 0 → 视为不可见，避免除零与误绘制
         assertFalse(Geometry.intersectsViewport(100f, 50, 0, 0))
     }
+
+    @Test
+    fun `编辑层范围：新建态（无原块）占满内容区`() {
+        assertEquals(120..500, Geometry.editLayerBounds(null, 120, 500))
+    }
+
+    @Test
+    fun `编辑层范围：修改态跟随被编辑块所在列`() {
+        // 内容区 [120, 500]，块占 [320, 620) → 右端钳到内容区右缘
+        assertEquals(320..500, Geometry.editLayerBounds(placed(left = 200, width = 300), 120, 500))
+    }
+
+    @Test
+    fun `编辑层范围：左边界不小于内容区左缘`() {
+        // 脏数据 left<0 时左端钳到内容区左缘，绝不画到时间轴区域里
+        assertEquals(120..190, Geometry.editLayerBounds(placed(left = -30, width = 100), 120, 500))
+    }
+
+    private fun placed(left: Int, width: Int): PlacedBlock {
+        val e = EventSanitizer.sanitize(listOf(TestEvent("b", 0, 60))).events.single()
+        return PlacedBlock(e, column = 0, columnCount = 1, span = 1, left = left, width = width)
+    }
 }
 
 /**

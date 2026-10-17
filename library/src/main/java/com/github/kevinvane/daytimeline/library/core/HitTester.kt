@@ -42,6 +42,9 @@ class HitTester(
      * @param editing 编辑态块的下标；无编辑态为 -1。
      * @param editingTop 编辑块顶边 y；无编辑态时忽略。
      * @param editingHeight 编辑块高度；无编辑态时忽略。
+     * @param editingCenterX 编辑层水平中心 x（px）。修改态跟随被编辑块所在列的中心，
+     *   新建态为内容区中心；缺省即内容区中心。**必须与 [DayTimelineView] 绘制手柄
+     *   时用的中心一致**，否则手柄会画在一处、热区却在另一处。
      */
     fun hitTest(
         x: Float,
@@ -54,13 +57,14 @@ class HitTester(
         editing: Int = -1,
         editingTop: Int = 0,
         editingHeight: Int = 0,
+        editingCenterX: Float = (contentLeft + contentRight) / 2f,
     ): Hit {
         // ---- 1. 先判编辑手柄（热区远大于视觉，且优先级最高） ----
         if (editing >= 0) {
             val topHandleY = editingTop
             val bottomHandleY = editingTop + editingHeight
-            // 手柄居中于上下边缘水平中心（胶囊形，§7.7）
-            val handleX = (contentLeft + contentRight) / 2f
+            // 手柄居中于编辑层水平中心（胶囊形，§7.7）
+            val handleX = editingCenterX
             val handleHit = handleTouchSize / 2
             if ((x - handleX).let { abs(it) } <= handleHit &&
                 (y - topHandleY).let { abs(it) } <= handleHit

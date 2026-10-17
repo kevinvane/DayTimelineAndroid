@@ -582,10 +582,9 @@ class DayTimelineView @JvmOverloads constructor(
     /**
      * 绘制编辑层（PRD §7.7）。
      *
-     * 编辑块与刻度线**左右对齐**（左起于时间轴区域右侧，右止于右侧边距），
-     * 与普通日程块不同——这是 §7.7 的明确要求。
-     *
-     * 手柄为上下边缘水平居中的胶囊，视觉厚 6dp × 宽 24dp，触摸热区 48dp 由 [HitTester] 负责（UF-001）。
+     * 修改态选框跟随被编辑日程块所在列（见 [Geometry.editLayerBounds]），重叠分栏时只覆盖该列；
+     * 新建态占满内容区。起止时间文字仍画在时间轴区域内右对齐，拖拽时随草稿实时刷新。
+     * 手柄为上下边缘水平居中的胶囊，其中心即 [Geometry.editLayerBounds] 的中心（UF-001）。
      */
     private fun drawEditLayer(canvas: Canvas, contentLeft: Int, contentRight: Int) {
         val session = editSession ?: return
@@ -595,16 +594,13 @@ class DayTimelineView @JvmOverloads constructor(
         )
         if (height <= 0) return // D4：绝不为负
 
-        val left = contentLeft.toFloat()
-        val right = contentRight.toFloat()
+        val bounds = Geometry.editLayerBounds(blocks.getOrNull(editIndex()), contentLeft, contentRight)
+        val left = bounds.first.toFloat()
+        val right = bounds.last.toFloat()
         val bottom = top + height
 
-        paints.editLayer.color = colors.editLayerBg
-        canvas.drawRect(left, top.toFloat(), right, bottom.toFloat(), paints.editLayer)
-
-        paints.selection.color = colors.selected
-        paints.selection.strokeWidth = dimens.editStrokeWidth.toFloat()
-        canvas.drawRect(left, top.toFloat(), right, bottom.toFloat(), paints.selection)
+        // 选框与日程块同为圆角矩形，圆角取块圆角（§7.2）
+        paints.drawEditLayerBox(canvas, colors, dimens, left, top.toFloat(), right, bottom.toFloat())
 
         // 起止时间显示在时间轴区域内侧右对齐（§7.7）
         paints.nowLabel.color = colors.editLayerTime
@@ -1138,6 +1134,9 @@ private fun renderSignature(): Long {
                 }
                 // 交给 GestureDetector 只为长按超时；其余判定自己做
                 gestureDetector.onTouchEvent(event)
+                val editBounds = Geometry.editLayerBounds(
+                    blocks.getOrNull(editIndex()), contentLeft, contentRight,
+                )
                 val hit = hitTester.hitTest(
                     x, y, contentLeft, contentRight,
                     blocks, blockTopsInView(), blockHeights,
@@ -1146,6 +1145,8 @@ private fun renderSignature(): Long {
                     editing = if (editSession != null) maxOf(0, editIndex()) else -1,
                     editingTop = editTopPx() - scrollOffset,
                     editingHeight = editHeightPx(),
+                    // 手柄热区中心与 drawEditLayer 画的选框中心一致（跟随被编辑块所在列）
+                    editingCenterX = (editBounds.first + editBounds.last) / 2f,
                 )
                 grabbedHandle = when (hit) {
                     is HitTester.Hit.TopHandle -> 1
@@ -1630,6 +1631,30 @@ private fun renderSignature(): Long {
         return ca.get(java.util.Calendar.YEAR) == cb.get(java.util.Calendar.YEAR) &&
             ca.get(java.util.Calendar.DAY_OF_YEAR) == cb.get(java.util.Calendar.DAY_OF_YEAR)
     }
+}
+
+/**
+ * 绘制编辑态选框：填充与描边同为圆角矩形，圆角取日程块圆角（§7.2）。
+ *
+ * 抽为顶层函数以控制 [DayTimelineView] 的类体规模（detekt `LargeClass`）。
+ */
+private fun Theme.Paints.drawEditLayerBox(
+    canvas: Canvas,
+    colors: TimelineColors,
+    dimens: Dimens,
+    left: Float,
+    top: Float,
+    right: Float,
+    bottom: Float,
+) {
+    val corner = dimens.blockCorner.toFloat()
+    editLayer.color = colors.editLayerBg
+    canvas.drawRoundRect(left, top, right, bottom, corner, corner, editLayer)
+
+    selection.color = colors.selected
+    selection.strokeWidth = dimens.editStrokeWidth.toFloat()
+    val half = selection.strokeWidth / 2f
+    canvas.drawRoundRect(left + half, top + half, right - half, bottom - half, corner, corner, selection)
 }
 
 /** 边缘自动滚动帧间隔：约 60fps（FI-014）。 */

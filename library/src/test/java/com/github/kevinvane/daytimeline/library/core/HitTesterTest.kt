@@ -101,4 +101,32 @@ class HitTesterTest {
             hit == HitTester.Hit.TopHandle || hit is HitTester.Hit.Block,
         )
     }
+
+    @Test
+    fun `手柄热区中心跟随编辑层水平中心（重叠分栏时只覆盖该列）`() {
+        // 编辑层只覆盖右半列：中心 x=150，而非内容区中心 x=100
+        val b = block("a", 540, 600, left = 0, width = 200)
+        val hit = tester.hitTest(
+            x = 150f, y = 120f,
+            contentLeft = 0, contentRight = 200,
+            blocks = listOf(b), blockTops = intArrayOf(100), blockHeights = intArrayOf(100),
+            editing = 0, editingTop = 120, editingHeight = 100,
+            editingCenterX = 150f,
+        )
+        assertEquals(HitTester.Hit.TopHandle, hit)
+    }
+
+    @Test
+    fun `编辑层收窄后旧的内容区中心不再命中手柄`() {
+        // 同一坐标 (100,120) 在上一条里能命中；编辑层中心移到 150 后应落空（距 50 > 热区半径 24）
+        val b = block("a", 540, 600, left = 0, width = 200)
+        val hit = tester.hitTest(
+            x = 100f, y = 120f,
+            contentLeft = 0, contentRight = 200,
+            blocks = listOf(b), blockTops = intArrayOf(100), blockHeights = intArrayOf(100),
+            editing = 0, editingTop = 120, editingHeight = 100,
+            editingCenterX = 150f,
+        )
+        assertTrue("旧中心应退化为命中块/空白，而非手柄", hit !is HitTester.Hit.TopHandle)
+    }
 }

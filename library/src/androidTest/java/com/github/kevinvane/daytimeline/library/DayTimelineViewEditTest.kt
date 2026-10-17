@@ -13,12 +13,14 @@ import com.github.kevinvane.daytimeline.library.api.startMinute
 import com.github.kevinvane.daytimeline.library.api.EditDraft
 import com.github.kevinvane.daytimeline.library.api.EditResult
 import com.github.kevinvane.daytimeline.library.api.ScrollMode
+import com.github.kevinvane.daytimeline.library.api.TimelineColors
 import com.github.kevinvane.daytimeline.library.api.TimelineConfig
 import com.github.kevinvane.daytimeline.library.api.TimelineListener
 import com.github.kevinvane.daytimeline.library.core.MinuteOfDay
 import com.github.kevinvane.daytimeline.library.core.TimelineEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -1159,6 +1161,36 @@ class DayTimelineViewEditTest {
         assertNull("未提供业务色时 accentColor 应为 null", ctx!!.accentColor)
     }
 
+    /**
+     * 编辑层选框必须是**圆角矩形**，圆角与日程块一致（`blockCorner`）。
+     *
+     * 现有门禁全都不看形状：JVM 单测不加载资源，其它仪器测试只断言颜色是否存在。
+     * 因此这里直接量像素——**若选框退回直角矩形，其外角像素会命中描边色**，
+     * 本用例即转红（已回滚验证）。
+     */
+    @Test
+    fun editLayerStrokeIsRoundedLikeTheBlock() {
+        enterEditByAccessibility("morning")
+        val block = view.visibleBlockSnapshot().firstOrNull { it.second.event.id == "morning" }?.second
+        requireNotNull(block) { "测试前置失败：视口内找不到 morning" }
+        val rect = view.blockBoundsInParent(block)
+        requireNotNull(rect) { "测试前置失败：取不到 morning 的边界" }
+        val bmp = renderToBitmap()
+        val stroke = (fieldOf("colors").get(view) as TimelineColors).selected
+
+        // 对照：顶边处确实有描边，否则下面的「外角无墨」只是「什么都没画」。
+        // 取顶边 1/4 处，避开中间的编辑手柄与时间轴区域内的起止时间文字。
+        val probeX = rect.left + rect.width() / 4
+        assertTrue(
+            "测试前置失败：顶边处找不到描边色，说明选框没画出来",
+            (rect.top..rect.top + 8).any { bmp.getPixel(probeX, it) == stroke },
+        )
+        assertNotEquals(
+            "编辑层选框应为圆角矩形：外角像素不应命中描边色（直角矩形会命中）",
+            stroke, bmp.getPixel(rect.left, rect.top),
+        )
+    }
+
     /** 带业务色的日程实现，验证 TimelineEvent.color 的默认实现不破坏既有实现者。 */
     private data class ColoredEvent(
         override val id: String,
@@ -1187,6 +1219,13 @@ class DayTimelineViewEditTest {
     private fun drawOnce() {
         val bmp = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
         view.draw(Canvas(bmp))
+    }
+
+    /** 把当前画面渲染到一张 ARGB 位图，供逐像素断言。 */
+    private fun renderToBitmap(): Bitmap {
+        val bmp = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { view.draw(Canvas(bmp)) }
+        return bmp
     }
 
     /**

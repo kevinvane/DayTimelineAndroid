@@ -129,4 +129,21 @@ object Geometry {
         val blockBottom = blockTopPx + blockHeightPx
         return blockBottom > viewTop && blockTop < viewBottom
     }
+
+    /**
+     * 编辑层横向范围（内容区坐标的 `left..right`，闭区间）。
+     *
+     * 修改态跟随被编辑日程块所在列（PRD §7.9 分栏结果的 [PlacedBlock.left] / `width`）：
+     * 重叠分栏时选框只覆盖该块那一列，不再占满整行；新建态没有原块可跟随（[block] 为 null），
+     * 回落到内容区整宽。结果钳制在 `[contentLeft, contentRight]`，绝不越出内容区（D4）。
+     */
+    fun editLayerBounds(
+        block: PlacedBlock?,
+        contentLeft: Int,
+        contentRight: Int,
+    ): IntRange {
+        if (block == null) return contentLeft..contentRight
+        val left = (contentLeft + block.left).coerceIn(contentLeft, contentRight)
+        return left..(contentLeft + block.right).coerceIn(left, contentRight)
+    }
 }
