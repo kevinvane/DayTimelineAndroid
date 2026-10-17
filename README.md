@@ -44,15 +44,21 @@
 
 本文档描述的是 **`master` 分支当前状态**。
 
-| 已发布版本 | 坐标 | 对应提交 | 状态 |
+| 版本 | 坐标 | 对应提交 | 产物核对 |
 |---|---|---|---|
-| **`1.0.0-rc1`** | `com.github.kevinvane:DayTimelineAndroid:1.0.0-rc1` | `95d081c` | ✅ **可用**，已逐项核对 |
+| **`1.0.0`** | `com.github.kevinvane:DayTimelineAndroid:1.0.0` | 见下方 tag | ⏳ **待核对**（发布后须解包 AAR 逐项验证） |
+| `1.0.0-rc1` | `com.github.kevinvane:DayTimelineAndroid:1.0.0-rc1` | `95d081c` | ✅ 已逐项核对 |
 
-### 为什么是 `-rc1` 而不是 `1.0.0`
+> **「待核对」不是客套话**：上一版 `1.0.0-beat` 的教训是，JitPack 返回 `ok`、CI 全绿，
+> 解包 AAR 后却发现缺 3 个类、5 个方法。**发布链路的绿灯不证明产物正确**，
+> 见下方[产物核对](#产物核对)。
 
-M6（发布）尚未完成。**DL-09 质量报告已于 2026-10-14 定稿，发布阻断项已于 2026-10-16 清零**——
-四项分别「闭环」或「降级为可选增强」，每一条都写明了依据，见
-[质量报告](docs/DayTimeline-质量报告.md) §1.2。`rc` 反映的是「可以发版，但仍有未实测项」。
+### 为什么此前发的是 `rc1`
+
+M6（发布）的历史：`DL-09` 质量报告 2026-10-14 定稿，但**发布阻断项直到 2026-10-16 才清零**
+——四项分别「闭环」或「降级为可选增强」，每条都写明了依据，见
+[质量报告](docs/DayTimeline-质量报告.md) §1.2。`1.0.0-rc1`（2026-10-11）发布时这 4 项都还没清，
+`rc` 如实反映了当时的状态。
 
 > ⚠️ **阻断项 0 项 ≠ 全部验证通过。** 其中三项**至今没有任何实测支撑**：
 >
@@ -76,7 +82,7 @@ M6（发布）尚未完成。**DL-09 质量报告已于 2026-10-14 定稿，发�
 
 ### 产物核对
 
-`1.0.0-rc1` 的 AAR 已下载解包逐项核对（不只看 JitPack 的 `ok` 状态）：
+**`1.0.0-rc1`** 的 AAR 已下载解包逐项核对（不只看 JitPack 的 `ok` 状态）：
 
 - `EditDraft` / `EditResult` / `EventDetail` / `EventDetailKt` / `EditDraftKt` 五个类均在
 - `detailOf` / `eventAt` / `enterEditMode` / `enterEditModeAndNotify` / `clearSelection` /
@@ -84,10 +90,16 @@ M6（发布）尚未完成。**DL-09 质量报告已于 2026-10-14 定稿，发�
 - `MinuteOfDay` 已无 `boxed-impl`（value class 标志），确为普通类，**Java 接入方可用**
 - `proguard.txt` 含 21 条保留规则，与仓库 `consumer-rules.pro` 一致
 
-> ⚠️ **本节核对的是 `1.0.0-rc1` 的产物，不代表 `master` 当前状态。**
-> rc1 之后新增了 `verifyColorsFinalized` 门禁等改动（见 [`CHANGELOG.md`](CHANGELOG.md)）。
+**`1.0.0` 的产物核对结果将补写在本节。** 在补写之前，请把上表 `1.0.0` 行的
+「产物核对」当作**未知**——**不要**拿 rc1 的结论推断 1.0.0。
+
+> ⚠️ **发布成功 ≠ 产物正确。** 上一版 `1.0.0-beat` 就是反例：JitPack 返回 `ok`、
+> CI 全绿，解包 AAR 却发现缺 3 个类、5 个方法，`MinuteOfDay` 还带着 value class 标志
+> （Java 业务方连接口都实现不了）。
+>
 > 没有任何自动化能发现「打 tag 的提交不是最新提交」——上一版发布物就曾因此陈旧。
-> 发正式版时必须**重新解包产物逐项核对**，不能沿用本节结论。
+> **发正式版必须重新解包产物逐项核对，不能沿用上一版结论。**
+> 核对清单与判定方式见 `docs/DayTimeline-质量报告.md` §7。
 
 功能实现进度：组件 M0–M5 已完成，M6（发布）进行中；**M0 三项设计定稿已齐备**——
 色值 2026-10-12 定稿（34 个取值），交互标注（M0-2）与切图/字体资源（M0-3）2026-10-15 交付
@@ -164,7 +176,7 @@ dependencyResolutionManagement {
 
 ```kotlin
 dependencies {
-    implementation("com.github.kevinvane:DayTimelineAndroid:1.0.0-rc1")
+    implementation("com.github.kevinvane:DayTimelineAndroid:1.0.0")
 }
 ```
 
