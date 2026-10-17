@@ -18,12 +18,18 @@
 
 **Apache License 2.0** · `minSdk 23` · View 体系（非 Compose） · Kotlin 与 Java 业务方均可接入
 
-![DayTimeline 预览](docs/images/preview-light.webp)
+<table>
+<tr>
+<td width="50%" align="center"><img src="docs/images/preview-light.webp" alt="DayTimeline 浅色主题"><br><sub><b>浅色主题</b></sub></td>
+<td width="50%" align="center"><img src="docs/images/preview-dark.webp" alt="DayTimeline 深色主题"><br><sub><b>深色主题</b></sub></td>
+</tr>
+</table>
 
 <p align="center">
-  <sub>Android 14 · 浅色主题 · 设备时间 14:30。图中可见<b>已过 / 进行中 / 未到</b>三态配色
-  （站会与面试已过、深度工作进行中、并行任务未到）、<b>横向重叠分栏</b>（16:00 起三条并行任务并排），
-  以及当前时间红线。可运行 demo 见 <code>:app</code> 模块。</sub>
+  <sub>Android 14 · 设备时间 14:30 · 两图为同一时刻、同一滚动位置，<b>唯一差异是主题</b>。
+  图中可见<b>已过 / 进行中 / 未到</b>三态配色（站会与面试已过、深度工作进行中、并行任务未到）、
+  <b>横向重叠分栏</b>（16:00 起三条并行任务并排），以及当前时间红线。
+  可运行 demo 见 <code>:app</code> 模块。</sub>
 </p>
 
 ---
