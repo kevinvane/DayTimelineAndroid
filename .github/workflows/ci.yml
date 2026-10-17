@@ -106,15 +106,97 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
+      # Gradle 缓存：与静态门禁 job 用同一套 key，可直接复用它存下的产物。
+      # 此前这个 job **没有任何缓存**——日志里那句
+      # `Downloading https://services.gradle.org/distributions/gradle-8.13-bin.zip`
+      # 就是明证，而这段时间模拟器只能空转等着（ANR 就长在这种空转里）。
+      - name: 复用 Gradle 缓存
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      # 让 runner 用户能打开 /dev/kvm。**这一步不能省**：runner 镜像里 kvm 设备节点
+      # 权限是 crw-rw---- root:kvm，而跑 workflow 的 runner 用户不在 kvm 组里，
+      # open() 直接 EACCES。缺失时的表现**不是报错，而是静默降级**——
+      # emulator 走到 `-accel off` 走纯软件模拟，然后 boot_completed 永远等不到：
+      # 日志里是「ProbeKVM: This user doesn't have permissions to use KVM」
+      # → 「Disabling Linux hardware acceleration」→ 无限「adb: device offline」。
+      # 2026-10-17 CI 就因为缺这一步红过一次（两个 emulator job 都会红）。
+      - name: 开放 /dev/kvm 权限（模拟器硬件加速）
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # 把上面那步的效果摆到日志里：设备不存在说明 runner 类别没给嵌套虚拟化
+      # （这时无论怎么配都得不到加速），权限不对则上面那条 udev 规则没生效。
+      # 少了这行，下一次同类回归又要从「device offline」反推。
+      - name: 确认 KVM 可用
+        run: |
+          ls -l /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+
+      # 先把两个测试 APK 编好，**再**起模拟器：模拟器的生命周期要尽量短。
+      # 2026-10-17 那次失败里，模拟器 boot 完就空转等 Gradle 下载发行包 + 编译，
+      # 系统在长时间饥饿下弹了 ANR 之类的系统窗口——它抢走焦点后，Espresso 的
+      # 7 条用例全部报 RootViewWithoutFocusException（细节见下面 script 的注释）。
+      # 编译本来就与模拟器无关，没有理由让模拟器陪着等。
+      - name: 预编译测试 APK（模拟器起来之前）
+        run: |
+          ./gradlew :library:assembleDebug :library:assembleDebugAndroidTest \
+            :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
+
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
           arch: x86_64
+          # 钉住设备档位。**不写就用 AVD 默认档**——那是 320×480 / mdpi，
+          # 而 `MainActivityCancelPathTest` 的几何注释（表单一屏放得下、可见面积 90%）
+          # 是按高密度手机写的；本仓库已经因为「设备几何的隐含前提」红过一次
+          # （质量报告 §4.3 的密度矩阵）。由日志推算：详情弹窗宽度 `(256xwrap)`
+          # 正是屏幕宽 × 0.8（`EventDetailPopup.MAX_WIDTH_RATIO`）⇒ 屏宽 320px。
+          # `pixel_2` 是 1080×1920 / 420dpi，与本地验证过那台 Pixel_XL_API_34 同档。
+          profile: pixel_2
+          # 显式写全 emulator 参数：一是把默认值钉住（默认值是 action 的隐含前提，
+          # 与「测试套件写死像素几何」是同一类坑），二是加 -no-metrics——
+          # 当前只是一行 WARNING，但 release note 已写明后续版本会变成阻塞式询问，
+          # 那时这条 CI 会毫无征兆地卡住。
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
           # :app 也要跑：组件库测的是「组件自己不误发数据变更」，
           # demo 测的是「业务方接了 EditController 之后收不收得干净」——
           # BottomSheet / PopupWindow 的 onDismiss 收尾写在 demo 侧，不在组件里。
           # 组件测试绿而 demo 这条链路断掉的情况是真实发生过的。
-          script: ./gradlew :library:connectedDebugAndroidTest :app:connectedDebugAndroidTest
+          script: |
+            set -u
+            # 设备状态准备：屏幕必须醒着、且没有锁屏，否则**应用窗口拿不到焦点**。
+            # 焦点是 Espresso 的硬前提（`Root.isReady()` 要求 `hasWindowFocus`，
+            # 等待上限硬编码 10 秒、不可配置）——2026-10-17 那 7 条用例全是这么红的。
+            adb shell input keyevent KEYCODE_WAKEUP || true
+            adb shell svc power stayon true || true
+            adb shell wm dismiss-keyguard || true
+
+            if ./gradlew :library:connectedDebugAndroidTest :app:connectedDebugAndroidTest; then
+              exit 0
+            fi
+
+            # 失败时才取证。**必须在这里做**：action 结束即销毁模拟器，
+            # 后续 workflow step 里 adb 已经没有设备可查。
+            # 2026-10-17 那 7 条 RootViewWithoutFocusException 的日志里只有一个
+            # `has-window-focus=false` 的根，看不出是谁抢走了焦点——
+            # 是系统 ANR 弹窗、锁屏、还是熄屏，全靠这几十秒输出区分。
+            echo "::group::失败时的设备状态（焦点窗口 / 熄屏 / ANR）"
+            adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' || true
+            adb shell dumpsys power | grep -E 'mWakefulness|mHoldingDisplaySuspendBlocker' || true
+            adb shell dumpsys activity | grep -E 'mFocusedActivity|ANR' || true
+            adb logcat -d -v brief | grep -iE 'ANR in|not responding' | tail -40 || true
+            echo "::endgroup::"
+            exit 1
       - name: 失败用例明细
         if: failure()
         run: |
@@ -222,6 +304,20 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
+      # 同 instrumented job：不开放 /dev/kvm，emulator 会静默走 -accel off，
+      # 最终以「adb: device offline」耗尽超时收场。
+      - name: 开放 /dev/kvm 权限（模拟器硬件加速）
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: 确认 KVM 可用
+        run: |
+          ls -l /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+
       # 第一步：R8 能否跑通 + 对外契约类是否按规则保留（不需要设备）
       - name: 混淆产物构建与符号核对
         run: ./gradlew :r8test:verifyKeptSymbols --stacktrace
@@ -233,6 +329,7 @@ jobs:
         with:
           api-level: 34
           arch: x86_64
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
           script: ./gradlew :r8test:connectedReleaseAndroidTest
 
       - name: 失败用例明细
