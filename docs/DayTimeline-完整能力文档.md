@@ -1,15 +1,15 @@
 # DayTimeline 完整能力文档
 
 > **这是组件能力的唯一真源**：全部配置项、全部回调、全部定制方式、数据契约。
-> 接入步骤请看 [README](../README.md#快速开始)（5 分钟，不在此重复）。
+> 接入步骤请看 [快速上手](DayTimeline-快速上手.md)（5 分钟，不在此重复）。
 
 - **依据**：PRD §7（界面与交互规格）、§8（交互规格）、§9（数据规格）、§10（分层定制）
 - **对应实现**：`com.github.kevinvane.daytimeline.library`
 - **一致性由测试守护**：`DocsConfigCoverageTest` 断言本文档列出的 XML 属性集合
   ≡ `attrs.xml` ≡ `TimelineConfig` 字段集合。**新增配置项而忘记写文档，测试立刻失败。**
 
-> **为什么单独成文**：README 的目标是「5 分钟内跑起来」，塞进 55 项配置表会毁掉它；
-> 而把全表留在 README 又会和源码 KDoc 形成两份需要同步的副本。
+> **为什么单独成文**：README 与快速上手的定位都是「尽快跑起来」，
+> 塞进 55 项配置表会毁掉它们；而把全表留在任一处，又会和源码 KDoc 形成需要同步的副本。
 > 本文是那一份。
 
 ---
@@ -439,7 +439,7 @@ ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
 > 本项目 `:app` demo 曾踩过这个坑，现已修复并有回归测试
 > （`MainActivityWindowInsetsTest`，含横屏侧边缺口的精确复现用例）。
 
-### 8.3 多窗口（分屏）：**请在你的目标设备上自行验证**
+### 8.3 多窗口（分屏）：请在你的目标设备上自行验证
 
 `targetSdk = 36` 时 `android:resizeableActivity` 默认为 `true`，
 组件会在窗口尺寸变化时走 `onSizeChanged → relayout()` 重排，

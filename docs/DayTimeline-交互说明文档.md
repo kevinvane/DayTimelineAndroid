@@ -1,12 +1,12 @@
 # DayTimeline 交互说明文档
 
 > **组件的交互状态流转与操作规则**（PRD §18 DL-06）。
-> 接入步骤见 [README](../README.md)，配置与回调见[完整能力文档](DayTimeline-完整能力文档.md)。
+> 接入步骤见 [快速上手](DayTimeline-快速上手.md)，配置与回调见[完整能力文档](DayTimeline-完整能力文档.md)。
 
 - **依据**：PRD §8（交互规格）、§7.7（编辑态规格）、§14.3.1
 - **对应实现**：`DayTimelineView.onTouchEvent` / `GestureArbiter` / `EditSession`
 - **本文与代码的一致性**：本文描述的每条规则都有对应实现或仪器测试；
-  行为疑问以代码为准，发现不符请开 Issue（见 [README 参与贡献](../README.md#参与贡献)）
+  行为疑问以代码为准，发现不符请开 Issue（见 [开发指南 · 参与贡献](DayTimeline-开发指南.md#参与贡献)）
 
 ---
 
