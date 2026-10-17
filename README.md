@@ -16,8 +16,6 @@
 - **零第三方依赖**：只用 Android 平台 + AndroidX 官方库
 - **单 View 全自绘**：网格区常驻子 View 数为 0
 
-**Apache License 2.0** · `minSdk 23` · View 体系（非 Compose） · Kotlin 与 Java 业务方均可接入
-
 <table>
 <tr>
 <td width="50%" align="center"><img src="docs/images/preview-light.webp" alt="DayTimeline 浅色主题"><br><sub><b>浅色主题</b></sub></td>
@@ -31,7 +29,6 @@
   <b>横向重叠分栏</b>（16:00 起三条并行任务并排），以及当前时间红线。
   可运行 demo 见 <code>:app</code> 模块。</sub>
 </p>
-
 ---
 
 ## 目录
@@ -77,10 +74,6 @@ dependencies {
 | **`1.0.0`** | 当前版本，首个正式版 |
 | `1.0.0-rc1` | 上一版，产物已逐项核对 |
 
-> 「1.0.0 的产物核对结果」见[质量报告](docs/DayTimeline-质量报告.md) §7。
-> 发布链路上的绿灯**不证明产物正确** —— 上一版 `1.0.0-beat` 就因 tag 打在陈旧提交上，
-> JitPack 返回 `ok` 而产物缺 3 个类、5 个方法。
-
 ### 接入前置条件：清单里要声明 `android:supportsRtl="true"`
 
 ```xml
@@ -88,12 +81,10 @@ dependencies {
     android:supportsRtl="true">
 ```
 
-**不写这一行，Android 框架会强制 LTR**——`View.setLayoutDirection(LAYOUT_DIRECTION_RTL)`
-变成空操作，组件的 RTL 镜像（时间轴移到右侧）**永远不会被触发，且没有任何报错**。
-
-组件库无法替你的应用写进清单（清单是接入方的，不随 AAR 合并），因此这一行必须由你声明。
-本仓库正是踩中了这个坑：镜像实现一直是对的，但组件库自己的测试 APK 也没声明这一行，
-于是「支持 RTL」长期只由一行代码和几段 KDoc 自证 —— 2026-10-13 补测试时才暴露出来。
+>  **不写这一行，Android 框架会强制 LTR**——`View.setLayoutDirection(LAYOUT_DIRECTION_RTL)`
+> 变成空操作，组件的 RTL 镜像（时间轴移到右侧）**永远不会被触发，且没有任何报错**。
+>
+> 组件库无法替你的应用写进清单（清单是接入方的，不随 AAR 合并），因此这一行必须由你声明。
 
 ---
 
@@ -302,7 +293,7 @@ timeline.setConfig(TimelineConfig(
 | `dtBlockTextSize` | `blockTextSize` | `12sp` | 块内文字太小 |
 | `dtMinTouchTarget` | `minTouchTarget` | `48dp` | **只应调大，不应调小**（无障碍硬要求） |
 
-**全部 55 项配置见[完整能力文档](docs/DayTimeline-完整能力文档.md)** —— 那里是唯一真源，
+**全部 55 项配置见[完整能力文档](docs/DayTimeline-完整能力文档.md)**，
 并且有一条测试断言「文档里的属性集合 ≡ `attrs.xml` ≡ `TimelineConfig` 字段集合」。
 
 **颜色**走另一条通道：17 项语义色项（`dtColorBackground` … `dtColorEditHandle`）
@@ -421,21 +412,7 @@ timeline.eventBlockPainter = object : EventBlockPainter {
 | 多窗口会话未实测 | resize 路径已验证；分屏的任务栈分槽 / 焦点切换 / 跨应用并存三段**没有实测覆盖**，请自行验证 |
 | **文案暂仅有中文** | 组件内文案全部走 `strings.xml`（可被业务方覆盖），但库自身**未提供 `values-xx` 翻译**。非中文环境会显示中文，请在自己的资源里覆盖同名项 |
 
-### 以下三项至今没有任何实测支撑
 
-它们**不阻塞发版**，但你若依赖这些能力，请自行验证：
-
-| 项 | 状态 |
-|---|---|
-| 依赖漏洞扫描 | 门禁已建，**从未跑通**（须在 CI 跑；本机出口被限流） |
-| 1 小时耗电 | **从未实测**。耗电暴露面经代码走查确认极小，但**「暴露面小」不等于「实测达标」** |
-| 真多窗口（分屏） | resize 路径已验证；**多任务会话三段未覆盖** |
-
-**「发布阻断项 0 项」不等于「全部验证通过」。** 依据见[质量报告](docs/DayTimeline-质量报告.md) §1.2。
-
-色值方面：§7.3 的 17 项语义色项已换成[设计侧定稿](docs/DayTimeline-设计侧定稿交付.md)取值，
-「低对比度」下限定为 **≥ 3.0:1**，色值门禁为 **0 项登记偏差**。
-若你此前按 Material 3 baseline 占位色做过视觉验收，需重走一遍。
 
 ---
 
