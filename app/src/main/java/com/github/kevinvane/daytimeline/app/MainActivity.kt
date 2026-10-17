@@ -2,6 +2,8 @@ package com.github.kevinvane.daytimeline.app
 
 import android.os.Bundle
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.widget.Button
 import android.widget.LinearLayout
 import androidx.appcompat.app.AppCompatActivity
@@ -38,6 +40,10 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
  * 1. **标题**能改——此前 `onEventModified` 只回传修改前的对象，标题根本改不了；
  * 2. **时间**能在表单里精确输入，填越界值也安全（组件按 §8.3.1 合法化）；
  * 3. **备注不进组件**——它只存在 [DemoEvent] 里，组件既不接收也不感知。
+ *
+ * 默认路径（不带 [EXTRA_SHOW_EDIT_FORM]）不接管编辑层，长按直接进拖拽手柄态，
+ * 此时「拖完松手即确认」由 [installDragEndAutoConfirm] 在**业务方侧**补上——
+ * 组件只保留编辑态、从不自行提交（D3）。
  */
 class MainActivity : AppCompatActivity() {
 
@@ -93,19 +99,21 @@ class MainActivity : AppCompatActivity() {
         // 这里再用代码配置补充一项 XML 没覆盖的字段，验证两条路径可叠加。
         timeline.setConfig(TimelineConfig(defaultNewDurationMinutes = 30))
 
+        // 是否接管编辑层：接管时本 demo 弹自己的表单（AD-22）；
+        // 不接管时组件自己管编辑态，确认出口由 [installDragEndAutoConfirm] 补。
+        val takeOverEditLayer = intent?.getBooleanExtra(EXTRA_SHOW_EDIT_FORM, false) == true
+
         // ── 第四层：接管编辑层，弹出本 demo 自己的表单（AD-22）──
         timeline.editController = object : DayTimelineView.EditController {
             override fun onEnterEditing(draft: EditDraft): Boolean {
                 // **默认不接管**：长按直接进组件的拖拽手柄态（FI-004）。
                 //
-                // 这是产品/demo 侧的取舍，不是组件缺陷——`showForm = false` 时
-                // 组件自己管编辑态，于是：
-                //   - FI-010「点外部区域视为取消」生效（接管时它被关掉）；
-                //   - **没有任何确认入口**：PRD v1.22 已取消组件内置的
-                //     「完成/取消/删除」按钮，拖完松手等于放弃。
+                // 这是产品/demo 侧的取舍，不是组件缺陷——不接管时组件自己管编辑态，
+                // 于是 FI-010「点外部区域视为取消」生效（接管时它被关掉），
+                // 而「松手确认」由下面 [installDragEndAutoConfirm] 提供。
                 // 想看 AD-22 的接管链路（业务方弹自己的表单）用
                 // `am start --ez show_edit_form true`。
-                if (intent?.getBooleanExtra(EXTRA_SHOW_EDIT_FORM, false) != true) {
+                if (!takeOverEditLayer) {
                     android.util.Log.i(TAG, "不接管编辑层，长按直接进拖拽手柄态")
                     return false
                 }
@@ -113,6 +121,10 @@ class MainActivity : AppCompatActivity() {
                 return true // 接管：组件不再响应 FI-010，退出路径交给我们
             }
         }
+
+        // 默认路径的「拖完松手即确认」。接管路径**不装**：
+        // 那时表单才是确认入口，两个出口同时生效会互相抢（松手先把草稿提交了）。
+        if (!takeOverEditLayer) installDragEndAutoConfirm()
 
         // 「完成 / 取消 / 删除」三个出口由业务方自己的界面提供：表单（`sheet_event_form.xml`）
         // 与详情弹窗（`popup_event_detail.xml`）里各有一套。组件不内置按钮——
@@ -188,6 +200,63 @@ class MainActivity : AppCompatActivity() {
         }
         timeline.submitEvents(events)
         scheduleFirstFrameProbe()
+    }
+
+    /**
+     * 默认路径的「拖完松手即确认」——**业务方侧**补上的确认出口。
+     *
+     * ## 为什么必须有它
+     *
+     * 组件在拖拽抬手后**刻意不提交**，只保留编辑态等业务方确认
+     * （PRD §8.2「抬起 → 保留编辑态，等待用户确认或取消」；
+     * D3 要求「完成」是唯一的数据变更出口）。
+     * 而 PRD v1.22 又取消了组件内置的「完成 / 取消 / 删除」按钮，
+     * 于是不接管时**没有任何确认入口，拖完松手等于放弃**——本方法补的就是那个出口。
+     *
+     * ## 怎么知道「松手了」
+     *
+     * 组件没有「拖拽结束」的回调；要加一个就得动对外签名（`EditController`
+     * 未开 `-Xjvm-default=all`，Java 接入方实现方得跟着改）。所以这里在**业务方侧**
+     * 观察触摸流：`View.dispatchTouchEvent` 会**先**调 `OnTouchListener` 再调
+     * `onTouchEvent`，而本方法恒返回 `false` 不消费事件，组件的手势照旧收得到。
+     *
+     * ## 三条必须守住的边界
+     *
+     * 1. **只在真的拖过之后确认**（位移超过 `scaledTouchSlop`）。否则长按抬手那一帧
+     *    组件还没建编辑态、点外部取消（FI-010）那一帧本该取消——两者都会变成「确认」。
+     * 2. **只在 [DayTimelineView.isEditing] 为真时确认**。拖动滚动（Intent.Scroll）
+     *    同样有位移，不看编辑态会把「滑动时间轴」变成「提交一堆日程」。
+     * 3. **`ACTION_CANCEL` 不确认**。组件在取消路径上刻意不分派任何意图
+     *    （`DayTimelineView.kt:1202`）——手势被系统或父容器打断，
+     *    不等于用户认可了这次拖动。
+     *
+     * 代价要说明白：**松手即落库，没有撤销**。用户拖错了只能再拖一次改回来。
+     * 真实业务若要撤销，得另配一个「取消」出口（FI-010 点外部仍在）。
+     */
+    private fun installDragEndAutoConfirm() {
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        var downY = 0f
+        var draggedThisGesture = false
+        timeline.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downY = event.y
+                    draggedThisGesture = false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dy = event.y - downY
+                    if (dy > touchSlop || dy < -touchSlop) draggedThisGesture = true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (draggedThisGesture && timeline.isEditing()) {
+                        android.util.Log.i(TAG, "拖拽松手 → confirmEdit()")
+                        timeline.confirmEdit()
+                    }
+                }
+                else -> Unit
+            }
+            false // 恒不消费：只观察，组件的手势与命中判定一行未改
+        }
     }
 
     /**
@@ -379,9 +448,10 @@ fun onDetailEditFailed(eventId: String) {
          * 而表单一弹出来就是模态窗口，拖拽手势根本发不出去。
          *
          * 代价（写在这里，别让下一个人以为是 bug）：
-         * `false` 时组件自己管编辑态，于是 **FI-010「点外部区域视为取消」生效**，
-         * 且 PRD v1.22 已取消组件内置的「完成/取消/删除」按钮——
-         * **拖完松手等于放弃，没有任何确认入口**。
+         * `false` 时组件自己管编辑态，于是 FI-010「点外部区域视为取消」生效，
+         * 而 PRD v1.22 已取消组件内置的「完成/取消/删除」按钮——
+         * 确认入口由 demo 自己补上（见 [installDragEndAutoConfirm]，拖完松手即确认）。
+         * 代价是**拖错了没有撤销**，松手即落库。
          *
          * `MainActivityCancelPathTest` 那 7 条正是靠 `true` 测取消链路的
          * （D3 / PRD Q1），因此它们启动时会显式带上这个 extra。

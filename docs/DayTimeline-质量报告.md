@@ -506,6 +506,13 @@
 > 代价已写进 `MainActivity.EXTRA_SHOW_EDIT_FORM` 的 KDoc：
 > `MainActivityCancelPathTest` 那 7 条测的正是 AD-22 的接管链路，
 > 因此它们启动时**显式带上 `show_edit_form = true`**——改默认值时这 7 条会全红。
+>
+> **2026-10-17 订正——「拖完松手等于放弃」已不成立**：demo 在**不接管**的默认路径上
+> 新增了业务方侧确认出口 `MainActivity.installDragEndAutoConfirm()`，
+> 「真的拖过（位移超 `scaledTouchSlop`）+ 处于编辑态 + `ACTION_UP`」即调 `confirmEdit()`，
+> 拖动滚动（Intent.Scroll）与点外部取消（FI-010，无位移）都不触发。
+> 组件侧**一行未改**，仍是「抬手只保留编辑态、由业务方确认」（PRD §8.2 / D3）。
+> 上文那次采集的历史结论（长按 2.7 秒后 `编辑取消`）记的是改动前的行为，未受影响。
 
 **同期的人工判定**（拖动过程中的主观观感，与上面的帧级数据相互印证）：
 
