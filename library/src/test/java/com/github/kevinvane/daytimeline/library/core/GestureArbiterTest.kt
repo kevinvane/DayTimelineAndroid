@@ -18,10 +18,41 @@ class GestureArbiterTest {
     }
 
     @Test
-    fun `已触发长按但全程未移动时进入编辑态`() {
+    fun `长按超时即判定为长按（无需抬手）`() {
+        arbiter.onDown(100f, 500f, editingTouching = false)
+        assertTrue("长按超时应返回 true 以立即进入编辑态", arbiter.onLongPressTimeout())
+        assertEquals(GestureArbiter.Intent.LongPress, arbiter.onUp())
+    }
+
+    // ---------- P0：超时即进入编辑态，之后不松手即可拖动 ----------
+
+    @Test
+    fun `长按后标记编辑态：位移超阈值判为整体拖拽而非滚动`() {
         arbiter.onDown(100f, 500f, editingTouching = false)
         assertTrue(arbiter.onLongPressTimeout())
-        assertEquals(GestureArbiter.Intent.LongPress, arbiter.onUp())
+        arbiter.markEditing()
+        arbiter.onMove(100f, 700f, grabbed = 0)
+        assertEquals(GestureArbiter.Intent.DragMove, arbiter.intent)
+        assertTrue("编辑态拖拽必须消费手势（不得让给外层滚动）", arbiter.consumesGesture())
+    }
+
+    @Test
+    fun `长按命中空白未标记编辑态：位移仍判为滚动并让给外层`() {
+        arbiter.onDown(100f, 500f, editingTouching = false)
+        assertTrue(arbiter.onLongPressTimeout())
+        // 命中空白时 View 不会调 markEditing（§8.2：空白处不支持长按）
+        arbiter.onMove(100f, 700f, grabbed = 0)
+        assertEquals(GestureArbiter.Intent.Scroll, arbiter.intent)
+        assertTrue("空白长按后移动仍应让给外层滚动", !arbiter.consumesGesture())
+    }
+
+    @Test
+    fun `标记编辑态后抬手保留拖拽意图`() {
+        arbiter.onDown(100f, 500f, editingTouching = false)
+        assertTrue(arbiter.onLongPressTimeout())
+        arbiter.markEditing()
+        arbiter.onMove(100f, 700f, grabbed = 0)
+        assertEquals(GestureArbiter.Intent.DragMove, arbiter.onUp())
     }
 
     @Test

@@ -7,8 +7,11 @@ package com.github.kevinvane.daytimeline.library.core
  * | 意图 | 触发 |
  * |---|---|
  * | 滚动 | 位移超过阈值（系统标准阈值 × 0.3） |
- * | 长按 | 已触发长按且**全程未移动** |
+ * | 长按 | **长按超时即触发**（[onLongPressTimeout]）；此后不松手即可拖动 |
  * | 点击 | 未触发长按且位移很小 |
+ *
+ * 长按的进入时机是「超时那一刻」，不等抬手（对齐 Google 日历的「拾起」）：
+ * 命中日程块时由 View 调 [markEditing] 把状态机切到编辑态，随后的移动即 [Intent.DragMove]。
  *
  * 一旦判为滚动就**不可回退**为长按/点击——否则「滑动列表时误触发长按」
  * 会造成误编辑。同理，已进入编辑态的拖拽不会退回滚动。
@@ -28,7 +31,7 @@ class GestureArbiter(
         /** 已判定为滚动（不消费垂直手势，交外层容器，见 AD-04）。 */
         object Scroll : Intent()
 
-        /** 已触发长按且全程未移动 → 进入编辑态。 */
+        /** 长按超时即进入编辑态（命中日程块）。 */
         object LongPress : Intent()
 
         /** 未触发长按且位移很小 → 视为点击。 */
@@ -68,16 +71,27 @@ class GestureArbiter(
     }
 
     /**
-     * 系统长按超时回调。返回 true 表示应进入编辑态。
+     * 系统长按超时回调。返回 true 表示**应立刻进入编辑态**。
      *
      * 规则：已判为滚动则忽略；已经触发过则忽略；否则标记为已触发。
-     * 注意**此处不立刻返回"进入编辑"**——§8.2 明确「已触发长按但全程未移动」
-     * 才进入编辑，所以真正的判定在 [onUp]。
+     * 与早前「先标记、等 [onUp] 才进入」不同——现在**超时即进入**，不必等抬手：
+     * 用户按住不放就能接着上下拖动改时间（命中日程块后由 View 调 [markEditing]）。
      */
     fun onLongPressTimeout(): Boolean {
         if (intent is Intent.Scroll || longPressFired) return false
         longPressFired = true
         return true
+    }
+
+    /**
+     * 告知状态机「已进入编辑态」。
+     *
+     * 长按超时命中日程块、View 真正开始编辑后调用，使随后的移动判为
+     * [Intent.DragMove]（而非滚动）——「按住 → 直接拖」这条链路靠它成立。
+     * 命中空白的长按**不会**调用它，因此空白处按住再移仍交还给外层滚动（§8.2）。
+     */
+    fun markEditing() {
+        editing = true
     }
 
     /**
@@ -103,8 +117,8 @@ class GestureArbiter(
     /**
      * 抬起。返回最终意图。
      *
-     * §8.2：已触发长按但全程未移动 → 进入编辑态（原地选中）；
-     * 未触发长按且位移很小 → 视为点击。
+     * §8.2：已触发长按 → [Intent.LongPress]（**编辑态在超时那一刻已进入**，
+     * 此处仅回执，调用方不得重复进入）；未触发长按且位移很小 → 视为点击。
      */
     fun onUp(): Intent {
         if (intent !is Intent.Pending) return intent

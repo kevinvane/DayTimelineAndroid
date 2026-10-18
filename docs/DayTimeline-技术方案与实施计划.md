@@ -2,10 +2,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 文档版本 | v0.28（草案） |
+| 文档版本 | v0.33（草案） |
 | 状态 | 待评审 |
 | 编写日期 | 2026-09-30 |
-| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` **v1.22**（v1.7 为 Q1 取消路径口径澄清，见 AD-25；v1.8 关闭 R9 并新增 R12；v1.9 按 OQ-7 方案 A 支持 Java 接入，见 AD-02；v1.10 补「编辑完成率」统计口径 §15.1；v1.11 定编辑态存续边界 §11.4.1 + 幂等约定，见 AD-27；v1.12 订正 M0 门禁表述、补记越门事实、R10 重写，见 AD-12；v1.13 以项目现状对齐全文；v1.14 补齐两项未实现对外能力（`eventAt` / `refreshNow`）并把 R10 评级上调为高/高，见 AD-28；v1.15 记录 M6 首次发布结果（DL-07 已交付、首个 JitPack 产物陈旧不可用），**未改动任何需求判定**；v1.16 重打 tag 发布 `1.0.0-rc1` 并固化「发布后核对产物」流程；v1.17 清除已废弃版本的引用；v1.18 / v1.19 色值定稿落地并加自动化门禁；v1.20 品牌强调色由紫改蓝（第二版设计定稿）；v1.21 记 §12.1 性能指标的可自动化边界落地（AD-29）；**v1.22 产品决议取消「可配置是否内置完成/取消/删除按钮」这项需求（§7.7）**；**FR / FI 编号自 v1.15 起未变**） |
+| 对应 PRD | `docs/DayTimeline-产品与需求文档.md` **v1.26**（v1.7 为 Q1 取消路径口径澄清，见 AD-25；v1.8 关闭 R9 并新增 R12；v1.9 按 OQ-7 方案 A 支持 Java 接入，见 AD-02；v1.10 补「编辑完成率」统计口径 §15.1；v1.11 定编辑态存续边界 §11.4.1 + 幂等约定，见 AD-27；v1.12 订正 M0 门禁表述、补记越门事实、R10 重写，见 AD-12；v1.13 以项目现状对齐全文；v1.14 补齐两项未实现对外能力（`eventAt` / `refreshNow`）并把 R10 评级上调为高/高，见 AD-28；v1.15 记录 M6 首次发布结果（DL-07 已交付、首个 JitPack 产物陈旧不可用），**未改动任何需求判定**；v1.16 重打 tag 发布 `1.0.0-rc1` 并固化「发布后核对产物」流程；v1.17 清除已废弃版本的引用；v1.18 / v1.19 色值定稿落地并加自动化门禁；v1.20 品牌强调色由紫改蓝（第二版设计定稿）；v1.21 记 §12.1 性能指标的可自动化边界落地（AD-29）；**v1.22 产品决议取消「可配置是否内置完成/取消/删除按钮」这项需求（§7.7）**；v1.23 M0-2 / M0-3 交付；v1.24 / v1.25 记录漏洞扫描首次执行与编辑态选框形状 / 横向范围；**v1.26 长按超时即进入编辑态并加拾起反馈（AD-31）**；**FR / FI 编号自 v1.15 起未变**） |
 | 文档读者 | 研发、测试、设计 |
 
 ---
@@ -902,6 +902,33 @@ AD-25 已把「退出编辑态的状态」收敛成单一出口，这次把**副
 
 ---
 
+### AD-31：长按「超时即进入编辑态」并加拾起反馈（PRD v1.26 新增）
+
+**背景**：PRD §8.2 原把「进入编辑态」挂在**抬起**阶段——「已触发长按但全程未移动 → 进入编辑态」。手感上要求用户**长按后先松手**才进入编辑态，再重新按住才能拖动，与 Google 日历（及主流日历 App）「长按拾起后不松手即可拖动」不一致。本次按产品决议改为**超时那一刻进入**。
+
+**决策**：
+
+1. **超时即进入**：`GestureDetector.onLongPress`（系统超时约 400–500ms）命中已有日程块时，**立即** `EditSession.beginEdit` + `notifyEnterEditing`，不等 `ACTION_UP`。超时取 `ViewConfiguration.getLongPressTimeout()`，**不提供按组件配置的入口**——对齐 Google 日历，也避免再引入一个需要产品维护的配置项。
+2. **状态机新增 `markEditing()`**：`GestureArbiter` 此前只在 `editing=true` 时把位移判为 `DragMove`。超时进入后必须同步把 `editing` 置真，否则随后的位移会被判成 `Scroll` 并把手势让给外层容器——用户按住不放一拖，编辑态还在、块却纹丝不动。抽成独立方法而非改 `onLongPressTimeout` 的返回语义，是为了让「命中空白处」的超时仍保持 `editing=false`（空白处不支持长按）。
+3. **抬手不再重复进入**：`ACTION_UP` 的 `Intent.LongPress` 分支改为直接返回 `true`（此前才调 `enterEditByLongPress`）。编辑态已在超时时建立，抬手只是回执。
+4. **`ACTION_CANCEL` 保留编辑态**：超时那一刻编辑态已真实建立，手势被系统 / 父容器打断**不等于用户取消**（与 AD-26 的既有结论一致）。D3 不变——取消仍零数据变更。
+5. **拾起反馈**：超时进入时 `performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)` 发一次触觉；被编辑块**原位淡出为幽灵**（`Canvas.saveLayerAlpha` 包住该块绘制，编辑层离开原位后原位只剩半透明原块），表达「已拾起、正在移动」。**刻意不引入任何新语义色**——17 项 × 深浅两套取值由 `verifyColorsFinalized` 锁死，抬升只能用淡化既有绘制表达，不能新增硬编码阴影 / 高亮色。
+
+**规模约束**：幽灵绘制抽为文件级私有 `paintBlock(...)`（呼应 AD-14 的绘制提取惯例），把 `DayTimelineView` 类体压回 detekt `LargeClass` 阈值（900 行）内——**没有提高阈值**。
+
+**验证**（均已实测，且**关键用例回滚会转红**）：
+
+| 用例 | 断言 | 回滚后 |
+|---|---|---|
+| `LongPressPickupTest.longPressEntersEditingBeforeRelease` | 按下 → 等超时（手指未抬起）→ `isEditing()` 已为 true → 抬手仍为 true | 改回「抬手才进入」→ **转红** |
+| `LongPressPickupTest.draggingAfterPickupKeepsEditingWithoutRelease` | 超时后不松手直接 MOVE，编辑态保持且不抛异常 | 同上 → **转红** |
+| `DayTimelineViewEditTest.editedBlockFadesToGhostAtItsOriginalPosition` | 被编辑块原位像素与同状态块不同（被淡化） | 去掉 `saveLayerAlpha` → **转红** |
+| `GestureArbiterTest`（新增 3 条） | `markEditing` 后位移判 `DragMove` 且消费手势；未标记时长按后位移仍判 `Scroll`；标记后抬手保留 `DragMove` | 状态机回归 → **转红** |
+
+`LongPressPickupTest` 必须挂在**宿主窗口**（`TimelineTestHostActivity`）里：长按由 `GestureDetector` 在主线程**延迟**触发，「裸 Context + measure/layout」的 View 拿不到真实主线程 Looper 的配合（`DragSnapWiringTest` 正因此被 `@Ignore`）。
+
+---
+
 ## 4. 需求覆盖对照
 
 | 需求组 | 主要实现位置 | 验证方式 | 里程碑 |
@@ -1151,6 +1178,7 @@ estoreHierarchyState，回滚测试显示 93 条全绿、测试根本没咬住�
 | v0.30 | 2026-10-15 | **修掉极短日程块内文字溢出块外的绘制缺陷**（**对外签名一行未动**，但新增内部方法 `Geometry.naturalBlockHeight` 且行为有变，故记入）。背景：`:app` demo 的 19:00–19:02「提醒」在真机上文字溢出到块外。**根因**：`DayTimelineView` 的 `tooShortForText` 判据写成 `blockH < dimens.blockMinHeight`，而 `blockH` 早已被 `Geometry.blockHeight` 用 `coerceAtLeast(minBlockHeight)` 抬到最小值，条件恒 false——「块高不足则跳过文字」这条降级路径**从未生效**，接入方文档（DL-04 / DL-06）声称的行为与实现不符，属「声明了却没有代码」（教训第五条）的又一实例。① **修法**：`Geometry` 新增 `fun naturalBlockHeight(startMinute, endMinute, hourHeightPx): Int` 返回**未兜底**的原始高度，`blockHeight` 重构为 `naturalBlockHeight(...).coerceAtLeast(min)`（**`hourHeightPx <= 0` 的 early return 必须保留**，否则 `GeometryTest`「格高为 0 时不崩溃」会失败——已踩过并修复）；`tooShortForText` 改用 `naturalBlockHeight(startMin, endMin, hourHeight) < dimens.blockMinHeight`，与 PRD §7.2「最小显示高度 20dp：低于此值无法显示内容」一致。② **回滚验证**：改回旧判据 → 新增仪器测试 `shortEventIsFlaggedTooShortForTextInsteadOfOverflowingTheBlock` 转红（记录 `{ping=false, long=false}`），已还原。③ **真机复核**（Pixel / Android 9）：19:00–19:02 块现只绘色条与强调边、文字不再溢出。④ **未采用 `Paint.fontMetrics`「两行是否放得下」判据**——会在 font_scale 200% 下让 1 小时块也丢文字，与《质量报告》§4.2.2「200% 下 66 分钟块文字完整未溢出」的手工记录冲突。⑤ **不改任何对外签名 / 验收标准** | — |
 | v0.31 | 2026-10-15 | **订正 v0.30：极短日程判据改用「块高是否放得下块内要画的文字行数」**（**对外签名未动**）。v0.30 把判据从死条件 `blockH < blockMinHeight` 改为 `naturalBlockHeight < blockMinHeight`，只覆盖了 < 20dp 的块；真机复查（Pixel / demo 的 `16:40–17:00` 20 分钟块）发现**高于 20dp、仍放不下两行的块照样溢出**——20 分钟块原始高度 21.3dp（64dp 格高）越过 20dp，但要画「时间 + 标题」两行塞不进 56px，副标题「并行任务 C」画到了块背景外。① **新增 `paint/BlockTextFitting`**：用块文字 `Paint` 的 `fontMetrics` 算第 n 行基线，`requiredHeightPx = paddingVertical - ascent + (n - 1) * 行距`；`DayTimelineView` 据此设 `tooShortForText`（显示副标题按两行、否则一行），与默认绘制共用同一支 `Paint`，杜绝两处各算一套后漂移。② **判据口径的取舍**：只保证**最后一行基线落在块内**（不再额外留 descender）——Pixel 实测 30 分钟块（84px）第二行基线正好落在块内、视觉完好，算上整段 descender 会把它误判为放不下。③ **回滚验证**：判据改回 `blockH < dimens.blockMinHeight`，新增断言 `c20`（20 分钟块）与 `ping` 立刻由 true 变 false，用例转红（记录 `{c20=false, ping=false, long=false, b40=false}`）。④ **真机全时段扫描**（Pixel / Android 9）：30/40/45/60 分钟块两行均在块内，20/5/2 分钟块无文字，无溢出、无回归。⑤ 接入方文档（DL-04 / DL-06 / 主题定制指南）的「两行文字」措辞同步改为「要画的文字行数」。**不改任何对外签名 / 验收标准** | — |
 | v0.32 | 2026-10-17 | **漏洞门禁首次在 CI 执行完成，并据此收窄扫描范围（对齐 PRD v1.24）**（`build.gradle.kts` 加一行 `scanConfigurations`，对外签名一行未动）。① **首次跑出报告**（OWASP Dependency-Check 13.0.0，NVD 数据 2026-10-17 06:31Z，`project ':app'` 305 个依赖）：命中 **70 个 CVE、51 个 CVSS ≥ 7.0**，任务失败、报告靠 CI `if: always()` 归档。② **逐条核对后全部命中落在构建期工具链**——AGP 的 `_internal-unified-test-platform-*`（grpc / netty / protobuf）与 Kotlin/detekt 的 `kotlinCompilerClasspath` 等（`kotlin-compiler-embeddable`），**运行时依赖 0 命中**。这些坐标不在 `gradle/libs.versions.toml`、也不进 AAR/APK（OQ-2 的「构建/测试期允许工具类依赖」）。③ **据此刻意设 `scanConfigurations = [debugRuntimeClasspath, releaseRuntimeClasspath]`**（白名单，非 `skipConfigurations` 黑名单）；本机验证收窄后扫描集（:app 60 / :library 58 / :r8test 58 个文件）0 个工具链命中。**§9.4.1 由此新增第 4 个坑**：AGP 那批配置名里的 `-test-` 两侧是连字符，匹配不上插件的 test 正则，默认 `skipTestGroups` 挡不住它。④ **收窄后的「0 个高危」仍待 CI 重跑确认**（本机到 NVD 出口限流，不能在本机复跑）。⑤ 同步 §9.1 门禁表、§9.2、§9.4、§9.4.1，《质量报告》§1.2 / §4.4 / §6 / §8 与操作手册。**不放宽任何验收标准**（§12.4 仍要求 0 个高危） | — |
+| v0.33 | 2026-10-17 | **长按「超时即进入编辑态」并加拾起反馈（对齐 PRD v1.26，AD-31）**（`GestureArbiter` / `DayTimelineView` 内部改动，对外签名未动；新增两条仪器测试与三条 JVM 单测）。① **进入时点**：`GestureDetector.onLongPress` 命中已有日程块时**立即**进入编辑态（超时取 `ViewConfiguration.getLongPressTimeout()`，约 400–500ms，**不提供按组件配置的入口**），不再等 `ACTION_UP`——对齐 Google 日历「拾起后不松手即可拖」。② **`GestureArbiter` 新增 `markEditing()`**：超时进入后把 `editing` 置真，后续位移才判 `DragMove` 并消费手势（否则会被判 `Scroll` 让给外层容器，出现「编辑态在、块不动」）。抽独立方法而非改 `onLongPressTimeout` 返回语义，以保留「命中空白处超时仍 `editing=false`」。③ **抬手不再重复进入**（`Intent.LongPress` 分支直接 return）、**`ACTION_CANCEL` 保留编辑态**（超时时已真实进入，被打断不等于取消；D3 不变）。④ **拾起反馈**：`performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)` + 被编辑块**原位淡出为幽灵**（`Canvas.saveLayerAlpha` 淡化既有绘制），**不引入任何新语义色**（17 项 × 深浅两套取值不变，`verifyColorsFinalized` 不受影响）；幽灵绘制抽为文件级私有 `paintBlock(...)`，把类体压回 `LargeClass` 阈值内。⑤ **验证**：新增宿主窗口仪器测试 `LongPressPickupTest`（按下 → 等超时 → 断言**手指未抬起**时已进入编辑态）与 `DayTimelineViewEditTest.editedBlockFadesToGhostAtItsOriginalPosition`（逐像素断言原块被淡化）、`GestureArbiterTest` 三例；**关键用例均已回滚验证会转红**（改回「抬手才进入」→ 长按用例 2 条转红；去掉幽灵淡化 → 幽灵用例转红）。⑥ 同步 PRD §8.2 / §8.2 附注 / FI-004 / §19.4 v1.26，《交互说明文档》《完整能力文档》。**本次不降低任何验收标准** | — | 研发 |
 
 ---
 

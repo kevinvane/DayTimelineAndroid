@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.AttributeSet
 import android.view.GestureDetector
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.widget.OverScroller
@@ -271,8 +272,12 @@ class DayTimelineView @JvmOverloads constructor(
             override fun onDown(e: MotionEvent) = true
 
             override fun onLongPress(e: MotionEvent) {
-                // 只标记「长按已触发」；真正的进入编辑态在抬手时判定（§8.2）
-                gestureArbiter.onLongPressTimeout()
+                // P0：长按超时**即**进入编辑态（对齐 Google 日历的「拾起」），不再等抬手——
+                // 用户按住不放就能接着拖动改时间（§8.2）。
+                if (!gestureArbiter.onLongPressTimeout()) return
+                val contentLeft = resolveAxisEnd(width)
+                val contentRight = (width - dimens.endMargin).coerceAtLeast(contentLeft)
+                enterEditByLongPress(e.x, e.y, contentLeft, contentRight)
             }
         },
     )
@@ -565,7 +570,11 @@ class DayTimelineView @JvmOverloads constructor(
                 // 现按文字 Paint 实测所需高度判定，与默认绘制共用同一口径。
                 tooShortForText = blockH < minTextHeight
             }
-            painter.paint(canvas, blockContext, colors, blockPaints)
+            // P1 抬升：被编辑的原块整体淡出为「幽灵」，凸显浮起的编辑层（见 [paintBlock]）
+            paintBlock(
+                canvas, blockContext, painter, colors, blockPaints,
+                b.event.id == editSession?.origin?.id,
+            )
         }
 
         // §7.6：当前时间线压在日程块之上（网格层画的只是时间文字，红线/圆点在此画；
@@ -1202,9 +1211,10 @@ private fun renderSignature(): Long {
                 stopEdgeScroll()
                 if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
                     // 手势被系统或父容器中断：只做清理，**绝不**按 intent 分派。
-                    // 若照常分派，Click 会凭空触发点击或打开详情弹窗，
-                    // LongPress 会凭空进入编辑态——用户明明是被打断，却收到了一次完整操作。
-                    // 编辑态保持不变，用户仍可确认或取消（§8.2「抬起」那一行）。
+                    // 若照常分派，Click 会凭空触发点击或打开详情弹窗——用户明明是被打断，
+                    // 却收到了一次完整操作。
+                    // 长按不在此列：它已在超时那一刻真实进入编辑态（P0），CANCEL 不代表用户
+                    // 做出了选择，编辑态保持不变，用户仍可确认或取消（§8.2）。
                     gestureDetector.onTouchEvent(event)
                     parent?.requestDisallowInterceptTouchEvent(false)
                     parentDisallowRequested = false
@@ -1226,11 +1236,9 @@ private fun renderSignature(): Long {
                 }
 
                 when (intent) {
-                    // §8.2：已触发长按但全程未移动 → 进入编辑态（原地选中）
-                    GestureArbiter.Intent.LongPress -> {
-                        enterEditByLongPress(x, y, contentLeft, contentRight)
-                        return true
-                    }
+                    // §8.2：长按已在超时那一刻进入编辑态（见 GestureDetector.onLongPress），
+                    // 抬手无需重复处理——原先在抬起时才进入，现已提前到超时
+                    GestureArbiter.Intent.LongPress -> return true
                     GestureArbiter.Intent.Click -> {
                         handleTap(x, y, contentLeft, contentRight)
                         return true
@@ -1249,7 +1257,7 @@ private fun renderSignature(): Long {
 
     /** 长按日程块 → 编辑态（FI-004）。长按空白处**不**进入编辑态（§8.2）。 */
     private fun enterEditByLongPress(x: Float, y: Float, contentLeft: Int, contentRight: Int) {
-        performClick() // 无障碍激活
+        performClick() // 无障碍激活（UF-003）：长按无论命中块还是空白都算一次点击
         if (editSession != null) return
         val hit = hitTester.hitTest(
             x, y, contentLeft, contentRight,
@@ -1259,10 +1267,14 @@ private fun renderSignature(): Long {
         if (hit is HitTester.Hit.Block) {
             selectedId = hit.block.event.id
             editSession = EditSession.beginEdit(hit.block.event)
+            // P0：让随后的 MOVE 判为整体拖拽（DragMove）——「按住不放即可拖动」靠它成立
+            gestureArbiter.markEditing()
+            // P1：拾起触觉反馈（`performHapticFeedback` 默认遵循系统触感设置，无需额外开关）
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
             notifyEnterEditing()
             listener?.onEventLongClick(hit.block.event.source)
         }
-        // 命中空白：等同普通点击（§8.2）
+        // 命中空白：等同普通点击，不进入编辑态（§8.2）
         requestRefresh()
     }
 
@@ -1655,6 +1667,45 @@ private fun Theme.Paints.drawEditLayerBox(
     selection.strokeWidth = dimens.editStrokeWidth.toFloat()
     val half = selection.strokeWidth / 2f
     canvas.drawRoundRect(left + half, top + half, right - half, bottom - half, corner, corner, selection)
+}
+
+/**
+ * 被编辑日程原位「幽灵」的不透明度（0–255）。
+ *
+ * P1：拾起后原块淡出、编辑层浮在其上，形成「拿起来了」的层次感（对齐 Google 日历
+ * 拖动时原时间段变透明的观感）。取值偏低但不为 0——完全透明会让人以为块消失了。
+ */
+private const val EDIT_SOURCE_GHOST_ALPHA = 90
+
+/**
+ * 画一个日程块；当它是「正在编辑的原块」时整体淡出为幽灵（P1 抬升）。
+ *
+ * 用 [Canvas.saveLayerAlpha] 而非改 Paint 的 alpha：后者要求每个
+ * [EventBlockPainter] 实现都配合，前者对任意实现（含业务方自定义）一律生效。
+ * 层边界按块几何外扩一个描边宽，避免把选中描边的抗锯齿边缘裁掉。
+ */
+private fun paintBlock(
+    canvas: Canvas,
+    context: BlockContext,
+    painter: EventBlockPainter,
+    colors: TimelineColors,
+    defaultPaints: EventBlockPainter.Paints,
+    ghost: Boolean,
+) {
+    val layer = if (!ghost) {
+        -1
+    } else {
+        val pad = context.strokeWidth.toFloat()
+        canvas.saveLayerAlpha(
+            context.left - pad,
+            context.top - pad,
+            context.left + context.width + pad,
+            context.top + context.height + pad,
+            EDIT_SOURCE_GHOST_ALPHA,
+        )
+    }
+    painter.paint(canvas, context, colors, defaultPaints)
+    if (layer != -1) canvas.restoreToCount(layer)
 }
 
 /** 边缘自动滚动帧间隔：约 60fps（FI-014）。 */

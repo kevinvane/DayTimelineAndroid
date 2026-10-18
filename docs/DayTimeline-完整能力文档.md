@@ -298,7 +298,7 @@ t.isStrictlyAfter(other)    // 相接（e1 == s2）不算重叠
 | 回调 | 何时触发 |
 |---|---|
 | `onEventClick(event)` | 用户单击日程块 |
-| `onEventLongClick(event)` | 用户长按日程块 |
+| `onEventLongClick(event)` | 用户长按日程块——在**长按超时那一刻**触发（此时手指通常仍按着，随即进入编辑态可拖），不等抬手 |
 | `onEventCreated(range, content)` | 用户在空白处新建并确认 |
 | `onEventModified(event, range, content, hasConflict)` | 用户调整并确认 |
 | `onEventDeleted(event)` | 用户删除并确认 |

@@ -1191,6 +1191,42 @@ class DayTimelineViewEditTest {
         )
     }
 
+    /**
+     * P1 抬升：被编辑的日程原位淡出为「幽灵」。
+     *
+     * 「morning」与「afternoon」同状态、同宽度、同高度，正常渲染下背景像素**相同**；
+     * 进入编辑并把草稿拖远（编辑层离开原位）后，原块背景像素必须**不同**——
+     * 这就是「原块被淡化」的可观测证据。
+     *
+     * 回滚验证：去掉 `DayTimelineView.paintBlock` 里的 `saveLayerAlpha`（改回直接
+     * `painter.paint`）→ 本用例转红（两点像素相同）。
+     */
+    @Test
+    fun editedBlockFadesToGhostAtItsOriginalPosition() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync { view.setNowMinute(0) } // 两条块同为「未到」态，背景色一致
+
+        val morning = view.visibleBlockSnapshot().first { it.second.event.id == "morning" }.second
+        val afternoon = view.visibleBlockSnapshot().first { it.second.event.id == "afternoon" }.second
+        val morningRect = requireNotNull(view.blockBoundsInParent(morning)) { "前置失败：取不到 morning 边界" }
+        val afternoonRect = requireNotNull(view.blockBoundsInParent(afternoon)) { "前置失败：取不到 afternoon 边界" }
+
+        enterEditByAccessibility("morning")
+        // 把草稿移走：编辑层离开原位，原位只剩被淡化的原块
+        instrumentation.runOnMainSync { view.applyEdit(EditResult(range = 900..960, content = null)) }
+
+        val bmp = renderToBitmap()
+        // 取每块右侧内部的背景像素（避开左侧色条、描边与文字）
+        val ghostPixel = bmp.getPixel(morningRect.right - 20, morningRect.centerY())
+        val normalPixel = bmp.getPixel(afternoonRect.right - 20, afternoonRect.centerY())
+
+        assertNotEquals(
+            "被编辑块原位应淡出为幽灵（P1）：它与同状态块同位置的背景像素不应相同",
+            normalPixel,
+            ghostPixel,
+        )
+    }
+
     /** 带业务色的日程实现，验证 TimelineEvent.color 的默认实现不破坏既有实现者。 */
     private data class ColoredEvent(
         override val id: String,
